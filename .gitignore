@@ -1,0 +1,15 @@
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+Thumbs.db
+Desktop.ini
+data/*.db
+data/*.db-*
+data/*.sqlite*
+.env
+.env.*
+!.env.example
+exports/
+demo_exports/

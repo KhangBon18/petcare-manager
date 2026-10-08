@@ -1,0 +1,3 @@
+# Giai đoạn bộ khung không có thư viện pip bắt buộc.
+# tkinter, sqlite3, unittest thuộc thư viện chuẩn Python.
+# Tkinter cần được kiểm tra riêng trên mỗi máy.
