@@ -6,7 +6,7 @@ from typing import Any
 
 from petcare.database.connection import get_connection, transaction
 from petcare.repositories.catalog_repo import CatalogRepository
-from petcare.services.auth_service import AuthSession
+from petcare.services.auth_service import AuthService, AuthSession
 
 
 class CatalogService:
@@ -17,6 +17,20 @@ class CatalogService:
 
     def _get_connection(self) -> sqlite3.Connection:
         return get_connection(self.db_path)
+
+    def _validate_session(
+        self,
+        session: AuthSession,
+        required_role: str = "staff",
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any]:
+        if conn is not None:
+            return AuthService.verify_session(conn, session, required_role=required_role)
+        temp_conn = self._get_connection()
+        try:
+            return AuthService.verify_session(temp_conn, session, required_role=required_role)
+        finally:
+            temp_conn.close()
 
     def _validate_data(self, data: dict[str, Any]) -> tuple[str, str, int]:
         name = data.get("name", "")
@@ -44,14 +58,12 @@ class CatalogService:
 
     def create_service(self, session: AuthSession, data: dict[str, Any]) -> int:
         """Tạo dịch vụ mới (chỉ Admin)."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền tạo dịch vụ mới")
-
         name, category, price_vnd = self._validate_data(data)
 
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, required_role="admin", conn=conn)
                 existing = CatalogRepository.get_by_name(conn, name)
                 if existing:
                     raise ValueError(f"Dịch vụ với tên '{name}' đã tồn tại")
@@ -63,15 +75,13 @@ class CatalogService:
         self, session: AuthSession, service_id: int, data: dict[str, Any]
     ) -> bool:
         """Cập nhật thông tin dịch vụ hoặc giá (chỉ Admin)."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền thay đổi thông tin/giá dịch vụ")
-
         name, category, price_vnd = self._validate_data(data)
         active = int(data.get("active", 1))
 
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, required_role="admin", conn=conn)
                 target = CatalogRepository.get_by_id(conn, service_id)
                 if not target:
                     raise ValueError("Không tìm thấy dịch vụ cần cập nhật")
@@ -87,12 +97,10 @@ class CatalogService:
 
     def deactivate_service(self, session: AuthSession, service_id: int) -> bool:
         """Ngừng kích hoạt dịch vụ (chỉ Admin)."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền ngừng kích hoạt dịch vụ")
-
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, required_role="admin", conn=conn)
                 target = CatalogRepository.get_by_id(conn, service_id)
                 if not target:
                     raise ValueError("Không tìm thấy dịch vụ")
@@ -102,11 +110,9 @@ class CatalogService:
 
     def get_service(self, session: AuthSession, service_id: int) -> dict[str, Any] | None:
         """Lấy thông tin một dịch vụ (Admin & Nhân viên)."""
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để xem thông tin dịch vụ")
-
         conn = self._get_connection()
         try:
+            self._validate_session(session, required_role="staff", conn=conn)
             return CatalogRepository.get_by_id(conn, service_id)
         finally:
             conn.close()
@@ -115,11 +121,9 @@ class CatalogService:
         self, session: AuthSession, active_only: bool = True
     ) -> list[dict[str, Any]]:
         """Lấy danh sách dịch vụ (Admin & Nhân viên)."""
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để xem danh sách dịch vụ")
-
         conn = self._get_connection()
         try:
+            self._validate_session(session, required_role="staff", conn=conn)
             return CatalogRepository.list_all(conn, active_only=active_only)
         finally:
             conn.close()
@@ -132,11 +136,9 @@ class CatalogService:
         active_only: bool = True,
     ) -> list[dict[str, Any]]:
         """Tìm kiếm dịch vụ theo tên hoặc phân loại."""
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để tìm kiếm dịch vụ")
-
         conn = self._get_connection()
         try:
+            self._validate_session(session, required_role="staff", conn=conn)
             return CatalogRepository.search(
                 conn, keyword=keyword, category=category, active_only=active_only
             )

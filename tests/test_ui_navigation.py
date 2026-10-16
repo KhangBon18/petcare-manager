@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import tkinter as tk
 import unittest
+from unittest.mock import patch
 
 from petcare.app import PetCareApp
 from petcare.database.seed import seed_database
@@ -15,16 +16,23 @@ class TestUINavigation(unittest.TestCase):
         self.db_path = Path(self.temp_dir.name) / "test_ui.db"
         seed_database(self.db_path)
 
+        # 1. Chỉ skip khi môi trường thiếu điều kiện mở Tk (ví dụ: máy tính không có màn hình display)
         try:
             self.root = tk.Tk()
             self.root.withdraw()  # Ẩn cửa sổ để chạy kiểm thử headless
-            self.app = PetCareApp(self.root, database_path=self.db_path)
+        except tk.TclError as e:
+            self.skipTest(f"Môi trường không hỗ trợ mở Tkinter display: {e}")
         except Exception as e:
-            self.skipTest(f"Môi trường không hỗ trợ mở Tkinter window: {e}")
+            self.skipTest(f"Không thể khởi tạo nền tảng đồ họa Tk: {e}")
+
+        # 2. Khởi tạo PetCareApp BÊN NGOÀI try-catch của Tk:
+        # Bất kỳ lỗi logic/ứng dụng nào phải làm test THẤT BẠI (Fail), tuyệt đối không bị che giấu thành skip!
+        self.app = PetCareApp(self.root, database_path=self.db_path)
 
     def tearDown(self):
         try:
-            self.root.destroy()
+            if hasattr(self, "root") and self.root:
+                self.root.destroy()
         except Exception:
             pass
         self.temp_dir.cleanup()
@@ -67,6 +75,12 @@ class TestUINavigation(unittest.TestCase):
         self.app.show_login()
         self.root.update()
         self.assertIsNone(self.app.session)
+
+    def test_app_initialization_error_not_masked_as_skip(self):
+        """Chứng minh lỗi khởi tạo của PetCareApp không bị che giấu thành skipTest."""
+        with patch.object(PetCareApp, "__init__", side_effect=RuntimeError("Mô phỏng lỗi ứng dụng")):
+            with self.assertRaises(RuntimeError):
+                PetCareApp(self.root, database_path=self.db_path)
 
 
 if __name__ == "__main__":

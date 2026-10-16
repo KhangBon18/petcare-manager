@@ -65,9 +65,8 @@ class TestIntegrationFlow(unittest.TestCase):
         self.assertTrue(session.is_staff())
 
         # Tạo các dịch vụ với giá niêm yết
-        # Dùng admin session giả lập để tạo danh mục
-        from petcare.services.auth_service import AuthSession
-        admin_session = AuthSession(user_id=99, username="admin_sys", role="admin", full_name="Admin")
+        # Dùng admin session đăng nhập thực tế để tạo danh mục
+        admin_session = self.auth_service.login("admin", "Admin@123")
         svc_kham_id = self.catalog_service.create_service(
             admin_session,
             {"name": "Khám lâm sàng", "category": "Khám bệnh", "price_vnd": 150000},

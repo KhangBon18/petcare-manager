@@ -60,6 +60,31 @@ class AuthService:
         finally:
             conn.close()
 
+    @staticmethod
+    def verify_session(
+        conn: sqlite3.Connection,
+        session: AuthSession,
+        required_role: str = "staff",
+    ) -> dict[str, Any]:
+        """Xác thực phiên trực tiếp từ DB: kiểm tra tài khoản tồn tại, active và quyền mới nhất."""
+        if not session or not session.user_id:
+            raise PermissionError("Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
+
+        user = UserRepository.get_by_id(conn, session.user_id)
+        if not user:
+            raise PermissionError("Tài khoản người dùng không còn tồn tại trong hệ thống")
+
+        if not user["active"]:
+            raise PermissionError("Tài khoản này đã bị khóa hoặc ngừng kích hoạt")
+
+        actual_role = user["role"]
+        if required_role == "admin" and actual_role != "admin":
+            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền thực hiện thao tác này")
+        elif required_role == "staff" and actual_role not in ("admin", "staff"):
+            raise PermissionError("Thao tác yêu cầu quyền Nhân viên hoặc Quản trị viên")
+
+        return dict(user)
+
     def create_user(
         self,
         session: AuthSession,
@@ -69,9 +94,6 @@ class AuthService:
         full_name: str,
     ) -> int:
         """Tạo tài khoản mới (chỉ Admin)."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền tạo tài khoản")
-
         u_name = username.strip() if username else ""
         if not u_name or len(u_name) < 3:
             raise ValueError("Tên đăng nhập phải có ít nhất 3 ký tự")
@@ -89,6 +111,7 @@ class AuthService:
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self.verify_session(conn, session, required_role="admin")
                 existing = UserRepository.get_by_username(conn, u_name)
                 if existing:
                     raise ValueError(f"Tên đăng nhập '{u_name}' đã tồn tại")
@@ -107,9 +130,6 @@ class AuthService:
         active: int,
     ) -> bool:
         """Cập nhật thông tin tài khoản (chỉ Admin)."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền sửa tài khoản")
-
         if role not in ("admin", "staff"):
             raise ValueError("Vai trò người dùng phải là 'admin' hoặc 'staff'")
 
@@ -119,6 +139,7 @@ class AuthService:
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self.verify_session(conn, session, required_role="admin")
                 target = UserRepository.get_by_id(conn, user_id)
                 if not target:
                     raise ValueError("Không tìm thấy tài khoản cần cập nhật")
@@ -141,15 +162,13 @@ class AuthService:
         new_password: str,
     ) -> bool:
         """Admin đặt lại mật khẩu cho tài khoản."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền đặt lại mật khẩu")
-
         if not new_password or len(new_password) < 6:
             raise ValueError("Mật khẩu mới phải có ít nhất 6 ký tự")
 
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self.verify_session(conn, session, required_role="admin")
                 target = UserRepository.get_by_id(conn, user_id)
                 if not target:
                     raise ValueError("Không tìm thấy tài khoản cần đặt lại mật khẩu")
@@ -161,11 +180,10 @@ class AuthService:
 
     def list_users(self, session: AuthSession, active_only: bool = False) -> list[dict[str, Any]]:
         """Lấy danh sách tài khoản (chỉ Admin)."""
-        if not session or not session.is_admin():
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền xem danh sách tài khoản")
-
         conn = self._get_connection()
         try:
+            self.verify_session(conn, session, required_role="admin")
             return UserRepository.list_all(conn, active_only=active_only)
         finally:
             conn.close()
+

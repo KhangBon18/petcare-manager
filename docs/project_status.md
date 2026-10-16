@@ -1,6 +1,9 @@
 # Báo cáo Trạng thái Dự án (project_status.md)
 
-Cập nhật vào: 2026-10-16
+Cập nhật vào: 2026-10-16  
+Chế độ làm việc: **Solo với Khang** (`solo/khang-petcare`)
+
+---
 
 ## 1. Hiện trạng triển khai
 
@@ -11,57 +14,69 @@ Cập nhật vào: 2026-10-16
   - [x] **Mốc 2: Đăng nhập, Quyền, Dịch vụ, Khám, Tiêm & Lịch hẹn (HOÀN THÀNH)**.
   - [x] **Mốc 3: Lượt dịch vụ, Hóa đơn, Thanh toán & Báo cáo thống kê (HOÀN THÀNH)**.
   - [x] **Mốc 4: Tích hợp Giao diện Tkinter hoàn chỉnh & Kiểm thử tích hợp (HOÀN THÀNH)**.
-  - [ ] Mốc 5: Hoàn thiện tài liệu, nghiệm thu & bàn giao tag v1.0.0 (Bắt đầu).
+  - [x] **Mốc 5: Bộ tài liệu kiến trúc, nghiệm thu, slide và hướng dẫn (HOÀN THÀNH)**.
+  - [x] **Vòng sửa lỗi QC độc lập (4 lỗi QC trọng yếu) (HOÀN THÀNH)**.
 
-## 2. Quyết định kỹ thuật & Chi tiết Mốc 4
+---
 
-1. **Giao diện người dùng Tkinter/ttk đồng bộ (`petcare/ui/`)**:
-   - `theme.py`: Áp dụng phong cách hiện đại, bảng màu chuẩn doanh nghiệp, font chữ Segoe UI rõ ràng, định dạng tiền tệ VND (`format_vnd`).
-   - `common.py`: Cung cấp các component dùng chung: `DataTable` (Treeview cuộn 2 chiều, helper quản lý data), `HeaderBar`, `StatCard`, và các hộp thoại thông báo.
-   - `login_view.py`: Đăng nhập an toàn, hiển thị hướng dẫn tài khoản demo Admin/Nhân viên.
-   - `users_view.py`: Quản lý tài khoản và phân quyền người dùng (chỉ Admin).
-   - `owners_view.py`: Danh sách khách hàng, tìm kiếm, thêm/sửa, chuyển sang xem thú cưng liên kết.
-   - `pets_view.py`: Danh sách thú cưng, lọc theo giống loài, tìm kiếm, thêm/sửa, liên kết sang xem hồ sơ tổng hợp.
-   - `pet_profile_view.py`: Hồ sơ bệnh án tổng hợp gồm 4 tab chi tiết: Khám bệnh, Tiêm phòng, Lịch hẹn và Toàn bộ lượt dịch vụ & chi phí.
-   - `services_view.py`: Bảng giá dịch vụ niêm yết (Admin đổi giá/thêm mới, Nhân viên chỉ xem).
-   - `examinations_view.py`: Ghi nhận ca khám bệnh, triệu chứng, chẩn đoán, đơn thuốc và tự động sinh lượt dịch vụ kèm phí.
-   - `vaccinations_view.py`: Quản lý tiêm phòng, theo dõi các mũi tiêm sắp đến hạn (trong vòng 30 ngày) và đánh dấu hoàn thành nhắc nhở.
-   - `appointments_view.py`: Quản lý lịch hẹn khám/chăm sóc spa, cập nhật trạng thái `planned` -> `completed` / `cancelled`.
-   - `visits_view.py`: Quản lý toàn bộ các lượt dịch vụ đã thực hiện và trạng thái thanh toán hóa đơn.
-   - `invoices_view.py`: Lập hóa đơn từ các lượt chưa tính tiền của cùng một chủ nuôi, thanh toán trực tiếp tại quầy, hủy hóa đơn chưa thanh toán và xem hóa đơn chi tiết.
-   - `reports_view.py` & `revenue_view.py`: Bảng điều khiển thống kê tổng quan (doanh thu thực thu, số hóa đơn, số ca khám, số thú cưng tiêm phòng, cơ cấu loài và top dịch vụ phổ biến).
-   - `app.py`: Điều khiển toàn bộ ứng dụng trên một `Tk` root duy nhất, quản lý phiên làm việc (`AuthSession`), điều hướng mượt mà, phân quyền hiển thị sidebar.
-2. **Kiểm thử liên chức năng**:
-   - `tests/test_integration_flow.py`: Kiểm tra tự động 100% kịch bản Lan/Miu theo `REPO_GUIDE.md`:
-     Tạo chị Lan -> Thêm mèo Miu -> Đặt lịch hẹn -> Khám bệnh -> Tiêm phòng vaccine Dại -> Dịch vụ tắm spa -> Kiểm tra 3 lượt chưa thanh toán (530.000 đ) -> Lập hóa đơn -> Thanh toán trực tiếp -> Thanh toán lần 2 trả về `already_paid` -> Bảo vệ không cho hủy đơn đã trả -> Đối chiếu báo cáo doanh thu và top dịch vụ.
-   - `tests/test_ui_navigation.py`: Kiểm thử tự động khả năng khởi chạy, đăng nhập và điều hướng qua lại giữa tất cả các màn hình giao diện không xảy ra lỗi.
+## 2. Chi tiết xử lý 4 lỗi QC độc lập
 
-## 3. Lịch sử kiểm tra thực tế
+### Lỗi 1: Kiểm tra phiên đăng nhập và phân quyền realtime từ CSDL
+- **Vấn đề**: Phiên đăng nhập cũ trong bộ nhớ (`AuthSession`) vẫn giữ quyền thao tác sau khi tài khoản bị khóa (`active = 0`) hoặc admin bị hạ quyền (`role = 'staff'`).
+- **Giải pháp**:
+  - Bổ sung `AuthService.verify_session(conn, session, required_role)` kiểm tra trực tiếp từ bảng `users` tại thời điểm thực thi nghiệp vụ: kiểm tra tài khoản còn tồn tại, `active == 1` và quyền thực tế trong DB.
+  - Áp dụng đồng bộ cho toàn bộ các service (`AuthService`, `CatalogService`, `OwnerService`, `PetService`, `ExamService`, `VaccinationService`, `AppointmentService`, `VisitService`, `InvoiceService`, `ReportService`).
+  - Bổ sung unit test: `test_logged_in_staff_deactivated_is_blocked` và `test_logged_in_admin_demoted_is_blocked` trong `tests/test_auth_service.py`.
 
-- Toàn bộ 34 tests trong test suite đều đạt 100%:
-  - `test_appointment_service.py`: 2 tests
-  - `test_auth_service.py`: 5 tests
+### Lỗi 2: Kiểm tra và chuẩn hóa thời gian hẹn `scheduled_at` trong `AppointmentService`
+- **Vấn đề**: `create_appointment` chấp nhận chuỗi bất kỳ như `"abc-not-a-date"`.
+- **Giải pháp**:
+  - Xây dựng mô-đun chuẩn hóa thời gian `petcare/date_utils.py` với `parse_datetime` và `normalize_datetime`.
+  - Kiểm tra tính hợp lệ của ngày giờ thực tế (từ chối chuỗi không phải ngày giờ, ngày không tồn tại theo lịch như 31/02).
+  - Chuẩn hóa lưu trữ thống nhất theo định dạng `YYYY-MM-DD HH:MM` giúp sắp xếp và lọc chính xác.
+  - Dữ liệu sai báo lỗi rõ ràng (`ValueError`) và không tạo bản ghi rác trong CSDL.
+  - Bổ sung unit test: `test_create_appointment_invalid_date_rejected` và `test_create_appointment_date_normalization` trong `tests/test_appointment_service.py`.
+
+### Lỗi 3: Chuẩn hóa ngày khám `exam_date` và đồng bộ báo cáo
+- **Vấn đề**: `ExamService` chấp nhận định dạng `YYYYMMDD` nhưng lưu nguyên chuỗi 8 ký tự vào DB, khiến các truy vấn báo cáo theo khoảng ngày `YYYY-MM-DD` bị bỏ sót bản ghi.
+- **Giải pháp**:
+  - Bổ sung hàm `normalize_date` và `parse_date` trong `petcare/date_utils.py`. Chuẩn hóa toàn bộ ngày tháng (`examinations.exam_date`, `vaccinations.injection_date`, `vaccinations.next_due_date`, `pets.birth_date`, `service_visits.performed_at`, bộ lọc `start_date`/`end_date` của `ReportService`) về chuẩn ISO `YYYY-MM-DD`.
+  - Bảo toàn dữ liệu cũ: Trong `initialize_database()`, tự động chạy truy vấn nâng cấp chuyển đổi các bản ghi cũ 8 ký tự `YYYYMMDD` sang `YYYY-MM-DD` một cách an toàn và idempotent.
+  - Bổ sung unit test: `test_record_exam_date_normalization_and_report_match` và `test_legacy_data_migration` trong `tests/test_exam_service.py`.
+
+### Lỗi 4: Tách biệt kiểm tra môi trường Tk với lỗi ứng dụng trong `test_ui_navigation.py`
+- **Vấn đề**: Khối `try...except Exception` bao bọc cả `tk.Tk()` và `PetCareApp()`, khiến lỗi logic trong ứng dụng bị nuốt và chuyển nhầm thành `skipTest`.
+- **Giải pháp**:
+  - Chỉ bắt `tk.TclError` quanh `tk.Tk()` để skip khi môi trường thực sự thiếu display.
+  - Khởi tạo `PetCareApp` bên ngoài try-catch: Bất kỳ lỗi khởi tạo nào của ứng dụng sẽ gây fail test ngay lập tức.
+  - Bổ sung unit test `test_app_initialization_error_not_masked_as_skip` chứng minh lỗi ứng dụng không bị che giấu.
+
+---
+
+## 3. Kết quả kiểm tra thực tế
+
+- **Môi trường thực thi**: macOS (Python 3.13.3, Tkinter 8.6, SQLite 3.49.1).
+- **Trạng thái biên dịch (`compileall`)**: 100% hợp lệ, không có lỗi cú pháp.
+- **Toàn bộ 41 unit/integration tests đều đạt (Passed: 41, Failed: 0, Errors: 0, Skipped: 0)**:
+  - `test_appointment_service.py`: 4 tests (gồm 2 test mới cho QC 2)
+  - `test_auth_service.py`: 7 tests (gồm 2 test mới cho QC 1)
   - `test_catalog_service.py`: 3 tests
-  - `test_exam_service.py`: 3 tests
-  - `test_integration_flow.py`: 1 test
+  - `test_exam_service.py`: 5 tests (gồm 2 test mới cho QC 3)
+  - `test_integration_flow.py`: 1 test luồng tích hợp toàn diện
   - `test_invoice_service.py`: 5 tests
   - `test_owner_service.py`: 5 tests
   - `test_pet_service.py`: 5 tests
   - `test_report_queries.py`: 1 test
-  - `test_ui_navigation.py`: 1 test
+  - `test_ui_navigation.py`: 2 tests (gồm 1 test mới cho QC 4)
   - `test_vaccination_service.py`: 3 tests
 
-## 4. Bước tiếp theo (Mốc 5)
+---
 
-Tiến hành triển khai **Mốc 5: Hoàn thiện tài liệu, nghiệm thu và bàn giao**:
-1. Cập nhật `README.md` với đầy đủ hướng dẫn chạy cho Windows (PowerShell) và macOS (Terminal), phiên bản Python, tài khoản demo, kịch bản dùng thử.
-2. Cập nhật các tài liệu kỹ thuật trong thư mục `docs/`:
-   - `docs/architecture.md`: Kiến trúc 3 lớp UI -> Service -> Repository.
-   - `docs/erd.md`: Sơ đồ ERD và quan hệ giữa 10 bảng dữ liệu.
-   - `docs/billing_rules.md`: Toàn bộ quy tắc tính phí, hóa đơn, thanh toán và bảo toàn doanh thu.
-   - `docs/acceptance_tests.md`: 10 ca kiểm thử nghiệm thu theo `REPO_GUIDE.md`.
-   - `docs/demo_scenarios.md`: Kịch bản demo từng bước để bảo vệ đồ án.
-   - `docs/backup_restore.md`: Hướng dẫn sao lưu và phục hồi cơ sở dữ liệu SQLite.
-   - `docs/test_results.md`: Tổng kết kết quả kiểm thử toàn diện.
-3. Cập nhật `CHANGELOG.md`.
-4. Kiểm tra môi trường sạch, cam kết Git và chuẩn bị đưa bản v1.0.0 lên `main`.
+## 4. Hướng dẫn khởi chạy nghiệm thu cục bộ
+
+```bash
+# Kích hoạt môi trường và khởi chạy ứng dụng
+.venv/bin/python main.py
+```
+- Tài khoản Quản trị: `admin` / `Admin@123`
+- Tài khoản Nhân viên: `staff1` / `Staff@123` hoặc `staff` / `Staff@123`

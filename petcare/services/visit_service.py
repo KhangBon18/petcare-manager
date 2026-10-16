@@ -1,15 +1,15 @@
 """Dịch vụ quản lý các lượt sử dụng dịch vụ (Service Visits)."""
 
-from datetime import date
 from pathlib import Path
 import sqlite3
 from typing import Any
 
 from petcare.database.connection import get_connection, transaction
+from petcare.date_utils import normalize_date
 from petcare.repositories.catalog_repo import CatalogRepository
 from petcare.repositories.pet_repo import PetRepository
 from petcare.repositories.visit_repo import VisitRepository
-from petcare.services.auth_service import AuthSession
+from petcare.services.auth_service import AuthService, AuthSession
 
 
 class VisitService:
@@ -21,9 +21,19 @@ class VisitService:
     def _get_connection(self) -> sqlite3.Connection:
         return get_connection(self.db_path)
 
-    def _validate_session(self, session: AuthSession) -> None:
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để thao tác lượt dịch vụ")
+    def _validate_session(
+        self,
+        session: AuthSession,
+        required_role: str = "staff",
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any]:
+        if conn is not None:
+            return AuthService.verify_session(conn, session, required_role=required_role)
+        temp_conn = self._get_connection()
+        try:
+            return AuthService.verify_session(temp_conn, session, required_role=required_role)
+        finally:
+            temp_conn.close()
 
     def record_service_usage(
         self,
@@ -34,25 +44,18 @@ class VisitService:
         notes: str | None = None,
     ) -> int:
         """Ghi nhận trực tiếp một lượt sử dụng dịch vụ chăm sóc/xét nghiệm (không qua hồ sơ khám/tiêm)."""
-        self._validate_session(session)
-
         if not pet_id:
             raise ValueError("Vui lòng chọn thú cưng")
         if not service_id:
             raise ValueError("Vui lòng chọn dịch vụ")
 
-        if not performed_at or not str(performed_at).strip():
-            performed_at = date.today().isoformat()
-        else:
-            performed_at = str(performed_at).strip()
-            try:
-                date.fromisoformat(performed_at)
-            except ValueError:
-                raise ValueError("Ngày thực hiện không đúng định dạng YYYY-MM-DD")
+        # Chuẩn hóa ngày thực hiện thành ISO YYYY-MM-DD
+        performed_at_str = normalize_date(performed_at, field_name="Ngày thực hiện", default_today=True)
 
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 pet = PetRepository.get_by_id(conn, int(pet_id))
                 if not pet:
                     raise ValueError("Thú cưng không tồn tại")
@@ -70,7 +73,7 @@ class VisitService:
                     conn=conn,
                     pet_id=int(pet_id),
                     service_id=int(service_id),
-                    performed_at=performed_at,
+                    performed_at=performed_at_str,
                     unit_price_vnd=unit_price,
                     notes=str(notes).strip() if notes else None,
                 )
@@ -81,17 +84,17 @@ class VisitService:
         self, session: AuthSession, owner_id: int
     ) -> list[dict[str, Any]]:
         """Lấy danh sách các lượt dịch vụ chưa được tính tiền của một chủ nuôi."""
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return VisitRepository.get_unbilled_by_owner(conn, owner_id)
         finally:
             conn.close()
 
     def get_pet_visits(self, session: AuthSession, pet_id: int) -> list[dict[str, Any]]:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return VisitRepository.get_by_pet_id(conn, pet_id)
         finally:
             conn.close()
@@ -99,9 +102,9 @@ class VisitService:
     def list_all_visits(
         self, session: AuthSession, limit: int = 100
     ) -> list[dict[str, Any]]:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return VisitRepository.list_all(conn, limit=limit)
         finally:
             conn.close()

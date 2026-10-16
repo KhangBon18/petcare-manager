@@ -1,4 +1,4 @@
-"""Dịch vụ quản lý hóa đơn và thanh toán trực tiếp."""
+"""Dịch vụ quản lý hóa đơn, thanh toán và bảo toàn doanh thu (Invoices)."""
 
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +9,7 @@ from petcare.database.connection import get_connection, transaction
 from petcare.repositories.invoice_repo import InvoiceRepository
 from petcare.repositories.owner_repo import OwnerRepository
 from petcare.repositories.visit_repo import VisitRepository
-from petcare.services.auth_service import AuthSession
+from petcare.services.auth_service import AuthService, AuthSession
 
 
 class InvoiceService:
@@ -21,9 +21,19 @@ class InvoiceService:
     def _get_connection(self) -> sqlite3.Connection:
         return get_connection(self.db_path)
 
-    def _validate_session(self, session: AuthSession) -> None:
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để thao tác hóa đơn")
+    def _validate_session(
+        self,
+        session: AuthSession,
+        required_role: str = "staff",
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any]:
+        if conn is not None:
+            return AuthService.verify_session(conn, session, required_role=required_role)
+        temp_conn = self._get_connection()
+        try:
+            return AuthService.verify_session(temp_conn, session, required_role=required_role)
+        finally:
+            temp_conn.close()
 
     def create_invoice(
         self,
@@ -33,8 +43,6 @@ class InvoiceService:
         note: str | None = None,
     ) -> int:
         """Tạo hóa đơn từ các lượt dịch vụ chưa thanh toán của cùng một chủ nuôi."""
-        self._validate_session(session)
-
         if not owner_id:
             raise ValueError("Vui lòng chọn chủ nuôi để lập hóa đơn")
 
@@ -47,6 +55,7 @@ class InvoiceService:
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 owner = OwnerRepository.get_by_id(conn, int(owner_id))
                 if not owner:
                     raise ValueError("Chủ nuôi không tồn tại trong hệ thống")
@@ -94,11 +103,10 @@ class InvoiceService:
 
     def pay_invoice(self, session: AuthSession, invoice_id: int) -> str:
         """Thanh toán hóa đơn. Nếu đã thanh toán rồi thì trả về 'already_paid'."""
-        self._validate_session(session)
-
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 invoice = InvoiceRepository.get_by_id(conn, invoice_id)
                 if not invoice:
                     raise ValueError("Không tìm thấy hóa đơn cần thanh toán")
@@ -117,11 +125,10 @@ class InvoiceService:
 
     def cancel_invoice(self, session: AuthSession, invoice_id: int) -> bool:
         """Hủy hóa đơn unpaid: giải phóng các lượt dịch vụ để lập hóa đơn khác. Chặn hủy hóa đơn paid."""
-        self._validate_session(session)
-
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 invoice = InvoiceRepository.get_by_id(conn, invoice_id)
                 if not invoice:
                     raise ValueError("Không tìm thấy hóa đơn cần hủy")
@@ -137,9 +144,9 @@ class InvoiceService:
             conn.close()
 
     def get_invoice(self, session: AuthSession, invoice_id: int) -> dict[str, Any] | None:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return InvoiceRepository.get_by_id(conn, invoice_id)
         finally:
             conn.close()
@@ -151,9 +158,9 @@ class InvoiceService:
         owner_id: int | None = None,
         limit: int = 100,
     ) -> list[dict[str, Any]]:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return InvoiceRepository.list_all(conn, status=status, owner_id=owner_id, limit=limit)
         finally:
             conn.close()

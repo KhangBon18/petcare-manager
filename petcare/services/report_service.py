@@ -6,8 +6,9 @@ import sqlite3
 from typing import Any
 
 from petcare.database.connection import get_connection
+from petcare.date_utils import parse_date
 from petcare.repositories.report_repo import ReportRepository
-from petcare.services.auth_service import AuthSession
+from petcare.services.auth_service import AuthService, AuthSession
 
 
 class ReportService:
@@ -19,9 +20,19 @@ class ReportService:
     def _get_connection(self) -> sqlite3.Connection:
         return get_connection(self.db_path)
 
-    def _validate_session(self, session: AuthSession) -> None:
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để xem báo cáo thống kê")
+    def _validate_session(
+        self,
+        session: AuthSession,
+        required_role: str = "staff",
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any]:
+        if conn is not None:
+            return AuthService.verify_session(conn, session, required_role=required_role)
+        temp_conn = self._get_connection()
+        try:
+            return AuthService.verify_session(temp_conn, session, required_role=required_role)
+        finally:
+            temp_conn.close()
 
     def get_summary(
         self,
@@ -30,17 +41,15 @@ class ReportService:
         end_date: str | None = None,
     ) -> dict[str, Any]:
         """Tổng hợp các chỉ số: doanh thu, lượt khám, thú cưng đã tiêm, phân bố loài, dịch vụ phổ biến."""
-        self._validate_session(session)
-
         # Mặc định: từ đầu tháng hiện tại đến hôm nay
         today = date.today()
         if not start_date or not str(start_date).strip():
             start_d = today.replace(day=1)
             start_date_str = start_d.isoformat()
         else:
-            start_date_str = str(start_date).strip()
             try:
-                start_d = date.fromisoformat(start_date_str)
+                start_d = parse_date(start_date, field_name="Ngày bắt đầu")
+                start_date_str = start_d.isoformat()
             except ValueError:
                 raise ValueError("Ngày bắt đầu không đúng định dạng YYYY-MM-DD")
 
@@ -48,9 +57,9 @@ class ReportService:
             end_d = today
             end_date_str = end_d.isoformat()
         else:
-            end_date_str = str(end_date).strip()
             try:
-                end_d = date.fromisoformat(end_date_str)
+                end_d = parse_date(end_date, field_name="Ngày kết thúc")
+                end_date_str = end_d.isoformat()
             except ValueError:
                 raise ValueError("Ngày kết thúc không đúng định dạng YYYY-MM-DD")
 
@@ -64,6 +73,7 @@ class ReportService:
 
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             # 1. Doanh thu và số hóa đơn đã thanh toán
             rev_info = ReportRepository.get_revenue_summary(conn, start_datetime, end_datetime)
 

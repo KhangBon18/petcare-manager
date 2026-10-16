@@ -1,14 +1,15 @@
-"""Dịch vụ quản lý thú cưng (Pets)."""
+"""Dịch vụ quản lý thông tin thú cưng (Pets)."""
 
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 import sqlite3
 from typing import Any
 
 from petcare.database.connection import get_connection, transaction
+from petcare.date_utils import normalize_date, parse_date
 from petcare.repositories.owner_repo import OwnerRepository
 from petcare.repositories.pet_repo import PetRepository
-from petcare.services.auth_service import AuthSession
+from petcare.services.auth_service import AuthService, AuthSession
 
 
 class PetService:
@@ -20,9 +21,19 @@ class PetService:
     def _get_connection(self) -> sqlite3.Connection:
         return get_connection(self.db_path)
 
-    def _validate_session(self, session: AuthSession) -> None:
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để thao tác thông tin thú cưng")
+    def _validate_session(
+        self,
+        session: AuthSession,
+        required_role: str = "staff",
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any]:
+        if conn is not None:
+            return AuthService.verify_session(conn, session, required_role=required_role)
+        temp_conn = self._get_connection()
+        try:
+            return AuthService.verify_session(temp_conn, session, required_role=required_role)
+        finally:
+            temp_conn.close()
 
     def _validate_data(self, data: dict[str, Any]) -> dict[str, Any]:
         name = data.get("name", "")
@@ -51,11 +62,11 @@ class PetService:
 
         birth_date = data.get("birth_date")
         if birth_date and str(birth_date).strip():
-            b_str = str(birth_date).strip()
             try:
-                b_date = date.fromisoformat(b_str)
+                b_date = parse_date(birth_date, field_name="Ngày sinh")
                 if b_date > date.today():
                     raise ValueError("Ngày sinh không được lớn hơn ngày hiện tại")
+                b_str = b_date.isoformat()
             except ValueError as e:
                 if "không được lớn hơn" in str(e):
                     raise
@@ -75,7 +86,6 @@ class PetService:
 
     def create_pet(self, session: AuthSession, data: dict[str, Any]) -> int:
         """Tạo thú cưng mới; chủ nuôi phải tồn tại và đang hoạt động."""
-        self._validate_session(session)
         owner_id = data.get("owner_id")
         if not owner_id:
             raise ValueError("Vui lòng chọn chủ nuôi cho thú cưng")
@@ -85,6 +95,7 @@ class PetService:
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 owner = OwnerRepository.get_by_id(conn, int(owner_id))
                 if not owner:
                     raise ValueError("Chủ nuôi không tồn tại trong hệ thống")
@@ -107,13 +118,13 @@ class PetService:
 
     def update_pet(self, session: AuthSession, pet_id: int, data: dict[str, Any]) -> bool:
         """Cập nhật thông tin thú cưng; chặn đổi chủ nếu thú cưng đã có hóa đơn."""
-        self._validate_session(session)
         validated = self._validate_data(data)
         active = int(data.get("active", 1))
 
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 existing = PetRepository.get_by_id(conn, pet_id)
                 if not existing:
                     raise ValueError("Không tìm thấy thú cưng cần cập nhật")
@@ -147,9 +158,9 @@ class PetService:
 
     def get_pet(self, session: AuthSession, pet_id: int) -> dict[str, Any] | None:
         """Lấy thông tin chi tiết một thú cưng kèm thông tin chủ nuôi."""
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return PetRepository.get_by_id(conn, pet_id)
         finally:
             conn.close()
@@ -158,9 +169,9 @@ class PetService:
         self, session: AuthSession, owner_id: int, active_only: bool = True
     ) -> list[dict[str, Any]]:
         """Lấy danh sách thú cưng của một chủ nuôi."""
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return PetRepository.get_by_owner_id(conn, owner_id, active_only=active_only)
         finally:
             conn.close()
@@ -173,9 +184,9 @@ class PetService:
         active_only: bool = True,
     ) -> list[dict[str, Any]]:
         """Tìm kiếm thú cưng theo tên, giống loài, hoặc tên chủ nuôi."""
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return PetRepository.search(
                 conn, keyword=keyword, species=species, active_only=active_only
             )
@@ -188,10 +199,10 @@ class PetService:
 
     def delete_or_deactivate_pet(self, session: AuthSession, pet_id: int) -> str:
         """Nếu thú cưng đã có lịch sử y tế/hóa đơn, chuyển sang ngừng theo dõi; nếu chưa thì xóa."""
-        self._validate_session(session)
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 pet = PetRepository.get_by_id(conn, pet_id)
                 if not pet:
                     raise ValueError("Không tìm thấy thú cưng")

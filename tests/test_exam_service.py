@@ -114,6 +114,71 @@ class TestExamService(unittest.TestCase):
                 },
             )
 
+    def test_record_exam_date_normalization_and_report_match(self):
+        """QC Lỗi 3: exam_date dạng YYYYMMDD phải được chuẩn hóa thành YYYY-MM-DD và thống kê báo cáo không bỏ sót."""
+        from petcare.services.report_service import ReportService
+        report_service = ReportService(self.db_path)
+
+        # 1. Ghi nhận ca khám với ngày dạng YYYYMMDD: "20261016"
+        exam_id, visit_id = self.exam_service.record_exam(
+            self.staff_session,
+            {
+                "pet_id": self.pet_id,
+                "service_id": self.service_id,
+                "exam_date": "20261016",
+                "symptoms": "Đau mắt",
+                "diagnosis": "Viêm giác mạc",
+            },
+        )
+        self.assertGreater(exam_id, 0)
+
+        # 2. Kiểm tra bản ghi trong DB đã được chuẩn hóa thành "2026-10-16"
+        exam = self.exam_service.get_exam(self.staff_session, exam_id)
+        self.assertEqual(exam["exam_date"], "2026-10-16", "exam_date phải được chuẩn hóa thành YYYY-MM-DD")
+
+        # 3. Đối chiếu với báo cáo trong khoảng 2026-10-01 đến 2026-10-31
+        summary = report_service.get_summary(
+            self.staff_session,
+            start_date="2026-10-01",
+            end_date="2026-10-31",
+        )
+        self.assertEqual(summary["exam_count"], 1, "Báo cáo khoảng ngày phải thống kê đầy đủ ca khám")
+
+    def test_legacy_data_migration(self):
+        """QC Lỗi 3: Bản ghi cũ lưu YYYYMMDD được bảo toàn và chuyển đổi thành YYYY-MM-DD khi chạy initialize_database."""
+        from petcare.database.connection import get_connection
+        conn = get_connection(self.db_path)
+        # Chèn bản ghi cũ có format YYYYMMDD trực tiếp vào DB
+        conn.execute(
+            """
+            INSERT INTO service_visits (id, pet_id, service_id, performed_at, unit_price_vnd, notes)
+            VALUES (999, ?, ?, '20260915', 150000, 'Legacy test visit')
+            """,
+            (self.pet_id, self.service_id),
+        )
+        conn.execute(
+            """
+            INSERT INTO examinations (id, pet_id, visit_id, exam_date, symptoms, diagnosis)
+            VALUES (999, ?, 999, '20260915', 'Legacy symptom', 'Legacy diag')
+            """,
+            (self.pet_id,),
+        )
+        conn.commit()
+        conn.close()
+
+        # Chạy initialize_database để kích hoạt migration an toàn
+        initialize_database(self.db_path)
+
+        # Kiểm tra kết quả
+        conn = get_connection(self.db_path)
+        row_ex = conn.execute("SELECT exam_date FROM examinations WHERE id = 999").fetchone()
+        row_vi = conn.execute("SELECT performed_at FROM service_visits WHERE id = 999").fetchone()
+        conn.close()
+
+        self.assertEqual(row_ex["exam_date"], "2026-09-15")
+        self.assertEqual(row_vi["performed_at"], "2026-09-15")
+
 
 if __name__ == "__main__":
     unittest.main()
+

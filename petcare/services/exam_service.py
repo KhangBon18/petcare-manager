@@ -1,16 +1,16 @@
 """Dịch vụ quản lý hồ sơ khám bệnh."""
 
-from datetime import date
 from pathlib import Path
 import sqlite3
 from typing import Any
 
 from petcare.database.connection import get_connection, transaction
+from petcare.date_utils import normalize_date
 from petcare.repositories.catalog_repo import CatalogRepository
 from petcare.repositories.exam_repo import ExamRepository
 from petcare.repositories.pet_repo import PetRepository
 from petcare.repositories.visit_repo import VisitRepository
-from petcare.services.auth_service import AuthSession
+from petcare.services.auth_service import AuthService, AuthSession
 
 
 class ExamService:
@@ -22,14 +22,22 @@ class ExamService:
     def _get_connection(self) -> sqlite3.Connection:
         return get_connection(self.db_path)
 
-    def _validate_session(self, session: AuthSession) -> None:
-        if not session or not session.is_staff():
-            raise PermissionError("Bạn cần đăng nhập để thao tác hồ sơ khám bệnh")
+    def _validate_session(
+        self,
+        session: AuthSession,
+        required_role: str = "staff",
+        conn: sqlite3.Connection | None = None,
+    ) -> dict[str, Any]:
+        if conn is not None:
+            return AuthService.verify_session(conn, session, required_role=required_role)
+        temp_conn = self._get_connection()
+        try:
+            return AuthService.verify_session(temp_conn, session, required_role=required_role)
+        finally:
+            temp_conn.close()
 
     def record_exam(self, session: AuthSession, data: dict[str, Any]) -> tuple[int, int]:
         """Ghi nhận ca khám bệnh và tạo lượt dịch vụ tương ứng trong cùng giao dịch."""
-        self._validate_session(session)
-
         pet_id = data.get("pet_id")
         if not pet_id:
             raise ValueError("Vui lòng chọn thú cưng để ghi nhận khám bệnh")
@@ -46,21 +54,16 @@ class ExamService:
         if not diagnosis or not str(diagnosis).strip():
             raise ValueError("Chẩn đoán không được để trống")
 
-        exam_date = data.get("exam_date") or data.get("date")
-        if not exam_date or not str(exam_date).strip():
-            exam_date = date.today().isoformat()
-        else:
-            exam_date = str(exam_date).strip()
-            try:
-                date.fromisoformat(exam_date)
-            except ValueError:
-                raise ValueError("Ngày khám không đúng định dạng YYYY-MM-DD")
+        exam_date_raw = data.get("exam_date") or data.get("date")
+        # Chuẩn hóa ngày khám thành ISO YYYY-MM-DD thống nhất, xử lý cả định dạng YYYYMMDD
+        exam_date = normalize_date(exam_date_raw, field_name="Ngày khám", default_today=True)
 
         medicines = str(data.get("medicines", "")).strip() or None
 
         conn = self._get_connection()
         try:
             with transaction(conn):
+                self._validate_session(session, conn=conn)
                 pet = PetRepository.get_by_id(conn, int(pet_id))
                 if not pet:
                     raise ValueError("Thú cưng không tồn tại")
@@ -76,7 +79,7 @@ class ExamService:
                 # Snapshot giá hiện tại của dịch vụ
                 unit_price = int(service["price_vnd"])
 
-                # 1. Tạo lượt dịch vụ
+                # 1. Tạo lượt dịch vụ với ngày đã chuẩn hóa
                 visit_id = VisitRepository.create_visit(
                     conn=conn,
                     pet_id=int(pet_id),
@@ -102,25 +105,25 @@ class ExamService:
             conn.close()
 
     def get_exam(self, session: AuthSession, exam_id: int) -> dict[str, Any] | None:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return ExamRepository.get_by_id(conn, exam_id)
         finally:
             conn.close()
 
     def get_pet_exams(self, session: AuthSession, pet_id: int) -> list[dict[str, Any]]:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return ExamRepository.get_by_pet_id(conn, pet_id)
         finally:
             conn.close()
 
     def list_exams(self, session: AuthSession, limit: int = 100) -> list[dict[str, Any]]:
-        self._validate_session(session)
         conn = self._get_connection()
         try:
+            self._validate_session(session, conn=conn)
             return ExamRepository.list_all(conn, limit=limit)
         finally:
             conn.close()

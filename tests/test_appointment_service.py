@@ -73,6 +73,51 @@ class TestAppointmentService(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.appointment_service.update_status(self.staff_session, appt_id, "invalid_status")
 
+    def test_create_appointment_invalid_date_rejected(self):
+        """QC Lỗi 2: scheduled_at là chuỗi không hợp lệ như 'abc-not-a-date' hoặc ngày sai lịch phải bị từ chối và không tạo bản ghi."""
+        # 1. Thử với chuỗi không phải ngày giờ
+        with self.assertRaises(ValueError) as ctx:
+            self.appointment_service.create_appointment(
+                self.staff_session,
+                {
+                    "pet_id": self.pet_id,
+                    "type": "Khám sức khỏe",
+                    "scheduled_at": "abc-not-a-date",
+                },
+            )
+        self.assertIn("không đúng định dạng", str(ctx.exception))
+
+        # 2. Thử với ngày sai lịch (31 tháng 2)
+        with self.assertRaises(ValueError):
+            self.appointment_service.create_appointment(
+                self.staff_session,
+                {
+                    "pet_id": self.pet_id,
+                    "type": "Khám sức khỏe",
+                    "scheduled_at": "2026-02-31 09:00",
+                },
+            )
+
+        # 3. Chứng minh DB hoàn toàn không phát sinh bản ghi appointment nào
+        conn = get_connection(self.db_path)
+        cnt = conn.execute("SELECT COUNT(*) as c FROM appointments").fetchone()["c"]
+        conn.close()
+        self.assertEqual(cnt, 0, "Không được tạo bản ghi khi thời gian hẹn không hợp lệ")
+
+    def test_create_appointment_date_normalization(self):
+        """QC Lỗi 2: Định dạng thời gian hợp lệ được parse và chuẩn hóa về YYYY-MM-DD HH:MM."""
+        appt_id = self.appointment_service.create_appointment(
+            self.staff_session,
+            {
+                "pet_id": self.pet_id,
+                "type": "Cắt tỉa lông",
+                "scheduled_at": "2026/10/28 15:45",
+            },
+        )
+        appt = self.appointment_service.get_appointment(self.staff_session, appt_id)
+        self.assertEqual(appt["scheduled_at"], "2026-10-28 15:45")
+
 
 if __name__ == "__main__":
     unittest.main()
+

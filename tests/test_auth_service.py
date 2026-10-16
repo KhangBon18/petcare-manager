@@ -100,6 +100,89 @@ class TestAuthService(unittest.TestCase):
                 active=0,
             )
 
+    def test_logged_in_staff_deactivated_is_blocked(self):
+        """QC Lỗi 1: Nhân viên đang đăng nhập, khi tài khoản bị khóa trong DB thì mọi thao tác sau đó phải bị chặn."""
+        from petcare.services.owner_service import OwnerService
+        owner_service = OwnerService(self.db_path)
+        admin_session = self.auth_service.login("admin", "Admin@123")
+        staff_session = self.auth_service.login("staff1", "Staff@123")
+
+        # Thao tác ban đầu thành công
+        owner_id = owner_service.create_owner(
+            staff_session,
+            {"full_name": "Khách ban đầu", "phone": "0987654321", "address": "Quận 3"},
+        )
+        self.assertGreater(owner_id, 0)
+
+        # Admin khóa tài khoản staff1 trong DB
+        self.auth_service.update_user(
+            admin_session,
+            user_id=staff_session.user_id,
+            full_name=staff_session.full_name,
+            role="staff",
+            active=0,
+        )
+
+        # Phiên staff cũ cố thực hiện nghiệp vụ tiếp theo phải bị chặn ngay lập tức
+        with self.assertRaises(PermissionError) as ctx:
+            owner_service.create_owner(
+                staff_session,
+                {"full_name": "Khách bị chặn", "phone": "0912345678", "address": "Quận 5"},
+            )
+        self.assertIn("khóa", str(ctx.exception))
+
+    def test_logged_in_admin_demoted_is_blocked(self):
+        """QC Lỗi 1: Admin đang đăng nhập, khi bị hạ quyền xuống staff trong DB thì các thao tác admin sau đó phải bị chặn."""
+        from petcare.services.catalog_service import CatalogService
+        catalog_service = CatalogService(self.db_path)
+        admin1_session = self.auth_service.login("admin", "Admin@123")
+
+        # Tạo thêm admin thứ 2
+        admin2_id = self.auth_service.create_user(
+            admin1_session,
+            username="admin2",
+            password="Admin2@123",
+            role="admin",
+            full_name="Quản Trị Viên 2",
+        )
+        admin2_session = self.auth_service.login("admin2", "Admin2@123")
+        self.assertTrue(admin2_session.is_admin())
+
+        # Admin 2 tạo dịch vụ thành công khi còn quyền
+        svc_id = catalog_service.create_service(
+            admin2_session,
+            {"name": "Dịch vụ thử nghiệm", "category": "Khám bệnh", "price_vnd": 120000},
+        )
+        self.assertGreater(svc_id, 0)
+
+        # Admin 1 hạ quyền Admin 2 xuống 'staff'
+        self.auth_service.update_user(
+            admin1_session,
+            user_id=admin2_id,
+            full_name="Quản Trị Viên 2",
+            role="staff",
+            active=1,
+        )
+
+        # Phiên cũ của Admin 2 (vẫn giữ role='admin' trong object) cố thực hiện thao tác quản trị phải bị chặn
+        with self.assertRaises(PermissionError) as ctx:
+            self.auth_service.create_user(
+                admin2_session,
+                username="hacker2",
+                password="Password123",
+                role="staff",
+                full_name="Tấn công",
+            )
+        self.assertIn("Quản trị viên", str(ctx.exception))
+
+        with self.assertRaises(PermissionError) as ctx:
+            catalog_service.create_service(
+                admin2_session,
+                {"name": "Dịch vụ trái phép", "category": "Khám bệnh", "price_vnd": 500000},
+            )
+        self.assertIn("Quản trị viên", str(ctx.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
+
