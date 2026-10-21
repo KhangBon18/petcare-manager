@@ -1,5 +1,8 @@
 # Báo cáo Cá nhân — Quý (docs/report/quy.md)
 
+> **Lưu ý về phiên bản:** Nội dung dưới đây ghi nhận đóng góp cho bản desktop phòng khám trước khi đổi yêu cầu. Cần tác giả rà soát và viết lại theo web MySQL/cửa hàng trước khi nộp; xem [báo cáo tổng kết hiện hành](final_report.md) và [dàn ý slide hiện hành](../slides/final_slides.md).
+
+
 - **Họ và tên**: Quý
 - **Vai trò**: Kỹ sư Nghiệp vụ Y tế & Báo cáo Hoạt động
 - **Mục tiêu đóng góp**: 25% khối lượng công việc

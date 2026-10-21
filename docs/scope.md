@@ -1,46 +1,23 @@
-# Phạm vi Dự án (scope.md)
+# Phạm vi PetCare Manager — phiên bản cửa hàng
 
-Tài liệu này xác định ranh giới phạm vi triển khai cho phiên bản v1.0.0 của PetCare Manager.
+## Trong phạm vi
 
----
+- Python + Flask; Jinja HTML, CSS và JavaScript thuần.
+- MySQL 8.0.16+, InnoDB, utf8mb4.
+- Người dùng Admin/Staff, phiên đăng nhập và phân quyền theo trạng thái hiện hành trong DB.
+- Khách hàng và lịch sử mua hàng.
+- Từng cá thể thú cưng đang bán, giá riêng, trạng thái available/sold/inactive và người mua sau khi thanh toán.
+- Sản phẩm có mã, danh mục, giá theo currency cửa hàng, tồn kho và lịch sử điều chỉnh.
+- Hóa đơn gồm sản phẩm số lượng nguyên và thú cưng đơn chiếc; snapshot giá/tên; thanh toán hoặc hủy unpaid.
+- Dashboard và báo cáo doanh thu theo paid_at, sản phẩm bán chạy, thú cưng đã bán, tồn kho.
+- Trợ lý hỏi đáp cửa hàng dựa trên context tổng hợp; endpoint AI tương thích OpenAI là tùy chọn.
+- Ảnh hồ sơ thú cưng, trường màu lông/mắt/đặc điểm và trang xếp hạng ảnh tương tự; phân tích AI Vision opt-in.
+- Giao diện responsive tiếng Việt, chạy cục bộ.
 
-## 1. Phạm vi Bắt buộc (In-Scope - Đã hoàn thành 100%)
+## Ngoài phạm vi phiên bản đầu
 
-- **Nền tảng**: Python 3.10 - 3.13, Tkinter/ttk, SQLite 3. Chạy cục bộ trên Windows và macOS.
-- **Xác thực & Người dùng**:
-  - Đăng nhập phiên làm việc, phân quyền `admin` và `staff`.
-  - Quản lý tài khoản người dùng, đổi mật khẩu, băm mật khẩu PBKDF2-HMAC-SHA256 với salt ngẫu nhiên.
-  - Bảo vệ tài khoản Quản trị viên hoạt động duy nhất.
-- **Khách hàng & Bệnh nhân**:
-  - Quản lý chủ nuôi (`owners`), kiểm tra tính hợp lệ số điện thoại, địa chỉ.
-  - Quản lý thú cưng (`pets`), kiểm tra ngày sinh, cân nặng không âm, chủ sở hữu phải tồn tại và đang hoạt động.
-  - Xem hồ sơ bệnh án tổng hợp (`PetProfileView`) với 4 tab: Khám, Tiêm, Hẹn, Chi phí.
-  - Cơ chế ngừng theo dõi (`active=0`) thay vì xóa vật lý khi có dữ liệu lịch sử liên kết.
-- **Y tế & Chăm sóc**:
-  - Quản lý danh mục dịch vụ và giá niêm yết (chỉ Admin được thêm/sửa/đổi giá).
-  - Hồ sơ khám bệnh (`examinations`): triệu chứng, chẩn đoán, thuốc; tạo lượt dịch vụ `service_visits` trong cùng transaction.
-  - Tiêm phòng (`vaccinations`): tên vaccine, ngày tiêm, ngày hẹn tiêm nhắc; tạo lượt dịch vụ trong cùng transaction. Bảng theo dõi nhắc nhở đến hạn trong 30 ngày.
-  - Lịch hẹn (`appointments`): lên lịch khám/spa, cập nhật trạng thái `planned`/`completed`/`cancelled`, không tự phát sinh phí.
-  - Lượt dịch vụ (`service_visits`): ghi nhận trực tiếp dịch vụ chăm sóc/tắm spa/xét nghiệm.
-- **Tài chính & Thu ngân**:
-  - Lập hóa đơn (`invoices`): gom các lượt chưa tính tiền của cùng một chủ nuôi.
-  - Ràng buộc tính phí một lần: mỗi lượt chỉ xuất hiện trên đúng một hóa đơn (`visit_id UNIQUE`).
-  - Thanh toán trực tiếp tại quầy: chuyển sang `paid`, ghi nhận `paid_at`. Thanh toán lặp trả về `already_paid`.
-  - Hủy hóa đơn `unpaid`: xóa chi tiết `invoice_items` để giải phóng `visit_id`, giữ header `cancelled`.
-  - Bảo vệ hóa đơn `paid`: bất biến, cấm sửa và cấm hủy.
-- **Báo cáo Thống kê**:
-  - Doanh thu thực thu chỉ tính từ các hóa đơn đã thanh toán theo ngày `paid_at`.
-  - Thống kê số hóa đơn hoàn tất, số ca khám bệnh, số lượng thú cưng duy nhất đã tiêm phòng.
-  - Phân bố thú cưng theo loài, danh sách dịch vụ phổ biến nhất.
+Không có khám, tiêm, lịch hẹn chăm sóc, dịch vụ spa, lịch nhắc, thanh toán online, tài khoản mua hàng công khai, triển khai Internet, detector/embedding thị giác đã huấn luyện, nhà cung cấp, đặt hàng online, PDF hoặc email/SMS. AI tạo sinh và AI Vision cần endpoint do người vận hành cấu hình; cấu hình trống vẫn hỗ trợ demo cục bộ.
 
----
+## Nguyên tắc dữ liệu
 
-## 2. Phạm vi Ngoài Dự án / Hướng Phát triển Tương lai (Out-of-Scope)
-
-- **Không mở rộng web/cloud/mobile**: Dự án tập trung hoàn thiện desktop app cục bộ.
-- **Không tích hợp cổng thanh toán trực tuyến** (MoMo, VNPay, Stripe,...): Chỉ hỗ trợ thanh toán trực tiếp tại quầy.
-- **Không quản lý xuất nhập tồn kho thuốc nâng cao**: Thuốc điều trị lưu trữ dưới dạng văn bản chỉ định trong hồ sơ khám.
-- **Tính năng mở rộng đề xuất giai đoạn 2**:
-  - Tích hợp biểu đồ trực quan hóa matplotlib.
-  - Quản lý ảnh chụp thú cưng (`assets/pets/`).
-  - Tự động gửi SMS/Email nhắc lịch tiêm phòng.
+Dùng database riêng petcare_shop_dev. Không chuyển clinic SQLite hay bản dump cũ tự động. Không ghi dữ liệu cá nhân vào seed. Hóa đơn đã trả và lịch sử tồn được bảo toàn.

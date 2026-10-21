@@ -1,68 +1,85 @@
-# Báo cáo Kết quả Kiểm thử Toàn diện (test_results.md)
+# Kết quả kiểm tra
 
-Cập nhật vào: 2026-10-16  
-Môi trường thực hiện: macOS, Python 3.13.3, Tkinter (Tcl/Tk 8.6), SQLite 3.
+Cập nhật: 2026-10-20. Môi trường kiểm thử: macOS, Python 3.13.3, Flask 3.1.3, Flask-WTF 1.3.0, mysql-connector-python 9.7.0, Babel 2.18.0, tzdata 2026.5, MySQL Server 8.4.11. Suite mới nhất gồm onboarding, tiền tệ, timezone tenant, runtime connection pool, export job/worker, worker health probes, kiểm soát tranh chấp giao dịch/kho/media, form giá đúng precision và giới hạn cấp phát khi xử lý ảnh.
 
----
+## Rà soát 2026-10-20
 
-## 1. Kết quả Kiểm thử Tự động (Automated Test Suite)
+- Trên MySQL 8.4 tạm, database mới và media directory tạm: `python -m unittest discover -s tests -v` — 203 tests, 0 failed, 0 errors, 0 skipped. Bao gồm upload ảnh, LSH tenant index, reindex descriptor legacy + tạo lại 8 bucket, tìm ảnh qua MySQL, và các regression hiện có.
+- Image benchmark chỉ dùng bảng tạm: 20.000 pet, 1% (200) ứng viên, 3 lượt warm cho median 114.87 ms / max 149.60 ms. Trường hợp 100% cùng hash kích hoạt full-scan fallback, median 1,149.27 ms / max 1,276.62 ms. Đây là kiểm tra hiệu năng có phân phối tổng hợp, chưa đo recall ảnh thật hoặc tải đồng thời.
+- `bandit` theo baseline CI, `compileall`, `git diff --check`, `docker compose config -q`, và `docker compose build web` đều đạt.
 
-Chạy lệnh kiểm thử toàn diện:
-```bash
-python3 -m unittest discover -s tests -v
-```
+## Đạt
 
-### Chi tiết 34 Ca Kiểm thử:
+- `.venv/bin/python -m compileall -q run.py main.py petcare tests scripts` — đạt.
+- Chạy toàn bộ suite sau khi mặc định đặt `Cache-Control: private, no-store, max-age=0` và `Pragma: no-cache` cho response của phiên xác thực: 197 tests, 0 failed, 0 errors (2026-10-19), trên MySQL test database tạm vừa tạo và xóa sau lượt chạy. Gồm migration locale cho schema cũ, locale browser/session, chặn redirect ngoài origin, render dashboard English và money formatting, trợ lý local/AI intent tiếng Anh, prompt English và context minimization, cùng các regression trước đó: trợ lý exact counts/preview, Vision labels và matching Anh–Việt, owner transfer concurrency, HTTPS QR, async export/worker, CSV formula-injection, TLS/CA rotation, image search/reindex/top-12 ranking, account/tenant isolation, trợ lý offline, quotas, timezone/DST, pool isolation, onboarding/cài đặt tenant, protected metrics, audit kho tuần tự khi điều chỉnh đồng thời, signed INT cap, ảnh thay đồng thời, precision giá, RGB/palette allocation và upload backpressure. Regression multi-store thử list/detail và API lookup invoice của customer/product/pet tenant khác bằng ID/từ khóa, cùng POST ngừng customer chéo tenant; không lộ record và trạng thái tenant nguồn không đổi. Activity log kiểm tra nhãn tiếng Việt/English và không lộ mã event nội bộ; ngôn ngữ tài khoản được xác nhận tồn tại sau phiên đăng nhập mới. Toàn bộ literal user-facing errors/flash trong route/service đều có English; field labels và thông báo tồn kho động được kiểm thêm theo trường hợp.
+- Chạy initializer cộng thêm trên `petcare_shop_dev`; cột locale và check constraint đã được cài. `/readyz` trả `{"status":"ready"}` sau migration.
+- Metrics operations: web tests xác nhận `/metrics` 404 khi chưa cấu hình, 401 với token thiếu/sai và fail-fast với token yếu; MySQL integration xác nhận scrape hợp lệ xuất queue/worker aggregate, không có tenant slug/email, đặt `no-store` và trả `text/plain`.
+- Image-search baseline: benchmark end-to-end trên 20.000 pet rows tạm, 5 lượt warm, median 955.83 ms/max 994.81 ms sau tối ưu JSON-direct; trước đó cùng setup đạt 1,129.86 ms median. Benchmark chỉ tạo bảng tạm trong `petcare_shop_test`; DB seed giữ nguyên. Chưa đại diện cho concurrency, managed MySQL hay chất lượng nhận dạng.
+- Cài đặt tenant: MySQL integration xác nhận owner đổi tên/múi giờ hợp lệ, currency/slug giữ nguyên, audit ghi trong tenant; timezone sai không đổi dữ liệu. Owner được phân biệt trong UI và POST hạ quyền/khóa bị từ chối. Staff nhận 403. Browser IAB truy cập `/store/settings` sau restart, cây accessibility có heading, labels, mô tả slug/currency/timezone và nút lưu; không gửi thay đổi từ browser.
+- Worker health: MySQL integration ghi hai heartbeat instance rồi xác nhận `/workersz` chuyển từ 200 ready sang 503 khi một worker báo lỗi, đồng thời dọn instance cũ hơn 30 ngày; unit tests xác nhận cập nhật được throttle, mã lỗi bị giới hạn và heartbeat phục hồi xóa trạng thái lỗi. Một web test có cookie cũ xác nhận health route bỏ qua truy vấn tải user. `/readyz` vẫn dành riêng cho web/schema.
+- Trợ lý UI: template render xác nhận nút xóa hội thoại có tên truy cập; JavaScript kiểm cú pháp đạt. In-app browser accessibility tree đọc được nhãn các trường tìm kiếm/chọn trong danh sách và form lập hóa đơn; kiểm tra này không thay thế audit WCAG hoặc kiểm thử tương tác bàn phím toàn diện.
+- Local smoke check sau additive migration và restart: `/healthz`, `/readyz`, `/workersz`, `/login` đều trả HTTP 200; web và hai worker đang chạy. `docker compose config --quiet`, build ba image web/email/export, `compileall`, JavaScript syntax và `git diff --check` đều đạt.
+- Chưa kiểm handshake TLS với MySQL production provider vì môi trường này không có endpoint/CA production; cần kiểm tra xác thực hostname và trạng thái mã hóa trên endpoint thật trước khi deploy.
+- Descriptor rollout: dry-run trên `petcare_shop_dev` tìm 4 ảnh đủ điều kiện, 0 ảnh thiếu/hỏng; `--apply` cập nhật 4 descriptor theo tenant/ID/tên ảnh, lần dry-run kế tiếp báo 0. Ảnh gốc không bị sửa.
+- Sau cập nhật giao diện/search, app local được khởi động lại; `/readyz` trả `ready`, `/login` trả HTTP 200.
+- Runtime MySQL pool: unit checks cho cache key, giới hạn cấu hình và khởi tạo session; MySQL integration giữ đồng thời mọi kết nối trong pool, set tenant context rồi checkout lại, xác nhận tenant context rỗng và timezone UTC. `.venv/bin/pip-audit -r requirements.txt` chạy lại ngày 2026-10-19 — không tìm thấy lỗ hổng dependency đã biết.
+- Static/source security: Bandit 1.9.4 chạy lại trên Python production source ngày 2026-10-19 với baseline đã review gồm 38 phát hiện cũ, 0 mức High; không có phát hiện mới. Đây là baseline có ngoại lệ, không phải kết quả scan sạch. Trivy 0.76.0 quét toàn bộ source tree bằng secret scanner ngày 2026-10-18: 0 finding (bỏ `.venv`, `.git`, `instance` và `__pycache__`); container scan cùng ngày không có lỗ hổng OS/library HIGH/CRITICAL có bản vá hoặc secret finding. Trivy không được cài trong môi trường lượt này nên không chạy lại. Bốn ngoại lệ có hạn trong `.trivyignore.yaml` chỉ khớp các phiên bản SBOM không có trong image cuối; package inventory xác nhận `msgpack`/`setuptools` không cài và image dùng `urllib3 2.8.0`, không phải 2.7.0. GitHub Actions cấu hình Bandit, source-tree Trivy và image Trivy; hosted workflow chưa chạy.
+- Negative control cho secret scan: image tạm dựa trên production image, có chèn GitHub token giả công khai trong `/app/probe.txt`, bị Trivy phát hiện mức CRITICAL và trả exit 1 như cấu hình; image thử và context đã được xóa. Điều này xác nhận Trivy scan secret hoạt động trên lớp ứng dụng của image.
+- Assistant privacy: khi gửi ra provider, chỉ tạo ngữ cảnh theo nhóm ý định; câu hỏi doanh thu chỉ chứa doanh thu và currency, hỏi tồn kho đã bỏ giá/category, còn câu hỏi chung không nhận dữ liệu cửa hàng. UI nói rõ câu hỏi và tối đa 8 tin nhắn chat vẫn được gửi, cũng như danh mục thú cưng/sản phẩm có thể được gửi cho provider. Unit tests xác nhận thu hẹp dữ liệu; web tests xác nhận disclosure cả khi provider bật và local-only.
+- Tenant timezone: unit checks validate IANA names, UTC conversion, UTC-naive timestamp rendering, 23/25-hour DST days and idempotent migration marker; MySQL integration confirms tenant-local report boundaries on the Los Angeles spring-forward date. Readiness refuses traffic until `datetime_storage_utc_v1` is applied.
+- Tenant exports serialize timestamps with an explicit `+00:00` offset; tests cover naive MySQL datetime and aware datetime conversion.
+- Migration local: `petcare_shop_dev` và `petcare_shop_test` giữ nguyên số dòng ở các bảng hiện có; dev có 33 cột DATETIME được phát hiện, session UTC, các biên thời gian không phải `updated_at` khớp độ lệch −7 giờ. Bốn bảng nghiệp vụ chính không có bản ghi `updated_at < created_at`. Cả hai DB đều có marker. Production vẫn cần backup được xác minh và diễn tập migration.
+- Email security: MySQL integration xác nhận payload outbox không lộ địa chỉ/nguyên văn link, SMTP lỗi được retry rồi đánh dấu sent, token email hết hạn không bị worker claim; verify/reset token dùng một lần và reset thu hồi phiên cũ.
+- MySQL account separation: 7 unit tests cover migrator configuration, production rejection without a dedicated account, dev/test fallback and initializer connection selection.
+- Disposable MySQL 8.4 privilege exercise: migration account initialized the schema; app configured in production mode with the DML-only runtime account returned `/readyz` 200 and could read, while MySQL denied `CREATE TABLE`. The isolated container/database was removed afterward; no project data was used.
+- Media storage: Boto3 Stubber exercises private S3 `PutObject`/`GetObject`/`DeleteObject`, AES-256 SSE request, 404 mapping, unsafe configuration rejection and HTTPS requirement; migration tests verify dry-run, copy/hash verification, source preservation and checksum failure handling. This is protocol-level testing; no live cloud bucket was configured.
+- Product edit regression: MySQL web integration confirms editing fields without uploading a replacement preserves the current product photo and its authenticated photo route.
+- Tenant export releases the consistent-read snapshot and closes the MySQL connection before reading remote media; the full MySQL tenant-export integration suite passes after this change.
+- Catalog: `EXPLAIN` trên fixture 13 khách, 22 sản phẩm, 10 thú cưng, 7 hóa đơn. Hóa đơn dùng `idx_invoices_tenant_created`; ba danh mục còn lại vẫn chọn scan/filesort trên bộ dữ liệu nhỏ. Empty search nay bỏ predicate rỗng; truy vấn substring có từ khóa vẫn cần benchmark ở quy mô thực tế.
+- Ảnh: unit test kiểm tra thư mục/tệp mới ở mode 0700/0600 trên POSIX và lệnh siết quyền chỉ chạm ảnh UUID đã biết; regression proxy kiểm tra riêng cả app factory và production WSGI.
+- Integration tests chạy bằng MySQL thật trong database test tách biệt: thanh toán, snapshot, cập nhật kho và thú cưng, idempotency, cạnh tranh thanh toán đơn vị cuối; web login, role, khóa và hạ quyền tài khoản.
+- MySQL stock-adjustment integration khóa dòng sản phẩm để điều chỉnh đồng thời tạo đúng hai chuyển động 10→15→20; điều chỉnh vượt 2.147.483.647 được từ chối mà không đổi kho hoặc ghi movement/audit.
+- MySQL media integration giữ khóa sản phẩm/thú cưng trong lần cập nhật ảnh đồng thời; kiểm tra file ảnh kết thúc khớp đúng `photo_filename` trong DB và không sót ảnh thay thế.
+- Integration suite mới xác nhận lookup khách hàng/mặt hàng theo trang, audit CRUD hồ sơ khách hàng/sản phẩm/thú cưng, audit invoice tạo/thu tiền và điều chỉnh tồn; role admin/staff được kiểm tra với trang activity.
+- SaaS integration: hai tenant dùng cùng mã sản phẩm; truy vấn danh mục, detail, hóa đơn cross-tenant, ảnh hồ sơ và role/switching được kiểm tra. Composite FK từ chối hóa đơn dùng khách khác tenant. Store provisioning có kiểm tra tạo tenant/owner.
+- Account profile integration: xác thực lại mật khẩu trước khi đổi tên, sai mật khẩu không đổi dữ liệu, tên dùng chung cập nhật thành công và ghi audit không chứa giá trị tên; regression kiểm store admin không sửa được tên/mật khẩu của tài khoản nhiều membership, kể cả các membership khác đang inactive.
+- Invitation integration: MySQL kiểm chứng lời mời tạo tài khoản mới, gắn tài khoản cũ vào tenant khác, role membership, dùng một lần và thu hồi; UI quản trị `/users/` đã mở được trên app local sau khi restart.
+- Signup integration: owner signup tạo membership chưa hoạt động, encrypted verification mail không lộ token, xác minh kích hoạt đúng membership; unverified reservation hết hạn bị dọn chỉ khi tenant còn trống.
+- Onboarding resilience: unit regression xác nhận cleanup khóa account trước membership; MySQL integration xác nhận index mới được cài bằng migration cộng thêm; worker retry khi dispatch gặp lỗi tạm thời. Namespace ảnh có unit checks cho tên tenant-scoped và S3 key; ảnh UUID cũ vẫn tương thích.
+- Migration regression: chạy lại initializer sau public signup không tạo membership bổ sung vào tenant `main`.
+- Currency regression: VND migration giữ nguyên giá cũ; USD catalog/hóa đơn giữ chính xác minor units và chụp currency_code; validator/formatter kiểm USD (2), JPY (0), KWD (3) cùng current tender code set.
+- Cấu hình web kiểm tra origin invite URL: production từ chối HTTP hoặc base URL không đáng tin; link dùng `PUBLIC_BASE_URL`, không dùng request Host.
+- Tenant export: MySQL integration kiểm tra snapshot, media, cô lập tenant, loại password/token hashes, quyền file 0600, không ghi đè, verify, decrypt và SHA-256. Unit tests kiểm tra chuyển ZIP cũ, sai passphrase, ciphertext bị sửa, từ chối tạo ZIP plaintext khi auth lỗi, quyền 0600, checksum sai và path traversal.
+- AI client tests xác nhận OpenAI-compatible request gửi model/API key/ảnh chuẩn hóa, từ chối HTTP production, credentials/query trong URL, payload sai và response quá giới hạn. Vision tests xác nhận JSON model hỏng/rỗng quay về local ranking; đây là kiểm thử giao thức giả lập, provider thật chưa cấu hình.
+- Search UI dùng thứ tự gợi ý thay cho phần trăm tương tự; web integration kiểm tra thông điệp giải thích rằng điểm nội bộ không phải xác suất nhận diện. Metadata hoa văn/dáng dùng chung một trường được tính một lần.
+- Chat AI đặt chỉ dẫn an toàn ở system message riêng; dữ liệu cửa hàng do người dùng nhập được gửi ở message khác và có kiểm thử prompt injection.
+- MySQL integration cho self-service export xác nhận admin-only, re-auth bằng mật khẩu, passphrase đúng/khác, queue ciphertext, worker owner/admin recheck, tenant/requester scope, AES-GCM verify, audit event, throttle, no-store, tải lại sau ngắt stream sớm và passphrase được xóa khi hoàn tất.
+- Sau thay đổi export worker, `python -m compileall -q petcare tests`, `docker compose config --quiet`, `node --check petcare/static/js/export-job.js`, `git diff --check` và `docker compose build web email-worker export-worker` đều đạt.
+- `.venv/bin/pip-audit -r requirements.txt` không tìm thấy lỗ hổng đã biết trong dependency ứng dụng tại thời điểm kiểm tra.
+- App local được khởi động lại với mã mới; `/readyz` trả 200 `ready`, `/login` trả 200, trang account settings chuyển anonymous về login 302. Email worker `--once` chạy và báo 0 due jobs khi chưa cấu hình email.
+- Schema additive trên `petcare_shop_dev` đã nâng cấp email outbox/expiry và thêm export jobs; không chạy seed hoặc reset dữ liệu. `/readyz` xác nhận schema mới sau migration.
+- Owner handoff: initializer cộng thêm bảng `tenant_owner_transfers` trên `petcare_shop_dev`; schema có 19 bảng và bảng mới chưa có bản ghi. Sau khi restart web app, `/healthz`, `/readyz`, `/workersz`, `/login` trả HTTP 200; trang ownership ẩn sau login với chuyển hướng 302.
+- Phone camera production guard: config sai định dạng bị từ chối và URL QR HTTP không thể bật trong production; Compose config, `compileall` và `git diff --check` đạt.
+- Sau cập nhật catalog: compileall, kiểm tra cú pháp hai file JavaScript và `git diff --check` đều đạt.
+- Backup utility: 8/8 unit tests đạt với dump/ảnh giả lập, gồm bundle mã hóa, verify/decrypt, sai passphrase, sửa ciphertext, payload tampering, chuyển backup plaintext cũ, từ chối ghi đè, path traversal và bảo vệ thông tin xác thực.
+- Diễn tập local ngày 2026-10-18: tạo backup mã hóa từ MySQL Compose `petcare_shop_test`, verify/decrypt, import vào database test mới, đối chiếu đúng 13 khách, 22 sản phẩm, 10 thú cưng, 7 hóa đơn và trích 9 ảnh; database tạm đã xóa. Chưa restore từ backup managed production.
+- TRUST_PROXY: regression test xác nhận chỉ forwarded IP/protocol được tin cậy, còn forwarded host/port bị bỏ qua; `ProxyFix` chỉ được bọc một lần qua app factory.
+- Readiness contract: unit checks từ chối thiếu cột `photo_descriptor` hoặc composite FK tenant; MySQL integration xác nhận schema đã migrate trả 200. Sau đó full suite đạt 82/82.
+- Sau sửa WSGI/readiness: Python `compileall`, `git diff --check`, `docker compose config --quiet`, `docker compose build web` đều đạt; app local `/readyz` trả 200 với schema hiện tại.
+- UI tìm ảnh: browser xác nhận assistant CTA nằm trong thẻ trợ giúp, mở/đóng panel đúng và không còn launcher che nội dung.
+- Sau nâng cấp, petcare_shop_dev đã initialize và chạy seed hai lần: users 2, customers 13, products 22, pets 10, ảnh pet 4, hóa đơn demo 7, stock movements 36. Seed lần hai không tạo thêm hàng; các hàng cũ được giữ nguyên.
+- Migration cộng thêm mô tả/ngưỡng/ảnh sản phẩm và index tồn kho đã chạy trên petcare_shop_dev.
+- Flask test client: /login 200; CSS local 200; /dashboard và /products/ chuyển về login 302 khi chưa xác thực.
+- Trình duyệt: đăng nhập admin, dashboard và form hóa đơn mở được. Trên DB test riêng đã lập rồi thanh toán hóa đơn 2.250.000 ₫ gồm thức ăn, phụ kiện và Miu; trang chi tiết hiển thị đúng snapshot và trạng thái, tồn lần lượt giảm 10→8 và 5→4, Miu được đánh dấu đã bán. Sau đó xóa giao dịch thử, khôi phục tồn 10/5 và đưa Miu về trạng thái sẵn sàng.
+- Giao diện đăng nhập được kiểm tra trực quan tại khung 628 × 627 sau khi sửa lỗi minh họa chồng lên tiêu đề ở cửa sổ hẹp.
+- Web integration: form Admin tạo khách hàng/sản phẩm/thú cưng, GET trang chi tiết hóa đơn và POST thanh toán có CSRF đều đạt; fixture được dọn sau test.
+- Unit: câu trả lời local của assistant, ảnh chuẩn hóa/so sánh/serialize, ảnh hỏng và vượt byte limit bị từ chối.
+- MySQL integration: Admin upload ảnh hồ sơ, MySQL lưu descriptor, tìm ảnh trả hồ sơ phù hợp; chat dùng CSRF và trả danh mục theo context thật.
+- MySQL integration: trang tìm ảnh có điều khiển camera laptop, `capture=environment` cho điện thoại, QR LAN chỉ xuất hiện khi bật cấu hình; kiểm tra QR PNG được tạo cục bộ.
+- Chrome trên DB phát triển: trợ lý trả lời tồn kho/sản phẩm khớp dữ liệu demo; trang tìm ảnh hiển thị camera, hướng dẫn camera điện thoại và chế độ local. Không bật camera hoặc chấp nhận quyền hệ điều hành khi kiểm tra.
 
-| Module Kiểm thử | Số ca test | Trạng thái | Nội dung kiểm tra |
-|---|---|---|---|
-| `test_auth_service.py` | 5 | **100% PASS** | Đăng nhập Admin, Nhân viên, mật khẩu sai, băm PBKDF2, Admin tạo user, Staff bị chặn tạo user, bảo vệ Admin cuối |
-| `test_owner_service.py` | 5 | **100% PASS** | Thêm chủ nuôi, validation SĐT/tên/địa chỉ, cập nhật, tìm kiếm, xóa vs chuyển sang ngừng theo dõi khi có dữ liệu |
-| `test_pet_service.py` | 5 | **100% PASS** | Thêm thú cưng, chủ không tồn tại/inactive bị từ chối, cân nặng âm bị từ chối, ngày sinh tương lai bị từ chối, lọc loài, xóa vs deactivate |
-| `test_catalog_service.py` | 3 | **100% PASS** | Admin thêm dịch vụ, Staff bị chặn đổi giá/thêm dịch vụ, kiểm tra giá >= 0, trùng tên dịch vụ |
-| `test_exam_service.py` | 3 | **100% PASS** | Ghi nhận ca khám tạo cả khám và lượt dịch vụ trong cùng 1 transaction, đổi giá danh mục không ảnh hưởng giá cũ, validate dữ liệu |
-| `test_vaccination_service.py` | 3 | **100% PASS** | Ghi nhận tiêm vaccine và lượt dịch vụ, kiểm tra ngày hẹn tiêm nhắc (phải sau ngày tiêm), lọc lịch nhắc đến hạn trong 30 ngày, đánh dấu hoàn tất |
-| `test_appointment_service.py` | 2 | **100% PASS** | Đặt lịch hẹn không tạo bất kỳ khoản phí nào, cập nhật trạng thái `planned` -> `completed` / `cancelled` |
-| `test_invoice_service.py` | 5 | **100% PASS** | Lập hóa đơn từ nhiều lượt dịch vụ, chặn lượt khác chủ, chặn tính tiền lặp (`visit_id UNIQUE`), thanh toán trực tiếp, thanh toán lặp trả về `already_paid`, hủy đơn unpaid giải phóng visit, cấm hủy đơn paid |
-| `test_report_queries.py` | 1 | **100% PASS** | Tính tổng doanh thu theo `paid_at`, loại trừ đơn unpaid, đếm số ca khám, số thú cưng tiêm phòng (`COUNT DISTINCT`), cơ cấu loài, top dịch vụ |
-| `test_integration_flow.py` | 1 | **100% PASS** | **Luồng tích hợp trọn vẹn Lan & Miu**: Tạo Lan -> Miu -> Hẹn -> Khám -> Tiêm -> Tắm -> Lập hóa đơn (530k) -> Thanh toán -> Đối chiếu báo cáo |
-| `test_ui_navigation.py` | 1 | **100% PASS** | Khởi chạy `PetCareApp`, hiển thị LoginView, đăng nhập Admin, chuyển đổi mượt mà qua lại giữa 10 màn hình giao diện không lỗi |
+## Phạm vi chưa kiểm
 
-**Tổng kết**: **34/34 tests đạt (100% Success)**.
-
----
-
-## 2. Kiểm tra Cú pháp & Khởi tạo Database
-
-| Lệnh thực thi | Kết quả | Ghi chú |
-|---|---|---|
-| `python3 -m compileall -q main.py petcare tests` | **ĐẠT** | 0 lỗi cú pháp, 0 cảnh báo |
-| `python3 -m petcare.database.initialize` | **ĐẠT** | Tạo an toàn 10 bảng dữ liệu (`CREATE TABLE IF NOT EXISTS`), bảo toàn dữ liệu cũ |
-| `python3 -m petcare.database.seed` (chạy 2 lần) | **ĐẠT** | Nạp dữ liệu mẫu thành công; cơ chế idempotent giữ nguyên số lượng bản ghi (không nhân đôi) |
-| Kiểm tra khóa ngoại (`PRAGMA foreign_keys = ON;`) | **ĐẠT** | SQLite tự động cưỡng chế khóa ngoại trên mọi kết nối |
-
----
-
-## 3. Danh sách Kiểm tra Giao diện Thủ công (Manual Checklist)
-
-Dành cho các thành viên (Khang, Quân, Quý, Nhàn) khi chạy trên Windows và macOS:
-
-- [x] Chạy `python main.py`, cửa sổ đăng nhập hiển thị chính giữa với thông tin tài khoản demo.
-- [x] Đăng nhập bằng `admin` / `Admin@123`:
-  - Thanh bên hiển thị đầy đủ 10 mục điều hướng (có cả "👥 Tài khoản").
-- [x] Đăng xuất, đăng nhập bằng `staff1` / `Staff@123`:
-  - Thanh bên tự động ẩn mục "👥 Tài khoản".
-- [x] Vào mục "🐾 Chủ nuôi":
-  - Thêm một chủ nuôi mới -> Danh sách cập nhật tức thì.
-- [x] Vào mục "🐶 Thú cưng":
-  - Thêm thú cưng thuộc chủ nuôi vừa tạo -> Danh sách cập nhật ngay.
-  - Nhấp đúp vào thú cưng -> Mở "Hồ sơ tổng hợp" hiển thị đầy đủ 4 tab.
-- [x] Vào mục "🩺 Khám bệnh" & "💉 Tiêm phòng":
-  - Ghi nhận ca khám hoặc mũi tiêm -> Giá tiền được tự động lấy từ danh mục dịch vụ.
-- [x] Vào mục "💳 Hóa đơn":
-  - Chọn chủ nuôi -> Hiển thị danh sách các lượt chưa tính tiền.
-  - Bấm "Tạo hóa đơn" -> Hóa đơn được tạo ở trạng thái "Chưa thanh toán".
-  - Bấm "Thanh toán trực tiếp" -> Hóa đơn chuyển sang "Đã thanh toán" và ghi nhận giờ trả tiền.
-- [x] Vào mục "📊 Thống kê":
-  - Chọn ngày hôm nay -> Thẻ doanh thu và top dịch vụ cập nhật ngay lập tức.
-- [x] Tắt ứng dụng, mở lại `python main.py`: Dữ liệu vừa nhập vẫn còn nguyên vẹn trong SQLite.
+- Chưa thử cài sạch trên Windows.
+- Không chạy kiểm tải, triển khai Internet, HTTPS, thanh toán online, refund hay trả hàng; các mục này ngoài phạm vi hiện tại.
+- Không cấu hình endpoint AI trong nghiệm thu, nên chưa kiểm AI tạo sinh/Vision trực tuyến. Đã kiểm nhánh local/fallback.

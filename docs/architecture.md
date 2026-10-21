@@ -1,94 +1,56 @@
-# Kiến trúc Hệ thống PetCare Manager (architecture.md)
+# Kiến trúc hiện hành
 
-Tài liệu này mô tả chi tiết kiến trúc phần mềm, nguyên tắc thiết kế và luồng dữ liệu của ứng dụng PetCare Manager.
+## Quyết định tenancy cho SaaS
 
----
+Hướng phát triển được chọn là **multi-store SaaS dùng chung nền tảng**: nhiều cửa hàng dùng cùng ứng dụng, schema và cụm MySQL, dữ liệu nghiệp vụ được phân vùng logic theo `tenant_id`. Tài khoản là danh tính toàn nền tảng; quyền owner/admin/staff thuộc membership của từng cửa hàng. Không tạo một bản cài hoặc database riêng cho mỗi cửa hàng ở giai đoạn này.
 
-## 1. Mô hình Kiến trúc 3 Lớp (Three-Tier Architecture)
+Ranh giới tenant được kiểm tra ở route/service/repository và củng cố bằng composite foreign keys trong MySQL. Ảnh tải lên mới mang namespace tenant trong định danh; S3 đặt object dưới `tenants/<id>/<loại ảnh>/...`, và route ảnh xác minh cả quyền sở hữu bản ghi lẫn namespace. UUID ảnh từ dữ liệu cũ vẫn đọc được; cleanup chỉ xóa object cũ sau khi xác nhận không còn tenant nào tham chiếu. Bucket luôn private. Onboarding cho chọn tiền tệ và múi giờ IANA hợp lệ. `DATETIME` được lưu theo UTC-naive, session MySQL ghim UTC, còn ngày nghiệp vụ và hiển thị đổi theo múi giờ từng cửa hàng, gồm khoảng ngày có DST. Migration một lần chuyển timestamp cũ từ giờ Việt Nam cố định sang UTC và ghi marker trong `schema_migrations`. Giá dùng `DECIMAL(20,4)`, validator áp dụng độ chính xác theo current tender currency và hóa đơn snapshot mã tiền; currency cũ được backfill từ cột VND mà không đổi trị số. Ngôn ngữ giao diện được lưu theo danh tính tài khoản nên tiếp tục áp dụng qua các phiên và cửa hàng khác nhau. Chưa có FX/đổi tiền tệ, thuế, billing, xóa/lưu giữ tenant, quota theo gói hay partitioning theo tải thật; bản English đã mở rộng qua các module bán hàng và màn hình quản trị gồm cài đặt, onboarding, thành viên, xuất dữ liệu, owner transfer và audit. Email, một số thông báo/validation server, nội dung cũ trong audit và định dạng locale vẫn chưa đầy đủ; các nội dung này vẫn là launch gate.
 
-Ứng dụng được thiết kế phân tầng nghiêm ngặt nhằm tách biệt giao diện người dùng, quy tắc nghiệp vụ và truy xuất dữ liệu:
+## Luồng request
 
-```
-+--------------------------------------------------------------+
-|                   TẦNG GIAO DIỆN (UI Layer)                  |
-|    petcare/ui/: Tkinter/ttk, Screens, Widgets, Dialogs       |
-+--------------------------------------------------------------+
-                               | Gọi phương thức (Truyền data & Session)
-                               v
-+--------------------------------------------------------------+
-|                  TẦNG NGHIỆP VỤ (Service Layer)              |
-|  petcare/services/: AuthService, OwnerService, PetService,   |
-|   CatalogService, ExamService, VaccinationService,           |
-|   AppointmentService, VisitService, InvoiceService, Report   |
-+--------------------------------------------------------------+
-                               | Mở kết nối, điều phối Transaction
-                               v
-+--------------------------------------------------------------+
-|                 TẦNG DỮ LIỆU (Repository Layer)              |
-|  petcare/repositories/: UserRepository, OwnerRepository,     |
-|   PetRepository, CatalogRepository, ExamRepository, ...      |
-+--------------------------------------------------------------+
-                               | Thực thi SQL có tham số (?)
-                               v
-+--------------------------------------------------------------+
-|                     SQLite Cơ sở Dữ liệu                     |
-|           data/petcare.db (PRAGMA foreign_keys = ON;)        |
-+--------------------------------------------------------------+
-```
+Trình duyệt gửi GET/POST đến Flask. Blueprint kiểm tra phiên, CSRF và quyền; route gọi service; service xác thực dữ liệu và điều phối transaction; repository thực hiện truy vấn MySQL có tham số. GET không thay đổi dữ liệu. Sau POST thành công, route redirect để tránh gửi lại form.
 
-### Nguyên tắc bất biến giữa các tầng:
-1. **UI Layer (`petcare/ui/`)**:
-   - Chỉ chịu trách nhiệm hiển thị giao diện, thu thập sự kiện người dùng và gọi xuống Service layer.
-   - **Tuyệt đối không chứa câu lệnh SQL trong callback giao diện**.
-   - Không trực tiếp can thiệp hoặc kết thúc giao dịch cơ sở dữ liệu.
-2. **Service Layer (`petcare/services/`)**:
-   - Trung tâm xử lý logic nghiệp vụ và kiểm tra tính hợp lệ dữ liệu (validation).
-   - Kiểm tra phân quyền dựa trên `AuthSession` (`is_admin()` vs `is_staff()`).
-   - Điều phối giao dịch (`transaction(conn)`): Quản lý `commit()` khi toàn bộ các thao tác thành công hoặc `rollback()` khi có ngoại lệ.
-   - Không phụ thuộc hay import bất kỳ widget nào của UI.
-3. **Repository Layer (`petcare/repositories/`)**:
-   - Chứa các hàm thực thi SQL với tham số an toàn (`?`) chống SQL Injection.
-   - Nhận đối tượng kết nối `conn` của transaction hiện tại từ Service.
-   - **Không tự ý commit hoặc rollback** để tránh phá vỡ tính nguyên tố (atomicity) của transaction do Service điều phối.
+## Thành phần
 
----
+- App factory ở petcare/__init__.py đăng ký CSRF, blueprint tài khoản/xác minh email/khôi phục mật khẩu và error handler; response của phiên đã đăng nhập bị đánh dấu `private, no-store` để trình duyệt không lưu lại dữ liệu tenant sau đăng xuất hoặc chuyển cửa hàng.
+- petcare/auth.py tải user, membership và quyền cửa hàng đang chọn từ MySQL trước mỗi request có đăng nhập. Session có chữ ký lưu user id, tenant id và `session_version`; đổi mật khẩu hoặc khóa/mở lại membership tăng version để thu hồi các cookie phiên cũ.
+- Danh tính gồm tên hiển thị/mật khẩu dùng chung toàn nền tảng, còn role/active thuộc từng membership. Admin cửa hàng không được sửa tên hoặc mật khẩu toàn cục khi user có nhiều membership, kể cả membership đang inactive; chủ tài khoản đổi tên tại `/account/settings` sau re-auth. Tên thay đổi được audit trên membership đang hoạt động mà không lưu giá trị tên vào log.
+- Owner được nhận diện riêng trong danh sách thành viên; màn quản trị cửa hàng không thể khóa hoặc hạ quyền owner. Luồng bàn giao tại `/users/ownership` yêu cầu owner nhập lại mật khẩu, chọn admin đang hoạt động, rồi admin mục tiêu đăng nhập và xác thực lại trong 72 giờ. Khi chấp nhận, membership của người gửi chuyển thành admin và người nhận thành owner trong cùng transaction; yêu cầu có thể bị thu hồi bằng re-auth, ghi audit, giới hạn tần suất và chỉ gửi email thông báo tới địa chỉ đã xác minh. Email không chứa bí mật xác nhận. Owner/admin quản lý tên hiển thị cửa hàng và timezone tenant tại `/store/settings`; slug giữ ổn định, currency không đổi cho đến khi có FX/ledger.
+- petcare/services/ giữ quy tắc nghiệp vụ và transaction.
+- petcare/repositories/ giữ SQL MySQL, không commit.
+- `petcare.database.connection` cấp MySQL connections qua pool thread-safe theo process. Mỗi checkout reset về UTC và `@petcare_tenant_id = NULL`; cấu hình pool được giới hạn để ngân sách kết nối có thể tính theo số web/worker process. Production bắt buộc `DB_SSL_CA` và bật xác minh CA lẫn hostname cho app, email worker và migration connections; thay CA tạo pool mới.
+- petcare/templates/ dùng Jinja autoescape mặc định.
+- petcare/static/ chứa CSS/JS local, không phụ thuộc CDN.
+- petcare/database/ chứa schema InnoDB, kết nối, migration cộng thêm, provision cửa hàng và seed. `audit_events` ghi thay đổi nghiệp vụ trong cùng transaction và sự kiện đăng nhập/đăng xuất/chuyển cửa hàng/cài đặt tenant theo cửa hàng; trang quản trị `/activity/` chỉ đọc và phân trang 25 sự kiện.
+- petcare/vision/ xác thực và chuẩn hóa JPEG không metadata, trích xuất descriptor màu/cấu trúc; histogram màu có thêm vùng trung tâm để giảm ảnh hưởng của nền, còn lưới cấu trúc dùng toàn ảnh. SimHash 64-bit chia thành tám band LSH theo tenant để truy xuất nhanh ứng viên gần; descriptor đầy đủ vẫn xếp hạng cuối, top-12 được giữ trong bộ nhớ. Với danh mục có chỉ mục đầy đủ, so sánh chỉ chạy trên tập ứng viên; hồ sơ chưa reindex và catalog có bucket quá rộng sẽ dùng luồng đầy đủ tương thích. Tìm kiếm LSH là gần đúng và có thể bỏ sót một số ảnh tương tự; UI nói rõ điều này. Lệnh `python -m petcare.vision.reindex_pet_descriptors` có chế độ dry-run và cập nhật descriptor/chỉ mục theo batch. Ảnh tìm kiếm được xử lý ở app server, không lưu vào hồ sơ; chỉ gửi tới endpoint cấu hình khi AI Vision bật. Ảnh hồ sơ mới có định danh tenant-scoped, `MEDIA_STORAGE_BACKEND=local` dùng volume riêng tư còn `s3` dùng object key theo tenant trong bucket private. UUID ảnh cũ vẫn được đọc tương thích. Photo route xác minh membership, quyền sở hữu trong MySQL và tenant namespace trước khi đọc object. Descriptor và chỉ mục dẫn xuất đều ở MySQL.
+- petcare/ai/ gọi endpoint chat-completions tương thích OpenAI khi được cấu hình. Mặc định AI ngoại tuyến; AI Vision cần bật riêng. Trợ lý gửi ngữ cảnh cửa hàng theo phạm vi câu hỏi: ví dụ doanh thu chỉ nhận số doanh thu và currency, còn hỏi sản phẩm có thể nhận tên/giá/tồn kho. Không tự gửi hồ sơ khách hàng; câu hỏi và tối đa 8 tin nhắn lịch sử từ client vẫn được gửi, nên UI cảnh báo rõ nội dung outbound. Chính sách lưu giữ/vùng xử lý của endpoint cần được chốt trước production.
+- Các trang khách hàng/sản phẩm/thú cưng/hóa đơn dùng count + LIMIT/OFFSET, 25 kết quả mỗi trang. Chat, quét ảnh và upload ảnh hồ sơ thú cưng/sản phẩm dùng quota theo tài khoản và địa chỉ mạng HMAC trong MySQL; không lưu IP thô, và giới hạn mạng chia sẻ giữa web worker/instance dùng cùng database.
+- Form hóa đơn chỉ tải trang đầu cho từng nhóm; các ô tìm kiếm gọi route JSON đã xác thực, giới hạn 25 kết quả/trang và phân trang độc lập sản phẩm với thú cưng.
 
-## 2. Quản lý Giao dịch Kép (Atomic Transactions)
+## Giao dịch thanh toán
 
-Trong y tế thú cưng, một ca khám bệnh hoặc tiêm phòng luôn đồng thời tạo ra một bản ghi hồ sơ chuyên môn và một lượt tính phí dịch vụ. PetCare Manager đảm bảo tính toàn vẹn tuyệt đối:
+InvoiceService mở một MySQL transaction, xác nhận actor, khóa hóa đơn unpaid, đọc/khóa các hàng hóa theo id tăng dần, xác thực lại tồn và cá thể available, giảm tồn và ghi stock_movements, gắn buyer_id cho thú cưng, sau đó cập nhật paid_at/status. Nếu bất kỳ bước nào lỗi thì rollback toàn bộ.
 
-```
-[Bác sĩ tạo ca khám] -> ExamService.record_exam()
-                             |
-                   +---------+---------+ (Mở Transaction chung)
-                   |                   |
-                   v                   v
-      VisitRepository.create_visit()  ExamRepository.create()
-      (Tạo lượt dịch vụ với snapshot   (Lưu triệu chứng, chẩn đoán
-       giá niêm yết hiện tại)          và liên kết visit_id UNIQUE)
-                   |                   |
-                   +---------+---------+
-                             |
-            [Tất cả thành công? --> conn.commit()]
-            [Bất kỳ lỗi nào?   --> conn.rollback()]
-```
+Hàng hóa chưa bị giữ khi hóa đơn ở trạng thái unpaid. Một hóa đơn khác có thể thanh toán trước; lần thanh toán còn lại phải kiểm tra lại tồn/trạng thái và từ chối nếu không còn hàng.
 
-- Ràng buộc `visit_id UNIQUE` trên bảng `examinations` và `vaccinations` ngăn chặn ở mức cơ sở dữ liệu việc một lượt dịch vụ bị liên kết lặp.
-- Nếu việc ghi ca khám thành công nhưng lưu đơn thuốc hoặc lượt dịch vụ phát sinh lỗi, toàn bộ thao tác sẽ bị rollback về trạng thái ban đầu.
+## Phiên và quyền
 
----
+Role không lấy từ cookie/form. Mỗi request tải user hiện tại và membership của tenant được chọn; người có nhiều membership có thể chuyển cửa hàng bằng POST có CSRF hoặc chọn mã cửa hàng ở màn đăng nhập. `session_version` được so với MySQL mỗi request để thu hồi cookie cũ sau khi đổi mật khẩu hoặc trạng thái membership. Service gọi require_actor trước khi truy vấn nghiệp vụ; helper chỉ đặt MySQL session variable tenant sau khi xác minh tài khoản và membership. Repository giới hạn mọi danh mục, hóa đơn, báo cáo, chatbot, nhật ký và ảnh theo tenant. Admin/owner mới thay đổi tài khoản, giá, cá thể và tồn; staff có quyền trong đúng cửa hàng.
 
-## 3. Kiến trúc Cửa sổ Duy nhất (Single Root Tk)
+## Cơ sở dữ liệu
 
-- Ứng dụng chỉ sử dụng đúng một vòng lặp sự kiện `mainloop()` và một đối tượng `tk.Tk()`.
-- Việc chuyển đổi giữa màn hình đăng nhập và các màn hình chức năng được thực hiện bằng cách thay thế các đối tượng `ttk.Frame` con trong `content_frame`.
-- Các hộp thoại nhập liệu (Thêm chủ nuôi, Thêm thú cưng, Chi tiết hóa đơn) sử dụng `tk.Toplevel(transient=root, grab_set=True)` giúp giữ luồng thao tác tập trung và không tạo thêm instance Tk độc lập.
+Tiền hàng hóa là `DECIMAL(20,4)` và được đọc/ghi bằng `Decimal`; validator dùng ISO currency metadata để chỉ nhận mã tender hiện hành và đúng minor unit (0–3 chữ số). `tenants.default_currency` chọn đơn vị tiền của cửa hàng, onboarding cho chọn currency; không có FX hay đổi currency trên tenant đã tạo. Mỗi hóa đơn chụp `currency_code`; báo cáo cộng tiền trong tenant, không quy đổi. Cột `*_vnd` cũ giữ tạm để rollback/compatibility và migration backfill sang cột generic; VND được dual-write cho reader cũ. Babel cung cấp CLDR names/precision/formatting; UI đã localize một phần sang English nhưng định dạng ngày/số và luồng thương mại chưa đủ cho global launch.
 
----
+Schema hiện tại là petcare/database/schema.sql: các bảng nghiệp vụ, tài khoản, tenant, quota, `worker_heartbeats` và `schema_migrations`. Mỗi bảng nghiệp vụ có `tenant_id`; khóa ngoại composite trên hóa đơn, mặt hàng, thú cưng đã bán, tồn kho và actor từ chối ghép dữ liệu giữa cửa hàng kể cả khi một truy vấn nghiệp vụ lỗi scope. Mã sản phẩm/thú cưng là duy nhất trong cửa hàng, còn username và email là danh tính toàn nền tảng (email có thể chưa đặt; email chưa xác minh không dùng để reset mật khẩu). `account_tokens` lưu SHA-256 của token xác minh email/đặt lại mật khẩu, một mục đích cho mỗi token; token có hạn và dùng một lần. `email_outbox` giữ payload mail mã hóa bằng key riêng, có trạng thái, lease chống claim đồng thời, retry và retention; worker tách riêng thực hiện SMTP. Mỗi email/export process ghi heartbeat định kỳ với instance ID ngẫu nhiên và mã lỗi giới hạn; `/workersz` yêu cầu mỗi loại có heartbeat thành công trong 90 giây, còn `/readyz` chỉ phản ánh web/database/schema. Email worker dọn heartbeat quá 30 ngày trong maintenance. Migration cộng thêm đưa dữ liệu single-store cũ và chỉ những user chưa có membership vào cửa hàng `main`; lần khởi tạo sau không tự gán user của store khác vào `main`. Chạy `python -m petcare.database.initialize` bằng user migration trước khi khởi chạy bản mới; rà soát/backup DB trước migration vì DDL MySQL auto-commit.
 
-## 4. Quản lý Phiên & An ninh
+Tạo tenant mới và chủ cửa hàng qua `python -m petcare.database.create_store`; lệnh kiểm tra tên database và nhập mật khẩu ẩn. Self-service signup tại `/signup` có thể bật bằng `PUBLIC_SIGNUP_ENABLED=1` nhưng mặc định tắt. Signup tạo tenant, owner, membership đang khóa và token email trong transaction; chỉ xác minh email mới kích hoạt membership. Worker xóa tenant reservation chưa xác minh sau 7 ngày nếu tenant vẫn trống. Cleanup khóa account rồi membership theo thứ tự của luồng xác minh để tránh deadlock; truy vấn ứng viên có index riêng, lỗi maintenance tạm thời không dừng gửi email. Local không có SMTP sẽ hiển thị link một lần trên trang no-store; production phải dùng email giao thật. Admin tạo lời mời một lần theo email, hết hạn sau 7 ngày; token chỉ lưu dạng SHA-256, lời mời bị giới hạn tần suất, được thu hồi và ghi audit. Khi SMTP đã cấu hình, lời mời và URL chấp nhận được đưa mã hóa vào outbox cùng transaction và gửi nền; acceptance chỉ gắn vào tài khoản đã xác minh đúng email hoặc tạo tài khoản mới mang email nhận lời mời. Link tuyệt đối lấy từ `PUBLIC_BASE_URL` thay vì `Host` request; production bắt buộc base HTTPS đáng tin cậy. Người dùng có thể đặt/đổi tên hiển thị và email dùng chung toàn nền tảng sau khi xác thực lại mật khẩu; email cần xác minh trước khi dùng khôi phục tài khoản. Store admin chỉ quản lý role/trạng thái trong tenant và không thể sửa tên/mật khẩu toàn cục nếu tài khoản thuộc nhiều tenant. Gửi mail dùng outbox và SMTP, production bắt buộc STARTTLS; token xác minh có hạn 24 giờ, token reset 30 phút, đều dùng một lần. Forgot-password trả thông báo chung để hạn chế dò tài khoản. Billing/plan limits, terms/privacy và edge abuse controls còn thiếu nên không bật signup cho public launch.
 
-- Sau khi đăng nhập thành công, hệ thống tạo đối tượng bất biến `AuthSession(user_id, username, role, full_name)`.
-- Mật khẩu không bao giờ được lưu trữ dạng thô hay lưu trong `AuthSession`.
-- Mật khẩu lưu trong cơ sở dữ liệu được mã hóa bằng `PBKDF2-HMAC-SHA256` với 100.000 vòng lặp và salt ngẫu nhiên 16 bytes.
-- Hệ thống bảo vệ Admin cuối cùng: Không cho phép hạ quyền hay vô hiệu hóa tài khoản Quản trị viên hoạt động duy nhất.
+Đổi mật khẩu từ link reset tăng `session_version` để thu hồi phiên đã cấp. Link reset được đưa vào email outbox đã mã hóa; bảng account_tokens chỉ giữ hash token. Outbox giữ đúng expiry timestamp của account token và worker bỏ email đã hết hạn. Worker claim job bằng row lock/lease, gửi SMTP ngoài transaction và thử lại tối đa 8 lần với backoff; payload đã gửi hoặc terminal-failed được dọn sau 30 ngày. `MAIL_OUTBOX_KEY` phải giữ ổn định, backup và phân quyền như secret riêng. Email người dùng được đưa vào export membership tenant đã mã hóa, không đưa vào context trợ lý AI.
+
+Operator có thể export một cửa hàng qua CLI; admin tự tải export tại **Tài khoản → Xuất dữ liệu cửa hàng** sau khi xác thực lại mật khẩu. Cả hai tạo snapshot đọc nhất quán theo tenant với CSV, ảnh, manifest SHA-256; không gồm password/token hashes và không ghi đè output. CSV trung hòa text bắt đầu bằng marker công thức để tránh formula injection khi mở trong bảng tính; số và ngày giữ biểu diễn dữ liệu. Bundle được mã hóa AES-256-GCM; khóa dẫn xuất PBKDF2-HMAC-SHA256 từ passphrase, salt và nonce ngẫu nhiên. UI audit successful generation, áp dụng rate limit, no-store response và dọn file tạm khi stream đóng. `verify` xác thực mã hóa/checksum; `decrypt` chỉ tạo ZIP quyền `0600` sau xác thực. Tenant deletion/retention chưa có; ZIP giải mã vẫn chứa dữ liệu cá nhân và cần được quản lý theo chính sách lưu trữ.
+
+## Chat hỗ trợ và tìm ảnh
+
+Trợ lý chạy trong route được bảo vệ đăng nhập; nhánh cục bộ trả lời từ dữ liệu hiện hành theo các nhóm câu hỏi, gồm tổng quan cửa hàng, và cung cấp prompt gợi ý mà không gọi nhà cung cấp AI. Với SaaS, trình duyệt vẫn gửi request tới app server. Nếu cấu hình endpoint, service gửi lịch sử ngắn và context đã lọc. Phân tích ảnh chỉ diễn ra ở endpoint khi `AI_VISION_ENABLED=1`; nếu endpoint lỗi, tìm kiếm tiếp tục với bộ mô tả cục bộ.
+
+Tìm ảnh cục bộ chuẩn hóa ảnh và so sánh histogram HSV toàn ảnh, histogram vùng giữa 60% và lưới xám 16×16 với descriptor trong hồ sơ. Candidate được đọc theo lô tối đa 250 và chỉ top-12 được giữ trong RAM; việc tính điểm vẫn duyệt tuyến tính toàn bộ thú cưng đang bán, nên tenant lớn cần đo tải và có thể cần vector search. Khi không có ảnh tham chiếu, chỉ xếp hạng bảo thủ theo màu/tags; không có detector hoặc embedding đã huấn luyện. Vùng trung tâm giảm ảnh hưởng nền nhưng không cô lập được con vật; lưới cấu trúc toàn khung và điểm xếp hạng không phải confidence nhận dạng. Descriptor cũ được hỗ trợ; operator có thể dry-run rồi rebuild bằng command reindex theo batch.

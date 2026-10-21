@@ -1,56 +1,38 @@
-# Quy ước phát triển PetCare Manager (AGENTS.md)
+# Quy ước phát triển PetCare Manager
 
-Tài liệu này cung cấp hướng dẫn và quy ước phát triển cho các kỹ sư và AI agent khi làm việc trên repository `petcare-manager`.
+## Kiến trúc hiện hành
 
-## 1. Kiến trúc hệ thống
+Bản hiện hành là nền tảng web multi-store SaaS cho cửa hàng thú cưng, chạy cục bộ trong phát triển và dùng chung ứng dụng/schema MySQL cho nhiều tenant. Backend dùng Python 3.10+ và Flask; giao diện dùng Jinja HTML, CSS và JavaScript thuần; dữ liệu lưu trong MySQL 8.0.16+ (InnoDB, utf8mb4). Không dùng Tkinter hay SQLite cho ứng dụng hiện hành.
 
-Ứng dụng tuân theo mô hình 3 lớp phân tách trách nhiệm rõ ràng:
-- **UI Layer (`petcare/ui/`)**: Xây dựng bằng `tkinter` và `ttk`. Chỉ phụ trách hiển thị, thu thập input của người dùng và gọi xuống `Service`. Tuyệt đối không chứa câu lệnh SQL trong callback UI.
-- **Service Layer (`petcare/services/`)**: Quản lý nghiệp vụ, kiểm tra tính hợp lệ dữ liệu (validation), kiểm tra phân quyền (`admin` vs `staff`), điều phối giao dịch (transactions). Quản lý `commit()` và `rollback()`.
-- **Repository Layer (`petcare/repositories/`)**: Thực thi các câu lệnh SQL có tham số (`?`), nhận kết nối `conn` hoặc factory. Tuyệt đối không tự ý commit transaction khi đang trong luồng điều phối của Service.
+- Route nhận request, kiểm tra CSRF, gọi service và render/redirect.
+- Service áp dụng quyền và quy tắc nghiệp vụ, đồng thời sở hữu commit/rollback.
+- Repository chứa SQL tham số hóa MySQL; không tự commit.
+- Template hiển thị dữ liệu; tiền và quyền luôn được kiểm tra phía server.
+- Kết nối lấy cấu hình từ biến môi trường; không ghi bí mật vào Git.
 
-## 2. Quy tắc dữ liệu & Bảo mật
+## Quy tắc cửa hàng
 
-- **SQLite**: Luôn kích hoạt `PRAGMA foreign_keys = ON;` trên mọi kết nối mới.
-- **Bảo mật mật khẩu**: Sử dụng thuật toán PBKDF2-HMAC-SHA256 với salt ngẫu nhiên (`os.urandom(16)`), không lưu mật khẩu dạng plaintext.
-- **Tiền tệ**: Lưu số nguyên (`INTEGER`) đơn vị VND. Không dùng float để tránh sai số dấu phẩy động.
-- **Giao dịch khám & tiêm**: Tạo hồ sơ khám (`examinations`) hoặc tiêm (`vaccinations`) phải luôn tạo bản ghi lượt dịch vụ (`service_visits`) tương ứng trong cùng một transaction.
-- **Hóa đơn & Thanh toán**:
-  - Mỗi lượt dịch vụ (`service_visits`) chỉ được xuất hiện trên đúng một hóa đơn (`visit_id UNIQUE` trên `invoice_items`).
-  - Hóa đơn đã thanh toán (`paid`) là bất biến (immutable), không được sửa hoặc hủy.
-  - Thanh toán hóa đơn đã thanh toán phải trả về trạng thái `already_paid`, không ghi nhận thêm doanh thu.
-  - Doanh thu tính theo ngày thanh toán `paid_at` của các hóa đơn có trạng thái `paid`.
-  - Hủy hóa đơn `unpaid` phải xóa các chi tiết `invoice_items` để giải phóng `visit_id`, giữ bản ghi `invoices` với trạng thái `cancelled`.
-- **Bảo tồn dữ liệu**:
-  - `initialize.py` chỉ chạy `CREATE TABLE IF NOT EXISTS`, không xoá hoặc reset cơ sở dữ liệu đã có.
-  - `seed.py` phải có tính bất biến/idempotent (kiểm tra tồn tại trước khi chèn, không tạo dữ liệu trùng lặp khi chạy lại).
+- Danh mục chính gồm khách hàng, thú cưng bán lẻ, sản phẩm có tồn kho, hóa đơn và báo cáo.
+- Không triển khai khám bệnh, tiêm phòng, lịch hẹn chăm sóc, dịch vụ hay lượt dịch vụ trong phiên bản web.
+- Tiền dùng MySQL `DECIMAL(20,4)` và Python `Decimal`; validate theo precision của currency tender hiện hành và lưu mã tiền snapshot trên hóa đơn. Chưa có FX, thuế đa vùng hay đổi currency sau onboarding. Số lượng sản phẩm là số nguyên dương.
+- Tồn kho không âm. Điều chỉnh tồn phải có lý do và ghi stock_movements.
+- Hóa đơn lưu snapshot tên/mã/giá. Client không quyết định tổng.
+- Chưa thanh toán không trừ tồn và chưa gắn người mua cho thú cưng.
+- Thanh toán dùng một transaction InnoDB: khóa hóa đơn/hàng, kiểm tra lại tồn và cá thể, ghi stock movement, cập nhật thú cưng rồi đánh dấu paid. Lỗi ở bất kỳ bước nào phải rollback.
+- Thanh toán lặp là bất biến, hóa đơn paid không sửa/hủy. Hủy unpaid giữ snapshot và không thay tồn.
+- Không xóa cứng khách hàng/hàng hóa có lịch sử. Hàng đã bán không trở lại danh sách bán.
+- Mật khẩu phải được băm; session có chữ ký lưu user id, tenant id và `session_version`, còn role/membership được tải lại từ MySQL ở mỗi request. Đổi mật khẩu hoặc khóa/mở lại membership phải thu hồi phiên cũ.
+- Admin quản lý người dùng, giá, danh mục, thú cưng bán và điều chỉnh tồn. Staff quản lý khách hàng, lập/thanh toán hóa đơn và xem báo cáo.
+- Mọi thao tác thay đổi dữ liệu dùng POST có CSRF. GET chỉ đọc.
 
-## 3. Lệnh kiểm tra và vận hành
+## Lệnh phát triển
 
-### macOS / Linux:
-```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python -m compileall -q main.py petcare tests
-.venv/bin/python -m petcare.database.initialize
-.venv/bin/python -m petcare.database.seed
-.venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python main.py
-```
+- Cài dependency: python -m pip install -r requirements.txt
+- Khởi tạo schema: python -m petcare.database.initialize
+- Nạp demo: python -m petcare.database.seed
+- Chạy web: python run.py
+- Kiểm thử: python -m unittest discover -s tests -v
 
-### Windows (PowerShell):
-```powershell
-py -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe -m compileall -q main.py petcare tests
-.venv\Scripts\python.exe -m petcare.database.initialize
-.venv\Scripts\python.exe -m petcare.database.seed
-.venv\Scripts\python.exe -m unittest discover -s tests -v
-.venv\Scripts\python.exe main.py
-```
+Các test tích hợp cần MySQL test database riêng, không dùng DB làm việc. Không thay MySQL bằng SQLite/mock rồi báo đã nghiệm thu MySQL. Không xóa/reset database hiện có. Dùng DB mới, ví dụ petcare_shop_dev.
 
-## 4. Quy ước mã nguồn & Kiểm thử
-
-- Đường dẫn tệp luôn dùng `petcare/config.py` tính từ vị trí mã nguồn, không phụ thuộc vào thư mục làm việc hiện tại (`cwd`).
-- Mọi logic nghiệp vụ trọng yếu phải có unit test trong thư mục `tests/` sử dụng SQLite in-memory hoặc tệp tạm thời.
-- Giao diện người dùng sử dụng tiếng Việt có dấu, rõ ràng, nhất quán và thân thiện.
+Tài liệu desktop cũ được lưu trong docs/archive/REPO_GUIDE_DESKTOP.md để tra cứu lịch sử; các quy tắc hiện hành trong tệp này có ưu tiên cao hơn tài liệu lịch sử.

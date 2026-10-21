@@ -1,54 +1,28 @@
-# Danh sách Kiểm tra Bàn giao (release_checklist.md)
+# Checklist nghiệm thu nội bộ
 
-Tài liệu này xác nhận tình trạng sẵn sàng bàn giao cho phiên bản **v1.0.0** của dự án PetCare Manager.
-
----
-
-## 1. Kiểm tra Mã nguồn & Cấu trúc
-
-- [x] Không còn màn hình nào dùng `PendingView` hay mô phỏng giả lập.
-- [x] Không có câu lệnh SQL nào nằm trong callback giao diện UI.
-- [x] Kiến trúc 3 tầng chuẩn hóa: UI -> Service -> Repository.
-- [x] Mật khẩu được mã hóa an toàn bằng PBKDF2-HMAC-SHA256, không lưu plaintext.
-- [x] Tiền tệ được lưu kiểu số nguyên VND.
-- [x] Kích hoạt `PRAGMA foreign_keys = ON;` trên tất cả kết nối.
-- [x] Bật ràng buộc `visit_id UNIQUE` trong `invoice_items` bảo đảm không tính tiền 2 lần.
-- [x] Đường dẫn tệp sử dụng `pathlib.Path` tính từ vị trí dự án, chạy độc lập không phụ thuộc `cwd`.
-
----
-
-## 2. Kiểm thử Tự động & Nghiệm thu
-
-- [x] `python3 -m compileall -q main.py petcare tests`: 100% ĐẠT, không lỗi cú pháp.
-- [x] `python3 -m unittest discover -s tests -v`: 34/34 tests ĐẠT (100% Success).
-- [x] Kịch bản tích hợp Lan & Miu (`tests/test_integration_flow.py`): ĐẠT.
-- [x] Kiểm thử khởi tạo và điều hướng giao diện (`tests/test_ui_navigation.py`): ĐẠT.
-- [x] Chạy lặp lại `seed.py` 2 lần liên tiếp: ĐẠT, không tạo dữ liệu trùng (idempotent).
-- [x] Chạy `initialize.py`: ĐẠT, không xóa hay reset database hiện tại.
-
----
-
-## 3. An toàn Git & Môi trường Sạch
-
-- [x] `.gitignore` bao gồm: `.venv/`, `__pycache__/`, `*.pyc`, `data/*.db`, `.DS_Store`.
-- [x] Không đưa file cơ sở dữ liệu cá nhân hay thư mục `.venv` lên Git.
-- [x] Không chứa mật khẩu thật hoặc khóa bí mật trong mã nguồn.
-- [x] Tài khoản demo ghi rõ ràng trong `README.md`.
-
----
-
-## 4. Tài liệu Bàn giao
-
-- [x] `README.md`: Hướng dẫn cài đặt và chạy riêng cho Windows và macOS.
-- [x] `CHANGELOG.md`: Nhật ký thay đổi v1.0.0.
-- [x] `AGENTS.md`: Quy ước kỹ thuật và lệnh kiểm tra.
-- [x] `docs/implementation_plan.md`: Kế hoạch 5 mốc hoàn thiện.
-- [x] `docs/project_status.md`: Báo cáo trạng thái 100% hoàn thành.
-- [x] `docs/architecture.md`: Kiến trúc hệ thống và luồng giao dịch.
-- [x] `docs/erd.md`: Sơ đồ thực thể quan hệ 10 bảng dữ liệu.
-- [x] `docs/billing_rules.md`: Toàn bộ quy tắc tính phí và bảo toàn doanh thu.
-- [x] `docs/acceptance_tests.md`: 10 ca kiểm thử nghiệm thu.
-- [x] `docs/demo_scenarios.md`: Kịch bản demo từng bước cho buổi bảo vệ.
-- [x] `docs/backup_restore.md`: Hướng dẫn sao lưu và phục hồi dữ liệu SQLite.
-- [x] `docs/test_results.md`: Báo cáo kết quả kiểm thử toàn diện.
-- [x] `docs/scope.md`, `module_contracts.md`, `data_dictionary.md`, `user_guide.md`.
+- [x] Mã hiện hành dùng Flask/Jinja HTML/CSS; không còn UI Tkinter trong source hoạt động.
+- [x] Schema/runtime chuyển sang MySQL; không dùng SQLite cho app web.
+- [x] Login, CSRF, live role checks, khách hàng, sản phẩm, thú cưng, hóa đơn và báo cáo đã được triển khai.
+- [x] Unit/web checks và compileall đã chạy trên môi trường hiện tại.
+- [x] MySQL schema/seed đã chạy trên MySQL thật; seed lặp không tạo trùng dữ liệu demo.
+- [x] Lần kiểm đầy đủ hiện tại đạt 197/197 unit/web/MySQL tests trên MySQL test database tạm, độc lập và được xóa sau lượt chạy (2026-10-19); gồm locale persistence, audit labels, translation regression, authenticated no-store responses, tenant isolation, owner transfer, workers/export, MySQL TLS, currency/timezone, inventory audit và concurrency/media. Chi tiết trong [test results](test_results.md). SMTP adapter dùng mock; chưa có provider thật. S3 dùng Boto3 Stubber; chưa có live bucket.
+- [x] Giao diện đã được mở trên trình duyệt; đã tạo và thanh toán hóa đơn gồm sản phẩm + thú cưng, xác nhận tổng 2.250.000 ₫, tồn kho và trạng thái bán cập nhật đúng. Dữ liệu walkthrough đã được dọn khỏi DB test và tồn kho khôi phục.
+- [x] Thêm lựa chọn tiếng Việt/English, browser-language default và lưu locale theo tài khoản; UI English bao phủ các luồng bán hàng, cài đặt tài khoản/cửa hàng, onboarding, thành viên, export, ownership transfer, audit và lỗi route/service đã kiểm tra. Email, nội dung audit lịch sử, tài liệu sinh tự động và định dạng ngày/số theo locale vẫn cần hoàn thiện trước global launch.
+- [x] Trang đăng nhập đã được kiểm tra trực quan ở khung 628 × 627; bố cục không còn chồng hình lên nội dung.
+- [x] README hướng dẫn cài đặt trên macOS/Linux và Windows; macOS/MySQL Docker đã chạy ở môi trường hiện tại.
+- [x] Báo cáo tổng kết và slide cuối đã cập nhật theo scope cửa hàng. Các báo cáo/slide cá nhân còn cần thành viên xác nhận nội dung đóng góp thật.
+- [x] Trợ lý local chạy theo context cửa hàng; endpoint AI/Vision tùy chọn, AI Vision mặc định tắt.
+- [x] Tìm ảnh hồ sơ thú cưng, thuộc tính màu lông/mắt/đặc điểm; local/S3-compatible adapter đã có, nhưng bucket production, IAM và restore rehearsal chưa được xác nhận.
+- [x] Multi-store foundation: tenant membership/roles, scope truy vấn, composite FKs, tenant-aware media, interactive store provision and per-store switching.
+- [x] Lời mời thành viên dùng một lần, 7 ngày, email-bound, outbox delivery khi cấu hình SMTP, revoke được; người nhận gắn account đúng email hoặc tạo account mới.
+- [x] Bàn giao owner phải được cả hai tài khoản re-auth; yêu cầu có hạn 72 giờ, revoke, audit, rate limit và chấp thuận trong đúng tenant. Test MySQL kiểm cả sai mật khẩu, cancel, expiry và successful handoff.
+- [x] Self-service signup feature-flag mặc định off; verified email activates owner membership; worker prunes untouched unverified reservations after seven days.
+- [x] Operator export per-tenant gồm CSV/ảnh, bundle AES-GCM + manifest/checksum, verify và decrypt sau xác thực; loại password/token hashes, không ghi đè file.
+- [x] Admin tự tải export mã hóa của tenant đang chọn sau re-authentication, ghi audit event, áp dụng rate limit, no-store response và dọn file tạm khi stream đóng.
+- [x] Chạy unit/web/MySQL integration suite sau khi thêm cryptography; `pip-audit -r requirements.txt` không tìm thấy lỗ hổng đã biết; Docker image build thành công.
+- [x] Cấu hình CI source scan Bandit, Trivy secret scan trên source tree, và Trivy HIGH/CRITICAL + secret scan trên production image; local scans đạt ngày 2026-10-18. Hosted GitHub Actions run và independent review vẫn là điều kiện release.
+- [ ] Billing/plan limits, localized commerce, deletion/retention, live SMTP provider validation, queue alerting/bounce handling, production bucket/IAM/versioning and restore rehearsal, independent security review, green hosted security/CI workflow and production rehearsal before enabling public signup.
+- [x] Diễn tập backup/verify/decrypt/restore trên `petcare_shop_test` và database `_test` tạm; row counts khớp, 9 ảnh trích xuất, database tạm được dọn. Không sửa database làm việc.
+- [ ] Diễn tập restore từ backup managed production sau khi có môi trường và dịch vụ lưu trữ.
+- [ ] Cài sạch trên Windows; chưa có bằng chứng thử trên hệ điều hành này.
+- [ ] Người nộp xác nhận thời điểm commit/push/PR/release; hiện chưa push/merge/tag.

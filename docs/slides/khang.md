@@ -1,5 +1,8 @@
 # Nội dung Slide Báo cáo — Khang (docs/slides/khang.md)
 
+> **Lưu ý về phiên bản:** Nội dung dưới đây ghi nhận đóng góp cho bản desktop phòng khám trước khi đổi yêu cầu. Cần tác giả rà soát và viết lại theo web MySQL/cửa hàng trước khi nộp; xem [báo cáo tổng kết hiện hành](../report/final_report.md) và [dàn ý slide hiện hành](final_slides.md).
+
+
 ## Slide 1: Giới thiệu & Vai trò Điều phối
 - Họ tên: Khang
 - Nhiệm vụ: Trưởng nhóm, Thiết kế Kiến trúc & Module Bảo mật, Chủ nuôi

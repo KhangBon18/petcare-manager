@@ -1,72 +1,60 @@
-# Báo cáo Tổng kết Đồ án PetCare Manager (final_report.md)
+# Báo cáo tổng kết — PetCare Manager
 
-- **Đề tài**: Xây dựng ứng dụng quản lý phòng khám & chăm sóc thú cưng (PetCare Manager).
-- **Công nghệ**: Python 3.10 - 3.13, Tkinter/ttk, SQLite 3.
-- **Nhóm sinh viên thực hiện**: Khang, Quân, Quý, Nhàn.
-- **Tỷ lệ đóng góp mục tiêu & thực tế**: 25% mỗi thành viên (Tổng 100%).
+**Phiên bản:** web quản lý cửa hàng thú cưng
+**Phạm vi:** nền tảng quản trị multi-store SaaS, hiện chạy/kiểm thử local
+**Ngày cập nhật:** 20-10-2026
 
----
+## 1. Bài toán và phạm vi
 
-## 1. Giới thiệu Đề tài & Mục tiêu
+PetCare Manager hỗ trợ cửa hàng quản lý khách hàng, từng cá thể thú cưng bán lẻ, sản phẩm có tồn kho, hóa đơn và doanh thu. Dự án ban đầu hướng tới phòng khám desktop. Theo yêu cầu điều chỉnh, phiên bản hiện hành chuyển giao diện sang HTML/CSS, database sang MySQL và loại bỏ nghiệp vụ khám, tiêm, lịch hẹn chăm sóc cùng danh mục dịch vụ. Source và tài liệu clinic trước đó được giữ trong docs/archive/.
 
-Phòng khám thú cưng hiện đại đòi hỏi một hệ thống quản lý tập trung từ khâu tiếp nhận khách hàng, quản lý hồ sơ thú cưng, theo dõi lịch khám bệnh và tiêm chủng định kỳ, cho đến lập hóa đơn và thống kê doanh thu.
+Phiên bản này có nền tenant dùng chung MySQL cho nhiều cửa hàng, không phải trang thương mại điện tử công khai. Chưa có đăng ký công khai, billing, refund, đặt hàng hoặc triển khai Internet.
 
-Đồ án **PetCare Manager** giải quyết trọn vẹn bài toán này bằng ứng dụng desktop trực quan, bảo mật cao, hoạt động độc lập trên cả Windows và macOS với cơ sở dữ liệu SQLite cục bộ tuân thủ chuẩn ACID.
+## 2. Công nghệ và kiến trúc
 
----
+- Backend: Python 3.13.3, Flask 3.1.3, Jinja2.
+- Giao diện: HTML, CSS và JavaScript thuần, responsive, tiếng Việt.
+- Database: MySQL Server 8.4.11, InnoDB, utf8mb4; driver mysql-connector-python 9.7.0.
+- Phân lớp: route/blueprint → service → repository → MySQL; cấu hình bí mật từ .env.
+- Timestamp được chuẩn hóa UTC trong MySQL; mỗi cửa hàng có IANA timezone riêng để lọc ngày và hiển thị thời gian.
+- Schema hiện có 17 bảng gồm `schema_migrations`, tenants, users/account_tokens/email_outbox, membership/invitation/export jobs, các bảng nghiệp vụ, audit và throttle; tenant-scoped queries cùng composite foreign keys chặn tham chiếu chéo store.
 
-## 2. Kiến trúc & Công nghệ Sử dụng
+## 3. Chức năng
 
-1. **Mô hình 3 lớp phân tầng**:
-   - `UI Layer`: Tkinter và ttk, giao diện tiếng Việt thân thiện, một `tk.Tk` root duy nhất, điều hướng Frame mượt mà. Tuyệt đối không chứa SQL trong callback giao diện.
-   - `Service Layer`: Xử lý toàn bộ logic nghiệp vụ, xác thực dữ liệu đầu vào, phân quyền Admin/Nhân viên, điều phối transaction (`commit`/`rollback`).
-   - `Repository Layer`: Thực thi các truy vấn SQL có tham số an toàn (`?`), nhận kết nối `conn` từ Service và không tự ý kết thúc transaction.
-2. **Bảo mật**:
-   - Mật khẩu băm bằng `PBKDF2-HMAC-SHA256` với 100.000 vòng lặp và salt ngẫu nhiên 16 bytes.
-   - Phiên đăng nhập `AuthSession` bất biến, không lộ hash mật khẩu.
-   - Cơ chế bảo vệ Admin hoạt động cuối cùng của hệ thống.
-3. **Quản lý Tiền tệ & Hóa đơn**:
-   - Lưu trữ số nguyên (`INTEGER`) đơn vị VND.
-   - Giao dịch kép: Tạo bệnh án (khám/tiêm) luôn đồng thời tạo lượt dịch vụ liên kết trong cùng 1 transaction.
-   - Ràng buộc `visit_id UNIQUE` đảm bảo mỗi lượt dịch vụ chỉ được xuất hiện trên một hóa đơn duy nhất.
-   - Hóa đơn đã thanh toán (`paid`) là bất biến. Thanh toán lặp trả về `already_paid`. Hủy hóa đơn `unpaid` giải phóng các lượt dịch vụ.
+- Đăng nhập theo store slug, CSRF, mật khẩu băm, membership/role theo cửa hàng được tải lại từ MySQL ở mỗi request; user nhiều membership có thể chuyển store.
+- Quản lý khách hàng, sản phẩm, từng thú cưng và điều chỉnh tồn kho có lý do.
+- Admin tạo và thu hồi link mời dùng một lần, hạn 7 ngày; người nhận có thể liên kết tài khoản đã có hoặc tạo tài khoản mới. Link gửi thủ công; chưa xác minh email.
+- Operator export một tenant thành bundle `.pcarexport` mã hóa AES-256-GCM, chứa ZIP CSV/metadata/ảnh với SHA-256 manifest; có verify và decrypt sau xác thực; password/token hashes bị loại trừ.
+- Backup local/Compose gồm MySQL và ảnh được mã hóa thành `.pcarebackup`; có verify/decrypt sau xác thực và chuyển đổi backup plaintext cũ.
+- Form hóa đơn tra cứu khách hàng/mặt hàng từ MySQL theo trang; nhật ký admin ghi các giao dịch và thao tác tồn kho quan trọng cùng transaction.
+- Lập hóa đơn unpaid từ dữ liệu database; server tính tiền và lưu snapshot tên/giá.
+- Thanh toán nguyên tử: khóa hóa đơn và hàng tồn, xác minh khả năng bán, trừ kho, ghi stock movement, gắn người mua và cập nhật trạng thái hóa đơn.
+- Dashboard, báo cáo doanh thu thực thu, hàng bán và tồn; giá/hóa đơn dùng Decimal/DECIMAL theo currency tenant, mã tiền được snapshot ở hóa đơn.
+- Trợ lý local truy vấn context MySQL cho tổng quan, doanh thu theo ngày/tuần/tháng, tồn kho, sản phẩm và thú cưng; hỗ trợ lọc hồ sơ theo giống, màu lông/mắt, giới tính và mức giá. Endpoint AI tạo sinh là tùy chọn; PII khách hàng không nằm trong context gửi.
+- Hồ sơ ảnh/thuộc tính ngoại hình và xếp hạng ảnh tương tự; AI Vision tùy chọn.
 
----
+## 4. Quy tắc toàn vẹn
 
-## 3. Kết quả Triển khai & Kiểm định Nghiệm thu
+Tạo hóa đơn chưa trừ tồn và chưa đánh dấu thú cưng đã bán. Thanh toán thực hiện trong một MySQL transaction; nếu còn thiếu hàng hoặc cá thể đã được bán, toàn bộ thao tác rollback. Thanh toán lặp không trừ kho lần hai. Hóa đơn unpaid có thể hủy; lịch sử hóa đơn paid không sửa hoặc hủy. Các transaction cạnh tranh được kiểm tra bằng MySQL thật.
 
-- **Chức năng**: Hoàn thành 100% phạm vi bắt buộc theo `REPO_GUIDE.md`:
-  - Đăng nhập & phân quyền (Admin, Staff).
-  - Quản lý Chủ nuôi & Thú cưng, bảo vệ lịch sử (`active=0` thay vì xóa).
-  - Khám bệnh, Tiêm phòng, Lịch nhắc đến hạn trong 30 ngày.
-  - Lịch hẹn tiếp đón (không sinh phí trước).
-  - Danh mục dịch vụ và quản lý giá niêm yết.
-  - Lập hóa đơn, thanh toán trực tiếp tại quầy, hủy đơn chưa thanh toán.
-  - Báo cáo thống kê: Doanh thu thực thu, số ca khám, thú cưng tiêm phòng, cơ cấu loài, top dịch vụ.
-- **Kiểm thử tự động**:
-  - `python3 -m unittest discover -s tests -v`: **34/34 tests đạt 100% tỷ lệ pass**.
-  - Kiểm thử tích hợp trọn vẹn kịch bản Lan & Miu (`tests/test_integration_flow.py`).
-  - Kiểm thử khởi tạo giao diện và chuyển đổi 10 màn hình (`tests/test_ui_navigation.py`).
-- **Idempotency**: Khởi tạo database (`initialize.py`) và nạp dữ liệu mẫu (`seed.py`) chạy lặp nhiều lần không lỗi, không nhân đôi bản ghi.
+## 5. Kiểm thử và nghiệm thu
 
----
+- Compile toàn bộ source và tests bằng compileall: đạt.
+- Lần kiểm đầy đủ mới nhất (2026-10-19) đạt 197/197 unit, web và MySQL integration tests trên database MySQL tạm, biệt lập và được xóa sau kiểm thử. Bộ kiểm bao gồm currency/minor-unit, UTC migration/export, tenant timezone/DST, pool session isolation, email outbox/onboarding, tenant isolation, AI boundaries, lưu locale theo tài khoản, nhãn audit đa ngôn ngữ, response dữ liệu đã đăng nhập không bị cache, concurrency giao dịch/kho/media và worker/export. SMTP provider thật và bucket S3 thật chưa được nghiệm thu.
+- Diễn tập local backup/restore dùng MySQL Compose và database test tách biệt khớp 13 khách, 22 sản phẩm, 10 thú cưng, 7 hóa đơn; 9 ảnh được trích xuất. Chưa có bằng chứng restore từ dịch vụ backup managed production.
+- Seed trong source hiện định nghĩa 22 sản phẩm, 12 khách mẫu, 74 thú cưng (35 chó, 37 mèo, 1 thỏ, 1 hamster), 68 ảnh hồ sơ và 7 hóa đơn lịch sử. 64 ảnh chó/mèo được tạo tổng hợp bằng AI; toàn bộ hồ sơ/ảnh demo là hư cấu.
+- Số lượng 10 thú cưng/4 ảnh ở phần kiểm thử backup/restore là snapshot lịch sử ngày 2026-10-18. Database dev chưa được seed lại trong lượt cập nhật 2026-10-20; cần chạy seed trên database `_dev` trước demo để nạp danh mục mới. Seed cộng thêm và giữ các hồ sơ cũ.
+- Integration kiểm tra thanh toán, snapshot, tồn kho, bán thú cưng, idempotency và hai request cạnh tranh mua đơn vị tồn cuối.
+- Khởi tạo database demo và chạy seed hai lần; số lượng bản ghi không tăng ở lần chạy sau.
+- Đăng nhập tài khoản Admin qua Chrome, mở dashboard và xác nhận các mục cửa hàng hiển thị.
+- Setup Windows, triển khai Internet/HTTPS và kiểm tải chưa thuộc bằng chứng nghiệm thu. Public onboarding route có feature flag mặc định tắt; SaaS billing, tenant deletion/retention, review isolation độc lập, managed object storage, đa ngôn ngữ đầy đủ, tax/FX và đổi currency chưa hoàn tất. Giá và hóa đơn hỗ trợ currency per tenant bằng Decimal, nhưng đây chưa phải triển khai global. Account email verification/recovery và outbox mã hóa có trong code; SMTP chưa live-test, queue alerts/bounce flow chưa có.
+- Chế độ tìm cục bộ so sánh histogram màu vùng trung tâm/toàn ảnh và lưới độ sáng, chưa phải object detection hay embedding đã huấn luyện. Tạo sinh chat và AI Vision cần endpoint cấu hình; nhánh AI trực tuyến chưa nghiệm thu do chưa cấu hình endpoint. Ảnh truy vấn được xử lý ở app server, không lưu thành hồ sơ và chỉ gửi endpoint AI khi AI Vision bật.
+- Thay đổi trợ lý, biểu tượng UI và seed demo ngày 2026-10-20 chưa chạy compile/test hoặc nghiệm thu trên trình duyệt. Các kết quả 197/197 và backup/restore nêu trên là bằng chứng trước lượt cập nhật này; cần chạy seed `_dev` và ca nghiệm thu mới trước buổi demo.
 
-## 4. Phân công Công việc & Đóng góp Thực tế
+## 6. Chạy ứng dụng
 
-| Thành viên | Trách nhiệm chính | Tỷ lệ đóng góp |
-|---|---|---|
-| **Khang** | Điều phối, kiến trúc app, bảo mật PBKDF2, đăng nhập/phiên/quyền, chủ nuôi, theme, hồ sơ tổng hợp | 25% |
-| **Quân** | Thú cưng, tiêm phòng & lịch nhắc, ràng buộc ngày/cân nặng, sơ đồ ERD, từ điển dữ liệu | 25% |
-| **Quý** | Danh mục dịch vụ, bảng giá, khám bệnh, lịch hẹn, thống kê tổng hợp, ca nghiệm thu, kịch bản demo | 25% |
-| **Nhàn** | Kết nối DB, transaction, schema, initialize, seed, lượt dịch vụ, hóa đơn, doanh thu, sao lưu/phục hồi | 25% |
+Thực hiện theo README.md: tạo virtualenv, cài dependencies, cấu hình .env, tạo database/user MySQL, chạy initialize và seed, rồi chạy python run.py. Truy cập http://127.0.0.1:5000. Demo credentials chỉ dành cho database demo local; không dùng cho dữ liệu thật.
 
----
+## 7. Hướng phát triển
 
-## 5. Kết luận & Hướng Phát triển
-
-Đồ án PetCare Manager đã hoàn thành xuất sắc toàn bộ các mục tiêu đặt ra, đạt chuẩn chất lượng mã nguồn cao, tài liệu đầy đủ và sẵn sàng để nghiệm thu, bàn giao phiên bản v1.0.0.
-
-Hướng phát triển tiếp theo sau khi nghiệm thu v1.0.0 bao gồm:
-1. Trực quan hóa số liệu doanh thu bằng biểu đồ `matplotlib`.
-2. Quản lý ảnh chụp chân dung thú cưng.
-3. Xuất hóa đơn ra định dạng PDF hoặc gửi nhắc nhở tiêm phòng qua SMS/Email.
+Sau khi người dùng nghiệm thu bản nội bộ, có thể xem xét viết lại các đóng góp cá nhân, chụp ảnh minh chứng trên máy nộp, setup Windows, xuất PDF/in hóa đơn, biểu đồ, hoàn tiền/trả hàng và triển khai máy chủ có HTTPS. Các hạng mục đó chưa nằm trong phạm vi hiện tại.

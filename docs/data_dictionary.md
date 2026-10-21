@@ -1,133 +1,26 @@
-# Từ điển Dữ liệu (data_dictionary.md)
+# Từ điển dữ liệu
 
-Tài liệu này định nghĩa chi tiết từng bảng, trường dữ liệu, kiểu dữ liệu và ràng buộc của cơ sở dữ liệu SQLite trong PetCare Manager.
+| Bảng | Dữ liệu chính | Quy tắc |
+|---|---|---|
+| tenants | name, slug, status, default_currency, timezone | slug duy nhất và giữ ổn định; chủ/admin tenant có thể sửa tên và IANA timezone; currency ISO được xác thực khi onboarding và hiện khóa để bảo toàn lịch sử tiền tệ; dữ liệu thời gian lưu UTC, nghiệp vụ và hiển thị dùng múi giờ cửa hàng |
+| schema_migrations | version, applied_at | marker migration chạy một lần; lưu thời điểm UTC và chặn chuyển đổi timestamp lịch sử nhiều lần |
+| tenant_users | tenant_id, user_id, role, active, email_activation_pending | membership n-n; quyền owner/admin/staff và trạng thái được kiểm tra riêng cho mỗi cửa hàng; signup pending chỉ mở quyền sau xác minh email |
+| tenant_invitations | tenant_id, email, email_outbox_id, token_hash, role, created_by, accepted_by, expiry/lifecycle | liên kết mời một lần, gắn email người nhận, TTL 7 ngày; dùng encrypted email outbox khi SMTP được cấu hình, giữ fallback link thủ công cho môi trường phát triển |
+| users | username, email, email_verified_at, password_hash, full_name, preferred_locale, role, active, session_version | username và email duy nhất toàn nền tảng; email có thể chưa đặt; chỉ email đã xác minh mới dùng reset mật khẩu; mật khẩu băm; `preferred_locale` lưu lựa chọn vi/en theo danh tính xuyên cửa hàng; `session_version` thu hồi cookie cũ sau khi đổi mật khẩu hoặc trạng thái membership; role cũ chỉ giữ tương thích, quyền thực tế lấy từ tenant_users |
+| account_tokens | user_id, purpose, token_hash, expires_at, consumed_at | token xác minh email hoặc reset mật khẩu; chỉ lưu SHA-256, giới hạn mục đích, hết hạn và dùng một lần; FK tới users; token còn mở bị thu hồi khi tạo token thay thế hoặc đổi mật khẩu/email |
+| email_outbox | payload_ciphertext, status, attempt_count, next_attempt_at, expires_at, locked_until, last_error_code, created_at, sent_at | payload email (gồm người nhận và link token) mã hóa bằng Fernet key riêng; worker claim bằng lease, bỏ token hết hạn, retry tối đa 8 lần, không ghi recipient/provider detail vào log; sent/failed row được dọn sau 30 ngày |
+| customers | tenant_id, full_name, phone, address, active | soft-disable; giữ liên kết hóa đơn và buyer trong cùng tenant |
+| pets | tenant_id, code, species/breed, birth_date, weight_kg, coat_color, eye_color, appearance_tags, photo_filename, photo_descriptor JSON, sale_price DECIMAL(20,4), sale_status, buyer_id, sold_at | cá thể độc lập; giá theo currency tenant; code duy nhất theo tenant; trạng thái sold cần buyer cùng tenant và thời điểm; ảnh qua media adapter private local/S3-compatible, descriptor lưu JSON để so sánh và có SimHash 64-bit tùy chọn để lập chỉ mục |
+| pet_photo_lsh | tenant_id, pet_id, hash_version, band, bucket_value | tám byte bucket dẫn xuất từ descriptor để tìm ứng viên ảnh gần; composite foreign key giữ tenant isolation, cascade khi xóa pet; dữ liệu có thể dựng lại từ `photo_descriptor` |
+| products | tenant_id, code, name, category, description, unit_price DECIMAL(20,4), stock_qty, reorder_level, photo_filename, active | code duy nhất theo tenant; giá Decimal theo currency tenant; tồn không âm; cảnh báo theo ngưỡng riêng; ảnh qua media adapter private local/S3-compatible |
+| invoices | tenant_id, customer_id, created_by, currency_code, created_at, status, paid_at, note | currency ISO snapshot tại thời điểm lập; paid cần paid_at; unpaid/cancelled không có paid_at; khách và actor cùng tenant |
+| invoice_items | tenant_id, item_type, product_id hoặc pet_id, snapshot code/name/price, quantity, line_total DECIMAL(20,4) | một target; pet quantity=1; total=unit price × quantity; invoice/target cùng tenant; currency lấy từ hóa đơn |
+| stock_movements | tenant_id, product_id, quantity_delta, reason, created_by, invoice_id | delta khác 0; giao dịch bán tạo delta âm; sản phẩm, actor và invoice cùng tenant |
+| login_throttle | key_hash, failed_attempts, window_started_at, blocked_until | HMAC của tài khoản/IP; không lưu địa chỉ IP hay tên đăng nhập rõ |
+| request_throttle | key_hash, scope, window_started_at, request_count | quota theo tài khoản và địa chỉ mạng HMAC cho trợ lý AI/quét ảnh; dùng chung giữa các worker, không lưu IP thô |
+| audit_events | tenant_id, actor_user_id, event_type, entity_type/id, summary, details JSON, created_at | nhật ký append-only theo tenant cho phiên đăng nhập/đăng xuất/chuyển cửa hàng, cài đặt tenant, hóa đơn, tồn kho, khách hàng, sản phẩm, thú cưng, tài khoản và lời mời; không lưu IP, token, bí mật, giá trị PII hoặc ghi chú bán hàng |
 
----
+Cột amount dùng DECIMAL(20,4) và Decimal Python; Babel/CLDR xác định mã tender hiện hành, số minor unit và định dạng theo locale giao diện. Migration copy giá VND cũ sang amount generic, giữ cột `*_vnd` tạm thời cho compatibility; hóa đơn lưu `currency_code` riêng để lịch sử không lệ thuộc cấu hình tenant. Chưa có FX, đổi currency cho tenant đã tạo, thuế đa vùng hay đa ngôn ngữ; chưa được xem là launch global hoàn chỉnh.
 
-### 1. Bảng `users` (Tài khoản người dùng)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã định danh người dùng |
-| `username` | TEXT | UNIQUE, NOT NULL | Tên đăng nhập hệ thống |
-| `password_hash` | TEXT | NOT NULL | Chuỗi băm mật khẩu PBKDF2-HMAC-SHA256 |
-| `salt` | TEXT | NOT NULL | Chuỗi salt ngẫu nhiên 16 bytes (dạng hex) |
-| `role` | TEXT | NOT NULL, CHECK in ('admin', 'staff') | Vai trò người dùng |
-| `full_name` | TEXT | NOT NULL | Họ và tên đầy đủ |
-| `active` | INTEGER | NOT NULL DEFAULT 1, CHECK in (0, 1) | 1: Đang hoạt động, 0: Đã khóa |
-| `created_at` | TEXT | NOT NULL | Thời điểm tạo tài khoản (ISO 8601) |
-
----
-
-### 2. Bảng `owners` (Chủ nuôi)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã định danh chủ nuôi |
-| `full_name` | TEXT | NOT NULL | Họ và tên khách hàng |
-| `phone` | TEXT | NOT NULL | Số điện thoại liên lạc (8-15 chữ số) |
-| `address` | TEXT | NOT NULL | Địa chỉ liên hệ |
-| `active` | INTEGER | NOT NULL DEFAULT 1, CHECK in (0, 1) | 1: Đang theo dõi, 0: Ngừng theo dõi |
-| `created_at` | TEXT | NOT NULL | Thời điểm tạo hồ sơ (ISO 8601) |
-
----
-
-### 3. Bảng `pets` (Thú cưng)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã định danh thú cưng |
-| `owner_id` | INTEGER | NOT NULL, REFERENCES owners(id) | Khóa ngoại trỏ đến chủ sở hữu |
-| `name` | TEXT | NOT NULL | Tên thú cưng |
-| `species` | TEXT | NOT NULL | Loài (Chó, Mèo,...) |
-| `breed` | TEXT | NULLABLE | Giống loài cụ thể |
-| `sex` | TEXT | NOT NULL, CHECK in ('male', 'female', 'unknown') | Giới tính |
-| `birth_date` | TEXT | NULLABLE | Ngày sinh (YYYY-MM-DD, không ở tương lai) |
-| `weight_kg` | REAL | NULLABLE, CHECK >= 0 | Cân nặng tính theo kilogram |
-| `coat_color` | TEXT | NULLABLE | Màu lông |
-| `active` | INTEGER | NOT NULL DEFAULT 1, CHECK in (0, 1) | 1: Đang theo dõi, 0: Ngừng theo dõi |
-| `created_at` | TEXT | NOT NULL | Thời điểm tạo hồ sơ (ISO 8601) |
-
----
-
-### 4. Bảng `services` (Danh mục dịch vụ)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã dịch vụ |
-| `name` | TEXT | UNIQUE, NOT NULL | Tên dịch vụ |
-| `category` | TEXT | NOT NULL | Phân loại (Khám bệnh, Tiêm phòng, Chăm sóc, Xét nghiệm) |
-| `price_vnd` | INTEGER | NOT NULL, CHECK >= 0 | Giá niêm yết hiện hành (VND) |
-| `active` | INTEGER | NOT NULL DEFAULT 1, CHECK in (0, 1) | 1: Đang cung cấp, 0: Ngừng cung cấp |
-| `created_at` | TEXT | NOT NULL | Thời điểm tạo dịch vụ |
-
----
-
-### 5. Bảng `service_visits` (Lượt sử dụng dịch vụ)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã lượt dịch vụ |
-| `pet_id` | INTEGER | NOT NULL, REFERENCES pets(id) | Thú cưng sử dụng dịch vụ |
-| `service_id` | INTEGER | NOT NULL, REFERENCES services(id) | Gói dịch vụ đã thực hiện |
-| `performed_at` | TEXT | NOT NULL | Thời điểm thực hiện dịch vụ |
-| `unit_price_vnd` | INTEGER | NOT NULL, CHECK >= 0 | Đơn giá snapshot tại thời điểm thực hiện |
-| `notes` | TEXT | NULLABLE | Ghi chú ca thực hiện |
-
----
-
-### 6. Bảng `examinations` (Hồ sơ khám bệnh)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã hồ sơ khám bệnh |
-| `pet_id` | INTEGER | NOT NULL, REFERENCES pets(id) | Thú cưng được khám |
-| `visit_id` | INTEGER | NOT NULL, UNIQUE, REFERENCES service_visits(id) | Lượt dịch vụ liên kết (1-1) |
-| `exam_date` | TEXT | NOT NULL | Ngày khám bệnh (YYYY-MM-DD) |
-| `symptoms` | TEXT | NOT NULL | Triệu chứng lâm sàng ban đầu |
-| `diagnosis` | TEXT | NOT NULL | Chẩn đoán của bác sĩ thú y |
-| `medicines` | TEXT | NULLABLE | Đơn thuốc hoặc chỉ định điều trị |
-
----
-
-### 7. Bảng `vaccinations` (Hồ sơ tiêm phòng)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã hồ sơ tiêm phòng |
-| `pet_id` | INTEGER | NOT NULL, REFERENCES pets(id) | Thú cưng được tiêm |
-| `visit_id` | INTEGER | NOT NULL, UNIQUE, REFERENCES service_visits(id) | Lượt dịch vụ liên kết (1-1) |
-| `vaccine_name` | TEXT | NOT NULL | Tên loại vaccine đã tiêm |
-| `injection_date` | TEXT | NOT NULL | Ngày tiêm vaccine |
-| `next_due_date` | TEXT | NULLABLE | Ngày hẹn tiêm nhắc lại |
-| `reminder_resolved`| INTEGER | NOT NULL DEFAULT 0, CHECK in (0, 1) | 0: Chưa nhắc, 1: Đã hoàn thành nhắc nhở |
-
----
-
-### 8. Bảng `appointments` (Lịch hẹn)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã lịch hẹn |
-| `pet_id` | INTEGER | NOT NULL, REFERENCES pets(id) | Thú cưng hẹn khám/chăm sóc |
-| `type` | TEXT | NOT NULL | Loại dịch vụ dự kiến (Khám, Tiêm, Spa,...) |
-| `scheduled_at` | TEXT | NOT NULL | Thời gian hẹn |
-| `status` | TEXT | NOT NULL, CHECK in ('planned', 'completed', 'cancelled') | Trạng thái lịch hẹn |
-| `note` | TEXT | NULLABLE | Yêu cầu của khách hàng |
-| `created_at` | TEXT | NOT NULL | Thời điểm tạo lịch hẹn |
-
----
-
-### 9. Bảng `invoices` (Hóa đơn)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã hóa đơn thanh toán |
-| `owner_id` | INTEGER | NOT NULL, REFERENCES owners(id) | Khách hàng thanh toán |
-| `created_at` | TEXT | NOT NULL | Thời điểm lập hóa đơn |
-| `status` | TEXT | NOT NULL, CHECK in ('unpaid', 'paid', 'cancelled') | Trạng thái hóa đơn |
-| `paid_at` | TEXT | NULLABLE | Thời điểm thanh toán thành công (ISO 8601) |
-| `note` | TEXT | NULLABLE | Ghi chú thu ngân |
-
----
-
-### 10. Bảng `invoice_items` (Chi tiết hóa đơn)
-| Tên cột | Kiểu dữ liệu | Ràng buộc | Mô tả |
-|---|---|---|---|
-| `id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Mã dòng chi tiết |
-| `invoice_id` | INTEGER | NOT NULL, REFERENCES invoices(id) | Hóa đơn chứa dòng này |
-| `visit_id` | INTEGER | NOT NULL, UNIQUE, REFERENCES service_visits(id) | Lượt dịch vụ tính phí (UNIQUE: chỉ tính 1 lần) |
-| `service_name_snapshot` | TEXT | NOT NULL | Ảnh chụp tên dịch vụ tại thời điểm lập hóa đơn |
-| `pet_name_snapshot` | TEXT | NOT NULL | Ảnh chụp tên thú cưng tại thời điểm lập hóa đơn |
-| `amount_vnd` | INTEGER | NOT NULL, CHECK >= 0 | Số tiền thu của dòng này (VND) |
+`photo_filename` chỉ chứa tên UUID do server tạo, không lưu đường dẫn người dùng cung cấp. Ảnh mới có dạng `t<tenant-id>-<uuid>.jpg`; ảnh UUID cũ không có tiền tố vẫn được đọc tương thích. Với local, ảnh chuẩn hóa nằm trong `instance/pet-images/` và `instance/product-images/`; với S3, object key có namespace tenant riêng. Backup cả ảnh lẫn database. `photo_descriptor` là descriptor ảnh thú cưng cục bộ, không phải nhãn nhận diện.
+`audit_events.actor_user_id` giữ khóa tài khoản để bảo toàn danh tính người thao tác kể cả khi khóa tài khoản. Sự kiện nghiệp vụ được append trong transaction nghiệp vụ; sự kiện phiên được ghi trong transaction đã xác minh membership. Ứng dụng không có chức năng sửa hoặc xóa lịch sử. Chính sách retention/access dài hạn vẫn phải được chốt trước launch.

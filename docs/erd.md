@@ -1,137 +1,23 @@
-# Sơ đồ Thực thể Quan hệ (ERD - erd.md)
+# ERD — cửa hàng thú cưng
 
-Tài liệu này mô tả cấu trúc 10 bảng cơ sở dữ liệu và các mối quan hệ khóa ngoại trong hệ thống PetCare Manager.
+Quan hệ:
 
----
+- tenants 1—n tenant_users; users n—n tenants qua membership `tenant_users` với role/status riêng từng cửa hàng.
+- tenants 1—n tenant_invitations; lời mời dùng một lần lưu hash token, role, người tạo/người nhận và trạng thái hạn/thu hồi.
+- users 1—n account_tokens; account token xác minh email/đặt lại mật khẩu chỉ lưu hash, có purpose, expiry và trạng thái sử dụng.
+- email_outbox là hàng đợi toàn nền tảng độc lập với tenant; payload người nhận/nội dung được mã hóa bằng key riêng, worker áp dụng lease, retry và expiry.
+- Mỗi bản ghi customers, products, pets, invoices, invoice_items, stock_movements và audit_events thuộc đúng một tenant.
+- users 1—n invoices (người lập) và stock_movements (người ghi).
+- customers 1—n invoices; customers 1—n pets đã mua.
+- invoices 1—n invoice_items.
+- products 1—n invoice_items; products 1—n stock_movements.
+- pets 1—0..1 invoice_items; pets có buyer_id tới customers sau khi bán.
+- invoices 1—n stock_movements do giao dịch bán tạo.
 
-## 1. Sơ đồ Quan hệ Thực thể (Mermaid Diagram)
+Một invoice_item dùng đúng một loại mặt hàng: product hoặc pet. Dòng sản phẩm có quantity nguyên dương; dòng thú cưng có quantity bằng 1. Hóa đơn lưu snapshot mã/tên/giá để thay đổi danh mục không làm đổi lịch sử.
 
-```mermaid
-erDiagram
-    users {
-        INTEGER id PK
-        TEXT username UK
-        TEXT password_hash
-        TEXT salt
-        TEXT role
-        TEXT full_name
-        INTEGER active
-        TEXT created_at
-    }
+Các khóa ngoại composite dùng `(tenant_id, id)` hoặc `(tenant_id, user_id)` để không thể gắn khách, thú cưng, sản phẩm, nhân viên hay hóa đơn từ tenant khác. Mã hàng và mã thú cưng có unique key theo tenant.
 
-    owners {
-        INTEGER id PK
-        TEXT full_name
-        TEXT phone
-        TEXT address
-        INTEGER active
-        TEXT created_at
-    }
+Thú cưng có trạng thái available/sold/inactive. Trước thanh toán buyer_id/sold_at rỗng; sau thanh toán chúng được gắn khách hàng và thời điểm bán. Sản phẩm giữ số tồn hiện tại; mọi nhập/điều chỉnh/bán tạo stock_movement trong cùng transaction với thay đổi tồn.
 
-    pets {
-        INTEGER id PK
-        INTEGER owner_id FK
-        TEXT name
-        TEXT species
-        TEXT breed
-        TEXT sex
-        TEXT birth_date
-        REAL weight_kg
-        TEXT coat_color
-        INTEGER active
-        TEXT created_at
-    }
-
-    services {
-        INTEGER id PK
-        TEXT name UK
-        TEXT category
-        INTEGER price_vnd
-        INTEGER active
-        TEXT created_at
-    }
-
-    service_visits {
-        INTEGER id PK
-        INTEGER pet_id FK
-        INTEGER service_id FK
-        TEXT performed_at
-        INTEGER unit_price_vnd
-        TEXT notes
-    }
-
-    examinations {
-        INTEGER id PK
-        INTEGER pet_id FK
-        INTEGER visit_id UK,FK
-        TEXT exam_date
-        TEXT symptoms
-        TEXT diagnosis
-        TEXT medicines
-    }
-
-    vaccinations {
-        INTEGER id PK
-        INTEGER pet_id FK
-        INTEGER visit_id UK,FK
-        TEXT vaccine_name
-        TEXT injection_date
-        TEXT next_due_date
-        INTEGER reminder_resolved
-    }
-
-    appointments {
-        INTEGER id PK
-        INTEGER pet_id FK
-        TEXT type
-        TEXT scheduled_at
-        TEXT status
-        TEXT note
-        TEXT created_at
-    }
-
-    invoices {
-        INTEGER id PK
-        INTEGER owner_id FK
-        TEXT created_at
-        TEXT status
-        TEXT paid_at
-        TEXT note
-    }
-
-    invoice_items {
-        INTEGER id PK
-        INTEGER invoice_id FK
-        INTEGER visit_id UK,FK
-        TEXT service_name_snapshot
-        TEXT pet_name_snapshot
-        INTEGER amount_vnd
-    }
-
-    owners ||--o{ pets : "sở hữu (1-N)"
-    owners ||--o{ invoices : "thanh toán (1-N)"
-    pets ||--o{ service_visits : "sử dụng (1-N)"
-    pets ||--o{ examinations : "khám bệnh (1-N)"
-    pets ||--o{ vaccinations : "tiêm phòng (1-N)"
-    pets ||--o{ appointments : "lên lịch hẹn (1-N)"
-    services ||--o{ service_visits : "định giá (1-N)"
-    service_visits ||--o| examinations : "liên kết (1-1)"
-    service_visits ||--o| vaccinations : "liên kết (1-1)"
-    service_visits ||--o| invoice_items : "thuộc hóa đơn (1-1)"
-    invoices ||--|{ invoice_items : "chứa chi tiết (1-N)"
-```
-
----
-
-## 2. Chi tiết các Ràng buộc Toàn vẹn (Constraints)
-
-1. **Khóa ngoại và Bật Pragma**:
-   - Mọi kết nối SQLite đều thực thi `PRAGMA foreign_keys = ON;`.
-   - Các bảng `pets`, `service_visits`, `examinations`, `vaccinations`, `appointments`, `invoices`, `invoice_items` đều có ràng buộc `REFERENCES` tới bảng cha tương ứng.
-2. **Ràng buộc Tính phí Một lần (`visit_id UNIQUE`)**:
-   - `invoice_items.visit_id` được đặt ràng buộc `UNIQUE`.
-   - Bất kỳ lượt dịch vụ nào đã tồn tại trong `invoice_items` sẽ bị SQLite từ chối nếu cố tình chèn thêm vào một hóa đơn khác.
-3. **Ràng buộc Liên kết Khám & Tiêm**:
-   - `examinations.visit_id UNIQUE` và `vaccinations.visit_id UNIQUE` bảo đảm mỗi hồ sơ y tế chỉ gắn liền với một lượt dịch vụ duy nhất.
-4. **Bảo toàn Giá lịch sử (Snapshotting)**:
-   - Khi dịch vụ thay đổi giá trong `services.price_vnd`, các bản ghi `service_visits.unit_price_vnd` và `invoice_items.amount_vnd` đã lưu trong quá khứ không bị cập nhật theo, giữ đúng nguyên giá trị tại thời điểm thực hiện.
+Hồ sơ `pets` còn lưu màu lông, màu mắt, tags ngoại hình, tên file ảnh local và descriptor JSON. Các thuộc tính ảnh không tạo bảng/quan hệ mới; AI Vision cũng không lưu dữ liệu nhận dạng bổ sung vào schema.
