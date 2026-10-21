@@ -8,7 +8,7 @@ Khám bệnh, tiêm phòng, lịch hẹn chăm sóc và dịch vụ spa thuộc 
 
 ## Yêu cầu
 
-- Python 3.10 trở lên.
+- Python 3.11 trở lên (Pillow 13 đã bỏ hỗ trợ Python 3.10).
 - MySQL 8.0.16 trở lên, InnoDB và utf8mb4.
 - Trình duyệt hiện đại.
 - Khi cần cài MySQL mới: dùng [hướng dẫn cài MySQL chính thức cho macOS](https://dev.mysql.com/doc/refman/8.4/en/macos-installation.html) hoặc [hướng dẫn MySQL chính thức cho Windows](https://dev.mysql.com/doc/refman/8.4/en/windows-installation.html). Windows khuyến nghị MSI và MySQL Configurator; macOS có gói cài đặt DMG.
@@ -139,7 +139,7 @@ Xem [hướng dẫn cấu hình, IAM và chuyển ảnh sang S3](docs/media_stor
 
 Ảnh dùng filesystem riêng ở chế độ local. Với nhiều app instance, đặt `MEDIA_STORAGE_BACKEND=s3`, `MEDIA_S3_BUCKET` và `MEDIA_S3_REGION`; SDK dùng IAM/workload identity nếu không khai báo access key pair. Bucket phải private, bật chặn public access và encryption. Custom S3 endpoint production bắt buộc HTTPS. Route ảnh vẫn đi qua app để xác minh đăng nhập, membership và quyền sở hữu tenant; không bật public ACL/CDN bypass. Tenant export có thể đóng gói ảnh từ backend này. `scripts/petcare_backup.py` chỉ hỗ trợ ảnh local và từ chối tạo backup khi chọn S3 để tránh thiếu ảnh.
 
-GitHub Actions được cấu hình tại `.github/workflows/ci.yml`: chạy unit/web/MySQL integration trên MySQL 8.4 với Python 3.10–3.13, audit dependency Python bằng `pip-audit`, quét Python source bằng Bandit, quét secret cả source tree và production container bằng Trivy, đồng thời build và quét image. Hosted run cần xanh trước mỗi release.
+GitHub Actions được cấu hình tại `.github/workflows/ci.yml`: chạy unit/web/MySQL integration trên MySQL 8.4 với Python 3.11–3.13, audit dependency Python bằng `pip-audit`, quét Python source bằng Bandit, quét secret cả source tree và production container bằng Trivy, đồng thời build và quét image. Hosted run cần xanh trước mỗi release.
 
 ## Tài khoản và dữ liệu demo
 

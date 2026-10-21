@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import getpass
 import hashlib
 import io
@@ -15,9 +16,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO
+from typing import BinaryIO, Iterator
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -81,10 +83,18 @@ def _add_file(archive: tarfile.TarFile, path: Path, arcname: str, mode: int = 0o
         archive.addfile(info, stream)
 
 
+@contextmanager
+def _open_gzip_tar(output: BinaryIO) -> Iterator[tarfile.TarFile]:
+    """Open a streaming gzip tar with the same compression on Python 3.11+."""
+    with gzip.GzipFile(fileobj=output, mode="wb", compresslevel=6, mtime=0) as compressed:
+        with tarfile.open(fileobj=compressed, mode="w|") as archive:
+            yield archive
+
+
 def create_media_archive(pet_image_dir: Path, product_image_dir: Path, output: BinaryIO) -> None:
     """Write an inner gzip tar with only regular image files and safe relative names."""
     roots = ((pet_image_dir, "pet-images"), (product_image_dir, "product-images"))
-    with tarfile.open(fileobj=output, mode="w|gz", compresslevel=6) as archive:
+    with _open_gzip_tar(output) as archive:
         for root, archive_root in roots:
             if root.is_symlink():
                 raise BackupError(f"Thư mục ảnh không được là liên kết tượng trưng: {root}")
@@ -301,9 +311,7 @@ def create_backup(output_path: Path, database: str, media_source: str, passphras
                     encrypted_stream = AuthenticatedEncryptingWriter(
                         destination, passphrase, BACKUP_MAGIC
                     )
-                    with tarfile.open(
-                        fileobj=encrypted_stream, mode="w|gz", compresslevel=6
-                    ) as archive:
+                    with _open_gzip_tar(encrypted_stream) as archive:
                         _add_file(archive, sql_path, "database.sql", mode=0o600)
                         _add_file(archive, media_path, "media.tar.gz", mode=0o600)
                         info = tarfile.TarInfo("manifest.json")

@@ -30,7 +30,7 @@ Khám bệnh, tiêm phòng, lịch nhắc, lịch hẹn chăm sóc, dịch vụ 
 
 ## Chạy local
 
-1. Cài Python 3.10+, MySQL 8.0.16+ và tạo một database/user local riêng tên petcare_shop_dev.
+1. Cài Python 3.11+, MySQL 8.0.16+ và tạo một database/user local riêng tên petcare_shop_dev.
 2. Tạo venv, cài requirements, sao chép .env.example thành .env và điền kết nối DB local cùng SECRET_KEY.
 3. Khởi tạo schema bằng python -m petcare.database.initialize.
 4. Tạo tài khoản demo bằng python -m petcare.database.seed.

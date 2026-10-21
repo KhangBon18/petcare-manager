@@ -2,7 +2,7 @@
 
 ## Kiến trúc hiện hành
 
-Bản hiện hành là nền tảng web multi-store SaaS cho cửa hàng thú cưng, chạy cục bộ trong phát triển và dùng chung ứng dụng/schema MySQL cho nhiều tenant. Backend dùng Python 3.10+ và Flask; giao diện dùng Jinja HTML, CSS và JavaScript thuần; dữ liệu lưu trong MySQL 8.0.16+ (InnoDB, utf8mb4). Không dùng Tkinter hay SQLite cho ứng dụng hiện hành.
+Bản hiện hành là nền tảng web multi-store SaaS cho cửa hàng thú cưng, chạy cục bộ trong phát triển và dùng chung ứng dụng/schema MySQL cho nhiều tenant. Backend dùng Python 3.11+ và Flask; giao diện dùng Jinja HTML, CSS và JavaScript thuần; dữ liệu lưu trong MySQL 8.0.16+ (InnoDB, utf8mb4). Không dùng Tkinter hay SQLite cho ứng dụng hiện hành.
 
 - Route nhận request, kiểm tra CSRF, gọi service và render/redirect.
 - Service áp dụng quyền và quy tắc nghiệp vụ, đồng thời sở hữu commit/rollback.

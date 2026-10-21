@@ -1,5 +1,11 @@
 # Nhật ký thay đổi
 
+## Khắc phục CI dependency và tương thích Python — 2026-10-21
+
+- Nâng Pillow tối thiểu lên 13.0.0 để loại bỏ các advisory mới được `pip-audit` và Trivy phát hiện trên bản 12.3.0; chuẩn Python tối thiểu đổi từ 3.10 lên 3.11 theo hỗ trợ của Pillow 13.
+- Dùng gzip streaming tường minh cho backup tar để giữ compression level 6 trên Python 3.11–3.13.
+- Sau cập nhật: pip-audit sạch; 203/203 test đạt trên Python 3.11 + MySQL 8.4; build container thành công và Trivy không còn finding HIGH/CRITICAL.
+
 ## Rà soát hiệu năng và độ tin cậy — 2026-10-20
 
 - Tìm ảnh thêm SimHash 64-bit và chỉ mục LSH gắn composite tenant/pet FK; xếp hạng cuối vẫn dùng descriptor ảnh đầy đủ, còn legacy và bucket quá rộng tự chuyển sang full scan.
