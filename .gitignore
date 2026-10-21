@@ -11,5 +11,8 @@ data/*.sqlite*
 .env
 .env.*
 !.env.example
+instance/pet-images/
+instance/product-images/
 exports/
 demo_exports/
+backups/

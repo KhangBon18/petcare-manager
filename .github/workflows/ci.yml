@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      APP_ENV: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: petcare_ci_test
+      DB_USER: petcare_app
+      DB_PASSWORD: petcare-ci-password
+      MYSQL_ROOT_PASSWORD: petcare-ci-root-password
+      SECRET_KEY: ci-only-secret-key-not-used-for-deployment-0123456789abcdef
+      COOKIE_SECURE: "0"
+      PETCARE_TEST_DB_NAME: petcare_ci_test
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: petcare_ci_test
+          MYSQL_USER: petcare_app
+          MYSQL_PASSWORD: petcare-ci-password
+          MYSQL_ROOT_PASSWORD: petcare-ci-root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=petcare-ci-root-password --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+          --health-start-period=15s
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Audit Python dependencies
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
+      - name: Run unit, web and MySQL integration tests
+        run: python -m unittest discover -s tests -v
+
+  source-security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+      - name: Install pinned source scanner
+        run: python -m pip install "bandit==1.9.4"
+      - name: Fail on new Python security findings
+        run: >-
+          bandit -q -r petcare scripts main.py run.py wsgi.py
+          -x petcare/templates,petcare/static
+          -b .security/bandit-baseline.json
+      - name: Scan source tree for secrets
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          version: v0.76.0
+          scanners: secret
+          format: table
+          exit-code: "1"
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build production container
+        run: docker build --tag petcare-manager-web:ci .
+      - name: Scan production container for fixable high and critical vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: petcare-manager-web:ci
+          version: v0.76.0
+          format: table
+          exit-code: "1"
+          ignore-unfixed: true
+          vuln-type: os,library
+          severity: HIGH,CRITICAL
+          scanners: vuln,secret
+          trivyignores: .trivyignore.yaml

@@ -1,0 +1,160 @@
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-petcare_shop_dev}
+      DB_USER: ${DB_USER:-petcare_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_SSL_CA: ${DB_SSL_CA:-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      IMAGE_PROCESSING_CONCURRENCY: ${IMAGE_PROCESSING_CONCURRENCY:-1}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      APP_ENV: ${APP_ENV:-development}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:5000}
+      PUBLIC_SIGNUP_ENABLED: ${PUBLIC_SIGNUP_ENABLED:-0}
+      PUBLIC_SIGNUP_EMAIL_RATE_LIMIT_PER_MINUTE: ${PUBLIC_SIGNUP_EMAIL_RATE_LIMIT_PER_MINUTE:-3}
+      PUBLIC_SIGNUP_IP_RATE_LIMIT_PER_MINUTE: ${PUBLIC_SIGNUP_IP_RATE_LIMIT_PER_MINUTE:-5}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-PetCare Manager}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-1}
+      MAIL_TIMEOUT_SECONDS: ${MAIL_TIMEOUT_SECONDS:-10}
+      MAIL_OUTBOX_KEY: ${MAIL_OUTBOX_KEY:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-0}
+      TRUST_PROXY: ${TRUST_PROXY:-0}
+      AI_API_BASE_URL: ${AI_API_BASE_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+      AI_TIMEOUT_SECONDS: ${AI_TIMEOUT_SECONDS:-15}
+      AI_VISION_ENABLED: ${AI_VISION_ENABLED:-0}
+      ASSISTANT_RATE_LIMIT_PER_MINUTE: ${ASSISTANT_RATE_LIMIT_PER_MINUTE:-20}
+      ASSISTANT_IP_RATE_LIMIT_PER_MINUTE: ${ASSISTANT_IP_RATE_LIMIT_PER_MINUTE:-120}
+      VISION_RATE_LIMIT_PER_MINUTE: ${VISION_RATE_LIMIT_PER_MINUTE:-8}
+      VISION_IP_RATE_LIMIT_PER_MINUTE: ${VISION_IP_RATE_LIMIT_PER_MINUTE:-40}
+      CATALOG_IMAGE_UPLOAD_RATE_LIMIT_PER_MINUTE: ${CATALOG_IMAGE_UPLOAD_RATE_LIMIT_PER_MINUTE:-12}
+      CATALOG_IMAGE_UPLOAD_IP_RATE_LIMIT_PER_MINUTE: ${CATALOG_IMAGE_UPLOAD_IP_RATE_LIMIT_PER_MINUTE:-60}
+      TENANT_EXPORT_RATE_LIMIT_PER_MINUTE: ${TENANT_EXPORT_RATE_LIMIT_PER_MINUTE:-2}
+      TENANT_EXPORT_JOB_KEY: ${TENANT_EXPORT_JOB_KEY:-}
+      TENANT_EXPORT_JOB_FALLBACK_KEYS: ${TENANT_EXPORT_JOB_FALLBACK_KEYS:-}
+      TENANT_EXPORT_STORAGE_BACKEND: ${TENANT_EXPORT_STORAGE_BACKEND:-${MEDIA_STORAGE_BACKEND:-local}}
+      TENANT_EXPORT_DIR: /app/instance/tenant-exports
+      TENANT_EXPORT_RETENTION_HOURS: ${TENANT_EXPORT_RETENTION_HOURS:-24}
+      TENANT_INVITATION_RATE_LIMIT_PER_MINUTE: ${TENANT_INVITATION_RATE_LIMIT_PER_MINUTE:-10}
+      TENANT_OWNER_TRANSFER_RATE_LIMIT_PER_MINUTE: ${TENANT_OWNER_TRANSFER_RATE_LIMIT_PER_MINUTE:-5}
+      AI_ALLOW_HTTP_ENDPOINT: ${AI_ALLOW_HTTP_ENDPOINT:-0}
+      MEDIA_STORAGE_BACKEND: ${MEDIA_STORAGE_BACKEND:-local}
+      MEDIA_S3_BUCKET: ${MEDIA_S3_BUCKET:-}
+      MEDIA_S3_REGION: ${MEDIA_S3_REGION:-}
+      MEDIA_S3_ENDPOINT_URL: ${MEDIA_S3_ENDPOINT_URL:-}
+      MEDIA_S3_ACCESS_KEY_ID: ${MEDIA_S3_ACCESS_KEY_ID:-}
+      MEDIA_S3_SECRET_ACCESS_KEY: ${MEDIA_S3_SECRET_ACCESS_KEY:-}
+      MEDIA_S3_ADDRESSING_STYLE: ${MEDIA_S3_ADDRESSING_STYLE:-auto}
+      MEDIA_S3_PREFIX: ${MEDIA_S3_PREFIX:-petcare}
+      MEDIA_S3_SERVER_SIDE_ENCRYPTION: ${MEDIA_S3_SERVER_SIDE_ENCRYPTION:-AES256}
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8000}:8000"
+    volumes:
+      - petcare_manager_uploads:/app/instance
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8000/readyz", timeout=3).read()'
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+  email-worker:
+    build: .
+    command: ["python", "-m", "petcare.services.mail_worker"]
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-petcare_shop_dev}
+      DB_USER: ${DB_USER:-petcare_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_SSL_CA: ${DB_SSL_CA:-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      APP_ENV: ${APP_ENV:-development}
+      MAIL_HOST: ${MAIL_HOST:-}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USERNAME: ${MAIL_USERNAME:-}
+      MAIL_PASSWORD: ${MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_FROM_NAME: ${MAIL_FROM_NAME:-PetCare Manager}
+      MAIL_STARTTLS: ${MAIL_STARTTLS:-1}
+      MAIL_TIMEOUT_SECONDS: ${MAIL_TIMEOUT_SECONDS:-10}
+      MAIL_OUTBOX_KEY: ${MAIL_OUTBOX_KEY:-}
+    depends_on:
+      mysql:
+        condition: service_healthy
+  export-worker:
+    build: .
+    command: ["python", "-m", "petcare.services.tenant_export_worker_cli"]
+    restart: unless-stopped
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-petcare_shop_dev}
+      DB_USER: ${DB_USER:-petcare_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      DB_SSL_CA: ${DB_SSL_CA:-}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      APP_ENV: ${APP_ENV:-development}
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in .env}
+      TENANT_EXPORT_JOB_KEY: ${TENANT_EXPORT_JOB_KEY:-}
+      TENANT_EXPORT_JOB_FALLBACK_KEYS: ${TENANT_EXPORT_JOB_FALLBACK_KEYS:-}
+      TENANT_EXPORT_STORAGE_BACKEND: ${TENANT_EXPORT_STORAGE_BACKEND:-${MEDIA_STORAGE_BACKEND:-local}}
+      TENANT_EXPORT_DIR: /app/instance/tenant-exports
+      TENANT_EXPORT_RETENTION_HOURS: ${TENANT_EXPORT_RETENTION_HOURS:-24}
+      MEDIA_STORAGE_BACKEND: ${MEDIA_STORAGE_BACKEND:-local}
+      PET_IMAGE_DIR: /app/instance/pet-images
+      PRODUCT_IMAGE_DIR: /app/instance/product-images
+      MEDIA_S3_BUCKET: ${MEDIA_S3_BUCKET:-}
+      MEDIA_S3_REGION: ${MEDIA_S3_REGION:-}
+      MEDIA_S3_ENDPOINT_URL: ${MEDIA_S3_ENDPOINT_URL:-}
+      MEDIA_S3_ACCESS_KEY_ID: ${MEDIA_S3_ACCESS_KEY_ID:-}
+      MEDIA_S3_SECRET_ACCESS_KEY: ${MEDIA_S3_SECRET_ACCESS_KEY:-}
+      MEDIA_S3_ADDRESSING_STYLE: ${MEDIA_S3_ADDRESSING_STYLE:-auto}
+      MEDIA_S3_PREFIX: ${MEDIA_S3_PREFIX:-petcare}
+      MEDIA_S3_SERVER_SIDE_ENCRYPTION: ${MEDIA_S3_SERVER_SIDE_ENCRYPTION:-AES256}
+    volumes:
+      - petcare_manager_uploads:/app/instance
+    depends_on:
+      mysql:
+        condition: service_healthy
+  mysql:
+    image: mysql:8.4
+    ports:
+      - "127.0.0.1:${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: ${DB_NAME:-petcare_shop_dev}
+      MYSQL_USER: ${DB_USER:-petcare_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - petcare_manager_mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'mysqladmin ping --host=127.0.0.1 --user=root --password="$${MYSQL_ROOT_PASSWORD}" --silent'
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+
+volumes:
+  petcare_manager_mysql_data:
+  petcare_manager_uploads:

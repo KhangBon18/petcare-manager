@@ -1,0 +1,21 @@
+vulnerabilities:
+  - id: GHSA-6v7p-g79w-8964
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    expired_at: 2026-11-18
+    statement: Trivy 0.76.0 attributes this package to a third-party SBOM; msgpack is not installed in the final image. Recheck the image inventory before expiry.
+  - id: CVE-2025-47273
+    purls:
+      - pkg:pypi/setuptools@70.3.0
+    expired_at: 2026-11-18
+    statement: Trivy 0.76.0 attributes this package to a third-party SBOM; setuptools is not installed in the final image. Recheck the image inventory before expiry.
+  - id: CVE-2026-97687
+    purls:
+      - pkg:pypi/urllib3@2.7.0
+    expired_at: 2026-11-18
+    statement: Trivy 0.76.0 attributes this package to a third-party SBOM; the final image installs urllib3 2.8.0. Recheck the image inventory before expiry.
+  - id: CVE-2026-97689
+    purls:
+      - pkg:pypi/urllib3@2.7.0
+    expired_at: 2026-11-18
+    statement: Trivy 0.76.0 attributes this package to a third-party SBOM; the final image installs urllib3 2.8.0. Recheck the image inventory before expiry.
