@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Cơ sở dữ liệu chưa sẵn sàng') }}{% endblock %}
+{% block content %}
+<div class="empty-state error-state"><span class="empty-icon">{{ icon('database') }}</span><h1>{{ t('Chưa kết nối được MySQL') }}</h1><p>{{ t('Kiểm tra MySQL đang chạy và cấu hình DB_HOST, DB_PORT, DB_NAME, DB_USER trong file .env.') }}</p><a class="button button-primary" href="{{ url_for('auth.login') }}">{{ t('Thử lại') }}</a></div>
+{% endblock %}

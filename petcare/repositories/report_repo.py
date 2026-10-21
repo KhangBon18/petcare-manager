@@ -1,96 +1,91 @@
-"""Repository xử lý các truy vấn thống kê, doanh thu và báo cáo."""
-
-import sqlite3
-from typing import Any
+from petcare.repositories.base import fetch_all, fetch_one
 
 
-class ReportRepository:
-    """Truy vấn dữ liệu tổng hợp phục vụ màn hình báo cáo thống kê."""
+def summary(connection, start_date, end_exclusive):
+    return fetch_one(
+        connection,
+        "SELECT COUNT(*) invoice_count, COALESCE(SUM(total_amount), 0) revenue "
+        "FROM (SELECT i.id, SUM(ii.line_total) total_amount FROM invoices i "
+        "JOIN invoice_items ii ON ii.invoice_id = i.id "
+        "WHERE i.tenant_id = @petcare_tenant_id AND ii.tenant_id = i.tenant_id "
+        "AND i.status = 'paid' AND i.paid_at >= %s AND i.paid_at < %s "
+        "GROUP BY i.id) paid_invoices",
+        (start_date, end_exclusive),
+    )
 
-    @staticmethod
-    def get_revenue_summary(
-        conn: sqlite3.Connection, start_datetime: str, end_datetime: str
-    ) -> dict[str, int]:
-        """Tính tổng doanh thu và số hóa đơn đã thanh toán trong khoảng thời gian."""
-        row = conn.execute(
-            """
-            SELECT COALESCE(SUM(ii.amount_vnd), 0) AS total_revenue,
-                   COUNT(DISTINCT inv.id) AS paid_invoices_count
-            FROM invoices inv
-            JOIN invoice_items ii ON inv.id = ii.invoice_id
-            WHERE inv.status = 'paid'
-              AND inv.paid_at >= ? AND inv.paid_at < ?
-            """,
-            (start_datetime, end_datetime),
-        ).fetchone()
 
-        return {
-            "total_revenue_vnd": int(row["total_revenue"]) if row else 0,
-            "paid_invoices_count": int(row["paid_invoices_count"]) if row else 0,
-        }
+def top_products(connection, start_date, end_exclusive):
+    return fetch_all(
+        connection,
+        "SELECT ii.product_id, ii.item_code_snapshot code, ii.name_snapshot name, "
+        "SUM(ii.quantity) quantity_sold, SUM(ii.line_total) revenue "
+        "FROM invoice_items ii JOIN invoices i ON i.id = ii.invoice_id AND i.tenant_id = ii.tenant_id "
+        "WHERE i.tenant_id = @petcare_tenant_id AND ii.tenant_id = @petcare_tenant_id "
+        "AND ii.item_type = 'product' AND i.status = 'paid' "
+        "AND i.paid_at >= %s AND i.paid_at < %s "
+        "GROUP BY ii.product_id, ii.item_code_snapshot, ii.name_snapshot "
+        "ORDER BY quantity_sold DESC, revenue DESC LIMIT 10",
+        (start_date, end_exclusive),
+    )
 
-    @staticmethod
-    def get_medical_summary(
-        conn: sqlite3.Connection, start_date: str, end_date: str
-    ) -> dict[str, int]:
-        """Đếm số lượt khám và số lượng thú cưng duy nhất đã được tiêm phòng."""
-        # 1. Số lượt khám bệnh
-        exam_row = conn.execute(
-            """
-            SELECT COUNT(*) AS exam_count
-            FROM examinations
-            WHERE exam_date >= ? AND exam_date <= ?
-            """,
-            (start_date, end_date),
-        ).fetchone()
 
-        # 2. Số thú cưng đã tiêm (COUNT DISTINCT pet_id)
-        vac_row = conn.execute(
-            """
-            SELECT COUNT(DISTINCT pet_id) AS vaccinated_pets_count
-            FROM vaccinations
-            WHERE injection_date >= ? AND injection_date <= ?
-            """,
-            (start_date, end_date),
-        ).fetchone()
+def inventory(connection):
+    return fetch_one(
+        connection,
+        "SELECT COUNT(*) product_count, COALESCE(SUM(stock_qty), 0) units_in_stock, "
+        "COALESCE(SUM(CASE WHEN stock_qty <= reorder_level AND active = 1 THEN 1 ELSE 0 END), 0) low_stock_count "
+        "FROM products WHERE tenant_id = @petcare_tenant_id AND active = 1",
+    )
 
-        return {
-            "exam_count": int(exam_row["exam_count"]) if exam_row else 0,
-            "vaccinated_pets_count": int(vac_row["vaccinated_pets_count"]) if vac_row else 0,
-        }
 
-    @staticmethod
-    def get_species_distribution(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-        """Phân bố số lượng thú cưng theo từng loài."""
-        rows = conn.execute(
-            """
-            SELECT species, COUNT(*) AS count
-            FROM pets
-            WHERE active = 1
-            GROUP BY species
-            ORDER BY count DESC
-            """
-        ).fetchall()
-        return [dict(r) for r in rows]
+def pets_sold(connection, start_date, end_exclusive):
+    return fetch_one(
+        connection,
+        "SELECT COUNT(*) pets_sold FROM pets "
+        "WHERE tenant_id = @petcare_tenant_id AND sale_status = 'sold' "
+        "AND sold_at >= %s AND sold_at < %s",
+        (start_date, end_exclusive),
+    )
 
-    @staticmethod
-    def get_popular_services(
-        conn: sqlite3.Connection, start_datetime: str, end_datetime: str, limit: int = 10
-    ) -> list[dict[str, Any]]:
-        """Lấy danh sách các dịch vụ được sử dụng nhiều nhất trong các hóa đơn đã thanh toán."""
-        rows = conn.execute(
-            """
-            SELECT ii.service_name_snapshot AS service_name,
-                   COUNT(ii.id) AS usage_count,
-                   SUM(ii.amount_vnd) AS total_revenue
-            FROM invoice_items ii
-            JOIN invoices inv ON ii.invoice_id = inv.id
-            WHERE inv.status = 'paid'
-              AND inv.paid_at >= ? AND inv.paid_at < ?
-            GROUP BY ii.service_name_snapshot
-            ORDER BY usage_count DESC, total_revenue DESC
-            LIMIT ?
-            """,
-            (start_datetime, end_datetime, limit),
-        ).fetchall()
-        return [dict(r) for r in rows]
+
+def dashboard(connection, day_start_utc, day_end_utc):
+    return {
+        "customers": fetch_one(
+            connection, "SELECT COUNT(*) total FROM customers WHERE tenant_id = @petcare_tenant_id AND active = 1"
+        )["total"],
+        "products": fetch_one(
+            connection, "SELECT COUNT(*) total FROM products WHERE tenant_id = @petcare_tenant_id AND active = 1"
+        )["total"],
+        "pets_available": fetch_one(
+            connection, "SELECT COUNT(*) total FROM pets WHERE tenant_id = @petcare_tenant_id AND sale_status = 'available'"
+        )["total"],
+        "low_stock": fetch_one(
+            connection,
+            "SELECT COUNT(*) total FROM products WHERE tenant_id = @petcare_tenant_id "
+            "AND active = 1 AND stock_qty <= reorder_level",
+        )["total"],
+        "today": fetch_one(
+            connection,
+            "SELECT COALESCE(SUM(ii.line_total), 0) revenue "
+            "FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id "
+            "WHERE i.tenant_id = @petcare_tenant_id AND i.status = 'paid' "
+            "AND i.paid_at >= %s AND i.paid_at < %s",
+            (day_start_utc, day_end_utc),
+        )["revenue"],
+        "low_stock_items": fetch_all(
+            connection,
+            "SELECT id, code, name, stock_qty, reorder_level FROM products "
+            "WHERE tenant_id = @petcare_tenant_id AND active = 1 AND stock_qty <= reorder_level "
+            "ORDER BY stock_qty ASC, name ASC LIMIT 5",
+        ),
+        "recent_invoices": fetch_all(
+            connection,
+            "SELECT i.id, i.created_at, i.status, i.currency_code, c.full_name customer_name, "
+            "COALESCE(SUM(ii.line_total), 0) total_amount "
+            "FROM invoices i JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id "
+            "LEFT JOIN invoice_items ii ON ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id "
+            "WHERE i.tenant_id = @petcare_tenant_id "
+            "GROUP BY i.id, i.created_at, i.status, i.currency_code, c.full_name "
+            "ORDER BY i.created_at DESC, i.id DESC LIMIT 5",
+        ),
+    }

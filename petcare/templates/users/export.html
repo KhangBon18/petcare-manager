@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Xuất dữ liệu cửa hàng') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading">
+  <div>
+    <a class="back-link" href="{{ url_for('users.index') }}">← {{ t('Quản lý tài khoản') }}</a>
+    <span class="eyebrow">{{ t('QUYỀN DỮ LIỆU CỬA HÀNG') }}</span>
+    <h1>{{ t('Xuất dữ liệu cửa hàng') }}</h1>
+    <p>{{ t('Tạo bản sao mã hóa của') }} <strong>{{ g.tenant.name }}</strong> {{ t('để lưu trữ hoặc chuyển giao dữ liệu.') }}</p>
+  </div>
+</div>
+
+<section class="panel form-card" aria-labelledby="export-title">
+  <div class="section-heading">
+    <div>
+      <h2 id="export-title">{{ t('Xác nhận danh tính và mã hóa') }}</h2>
+      <p>{{ t('Gói xuất chứa hồ sơ khách hàng, catalog, hóa đơn, lịch sử tồn, nhật ký và ảnh thuộc cửa hàng này. Password hashes và token lời mời không được xuất.') }}</p>
+    </div>
+  </div>
+  <form method="post" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>{{ t('Mật khẩu hiện tại') }}
+      <input type="password" name="current_password" autocomplete="current-password" required maxlength="1024">
+      <small>{{ t('Nhập lại mật khẩu để xác nhận quyền xuất dữ liệu.') }}</small>
+    </label>
+    <label>{{ t('Passphrase mã hóa') }}
+      <input type="password" name="passphrase" autocomplete="new-password" minlength="12" maxlength="1024" required>
+      <small>{{ t('Tối thiểu 12 ký tự. Dùng passphrase riêng và lưu ở nơi an toàn.') }}</small>
+    </label>
+    <label>{{ t('Xác nhận passphrase') }}
+      <input type="password" name="passphrase_confirmation" autocomplete="new-password" minlength="12" maxlength="1024" required>
+    </label>
+    <p class="privacy-note">{{ t('Yêu cầu được xử lý nền để các bản xuất lớn không làm treo trang. Passphrase được mã hóa bằng khóa riêng của hệ thống trong lúc chờ worker, rồi xóa sau khi hoàn tất. File gói dùng AES-256-GCM và tự xóa sau') }} {{ config.TENANT_EXPORT_RETENTION_HOURS }} {{ t('giờ; hãy tải về và cất passphrase riêng. Nếu mất passphrase, không thể khôi phục nội dung.') }}</p>
+    <div class="form-actions">
+      <a class="button button-light" href="{{ url_for('users.index') }}">{{ t('Hủy') }}</a>
+      <button class="button button-primary" type="submit">{{ t('Yêu cầu xuất dữ liệu') }}</button>
+    </div>
+  </form>
+</section>
+{% if export_jobs %}
+<section class="panel table-card" aria-labelledby="recent-exports-title">
+  <div class="section-heading">
+    <div><h2 id="recent-exports-title">{{ t('Yêu cầu gần đây') }}</h2><p>{{ t('Chỉ các yêu cầu do tài khoản này tạo mới hiển thị tại đây.') }}</p></div>
+  </div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>{{ t('Yêu cầu') }}</th><th>{{ t('Tạo lúc') }}</th><th>{{ t('Trạng thái') }}</th><th></th></tr></thead>
+    <tbody>
+      {% for job in export_jobs %}
+      <tr>
+        <td>#{{ job.id }}</td>
+        <td>{{ format_datetime(job.created_at) }}</td>
+        <td>{% if job.expired %}{{ t('Đã hết hạn') }}{% elif job.status == 'pending' %}{{ t('Đang chờ') }}{% elif job.status == 'processing' %}{{ t('Đang xử lý') }}{% elif job.status == 'ready' %}{{ t('Sẵn sàng') }}{% else %}{{ t('Không thành công') }}{% endif %}</td>
+        <td><a class="table-link" href="{{ url_for('users.export_job', job_id=job.id) }}">{{ t('Xem') }}</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endif %}
+{% endblock %}

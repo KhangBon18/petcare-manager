@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Không tìm thấy') }}{% endblock %}
+{% block content %}
+<div class="empty-state error-state"><span class="empty-icon">?</span><h1>{{ t('Trang này không tồn tại') }}</h1><p>{{ t('Đường dẫn có thể đã thay đổi hoặc nội dung không còn sẵn có.') }}</p><a class="button button-primary" href="{{ url_for('main.dashboard') if g.user else url_for('auth.login') }}">{{ t('Quay lại') }}</a></div>
+{% endblock %}

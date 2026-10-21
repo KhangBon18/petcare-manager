@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Hóa đơn') }}{% endblock %}
+{% block content %}
+<div class="page-heading"><div><span class="eyebrow">{{ t('BÁN HÀNG VÀ THANH TOÁN') }}</span><h1>{{ t('Hóa đơn') }}</h1><p>{{ t('Theo dõi giao dịch của khách hàng và trạng thái thanh toán.') }}</p></div><a class="button button-primary" href="{{ url_for('invoices.create') }}">{{ icon('plus') }} {{ t('Lập hóa đơn') }}</a></div>
+<section class="panel"><div class="table-toolbar"><form class="search-form" method="get" role="search" aria-label="{{ t('Tìm hóa đơn') }}"><span aria-hidden="true">⌕</span><input type="search" name="q" value="{{ search }}" aria-label="{{ t('Từ khóa hóa đơn') }}" placeholder="{{ t('Tìm theo khách hàng hoặc mã hóa đơn') }}"><select name="status" aria-label="{{ t('Lọc theo trạng thái') }}"><option value="">{{ t('Mọi trạng thái') }}</option><option value="unpaid" {{ 'selected' if status == 'unpaid' }}>{{ t('Chưa thanh toán') }}</option><option value="paid" {{ 'selected' if status == 'paid' }}>{{ t('Đã thanh toán') }}</option><option value="cancelled" {{ 'selected' if status == 'cancelled' }}>{{ t('Đã hủy') }}</option></select><button class="button button-light" type="submit">{{ t('Lọc') }}</button></form>{% if search or status %}<a class="text-link" href="{{ url_for('invoices.index') }}">{{ t('Xóa bộ lọc') }}</a>{% endif %}</div>
+<div class="table-scroll"><table><thead><tr><th>{{ t('MÃ HÓA ĐƠN') }}</th><th>{{ t('KHÁCH HÀNG') }}</th><th>{{ t('NGÀY TẠO') }}</th><th>{{ t('NGƯỜI LẬP') }}</th><th>{{ t('TỔNG CỘNG') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
+{% for invoice in invoices %}<tr><td><a class="invoice-number" href="{{ url_for('invoices.detail', invoice_id=invoice.id) }}">#{{ '%06d'|format(invoice.id) }}</a></td><td><strong>{{ invoice.customer_name }}</strong></td><td>{{ format_datetime(invoice.created_at) if invoice.created_at else '—' }}</td><td>{{ invoice.created_by_name }}</td><td class="money-cell">{{ format_money(invoice.total_amount, invoice.currency_code) }}</td><td><span class="status-pill {{ {'unpaid':'status-pending','paid':'status-active','cancelled':'status-muted'}[invoice.status] }}">{{ t({'unpaid':'Chưa thanh toán','paid':'Đã thanh toán','cancelled':'Đã hủy'}[invoice.status]) }}</span></td><td><a class="table-action" href="{{ url_for('invoices.detail', invoice_id=invoice.id) }}">{{ t('Chi tiết') }} →</a></td></tr>
+{% else %}<tr><td colspan="7"><div class="table-empty"><span>▤</span><strong>{{ t('Chưa có hóa đơn') }}</strong><small>{{ t('Bắt đầu bằng cách lập hóa đơn bán hàng.') }}</small></div></td></tr>{% endfor %}
+</tbody></table></div>
+{% include "pagination.html" %}
+</section>
+{% endblock %}

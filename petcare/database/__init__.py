@@ -1,1 +1,1 @@
-"""Nhàn: kết nối, giao dịch, schema, khởi tạo và seed; chưa triển khai."""
+"""MySQL connection, schema migration, tenant provisioning and demo seed."""

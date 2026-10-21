@@ -1,153 +1,139 @@
-"""Repository xử lý dữ liệu bảng invoices và invoice_items (Hóa đơn và Chi tiết)."""
-
-from datetime import datetime
-import sqlite3
-from typing import Any
+from petcare.repositories.base import contains_filter, execute, fetch_all, fetch_one
 
 
-class InvoiceRepository:
-    """Truy vấn SQL có tham số cho hóa đơn. Nhận kết nối conn, không tự kết thúc transaction."""
+def list_invoices(connection, search="", status=""):
+    search_sql, search_params = contains_filter(
+        search, "c.full_name", "CAST(i.id AS CHAR)"
+    )
+    status_sql = "AND i.status = %s" if status else ""
+    params = list(search_params)
+    if status:
+        params.append(status)
+    return fetch_all(
+        connection,
+        "SELECT i.*, c.full_name customer_name, u.full_name created_by_name, "
+        "COALESCE((SELECT SUM(ii.line_total) FROM invoice_items ii "
+        "WHERE ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id), 0) total_amount "
+        "FROM invoices i JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id "
+        "JOIN users u ON u.id = i.created_by "
+        "WHERE i.tenant_id = @petcare_tenant_id "
+        + search_sql + " " + status_sql + " ORDER BY i.created_at DESC, i.id DESC",
+        tuple(params),
+    )
 
-    @staticmethod
-    def create_invoice(
-        conn: sqlite3.Connection,
-        owner_id: int,
-        note: str | None = None,
-    ) -> int:
-        now_str = datetime.now().isoformat()
-        cursor = conn.execute(
-            """
-            INSERT INTO invoices (owner_id, created_at, status, paid_at, note)
-            VALUES (?, ?, 'unpaid', NULL, ?)
-            """,
-            (owner_id, now_str, note.strip() if note else None),
-        )
-        return cursor.lastrowid
 
-    @staticmethod
-    def add_item(
-        conn: sqlite3.Connection,
-        invoice_id: int,
-        visit_id: int,
-        service_name_snapshot: str,
-        pet_name_snapshot: str,
-        amount_vnd: int,
-    ) -> int:
-        cursor = conn.execute(
-            """
-            INSERT INTO invoice_items (invoice_id, visit_id, service_name_snapshot, pet_name_snapshot, amount_vnd)
-            VALUES (?, ?, ?, ?, ?)
-            """,
-            (
-                invoice_id,
-                visit_id,
-                service_name_snapshot.strip(),
-                pet_name_snapshot.strip(),
-                int(amount_vnd),
-            ),
-        )
-        return cursor.lastrowid
+def count_invoices(connection, search="", status=""):
+    search_sql, search_params = contains_filter(
+        search, "c.full_name", "CAST(i.id AS CHAR)"
+    )
+    status_sql = "AND i.status = %s" if status else ""
+    params = list(search_params)
+    if status:
+        params.append(status)
+    return fetch_one(
+        connection,
+        "SELECT COUNT(*) total FROM invoices i "
+        "JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id "
+        "WHERE i.tenant_id = @petcare_tenant_id "
+        + search_sql + " " + status_sql,
+        tuple(params),
+    )["total"]
 
-    @staticmethod
-    def get_by_id(conn: sqlite3.Connection, invoice_id: int) -> dict[str, Any] | None:
-        row = conn.execute(
-            """
-            SELECT inv.*, o.full_name AS owner_name, o.phone AS owner_phone, o.address AS owner_address
-            FROM invoices inv
-            JOIN owners o ON inv.owner_id = o.id
-            WHERE inv.id = ?
-            """,
-            (invoice_id,),
-        ).fetchone()
-        if not row:
-            return None
 
-        inv = dict(row)
-        inv["items"] = InvoiceRepository.get_items(conn, invoice_id)
-        inv["total_amount_vnd"] = sum(item["amount_vnd"] for item in inv["items"])
-        return inv
+def list_invoices_page(connection, search="", status="", limit=25, offset=0):
+    search_sql, search_params = contains_filter(
+        search, "c.full_name", "CAST(i.id AS CHAR)"
+    )
+    status_sql = "AND i.status = %s" if status else ""
+    params = list(search_params)
+    if status:
+        params.append(status)
+    params.extend((limit, offset))
+    return fetch_all(
+        connection,
+        "SELECT i.*, c.full_name customer_name, u.full_name created_by_name, "
+        "COALESCE((SELECT SUM(ii.line_total) FROM invoice_items ii "
+        "WHERE ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id), 0) total_amount "
+        "FROM invoices i JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id "
+        "JOIN users u ON u.id = i.created_by "
+        "WHERE i.tenant_id = @petcare_tenant_id "
+        + search_sql + " " + status_sql
+        + " ORDER BY i.created_at DESC, i.id DESC LIMIT %s OFFSET %s",
+        tuple(params),
+    )
 
-    @staticmethod
-    def get_items(conn: sqlite3.Connection, invoice_id: int) -> list[dict[str, Any]]:
-        rows = conn.execute(
-            """
-            SELECT ii.*, sv.performed_at, sv.pet_id
-            FROM invoice_items ii
-            JOIN service_visits sv ON ii.visit_id = sv.id
-            WHERE ii.invoice_id = ?
-            ORDER BY ii.id ASC
-            """,
-            (invoice_id,),
-        ).fetchall()
-        return [dict(r) for r in rows]
 
-    @staticmethod
-    def get_total_amount(conn: sqlite3.Connection, invoice_id: int) -> int:
-        row = conn.execute(
-            "SELECT COALESCE(SUM(amount_vnd), 0) as total FROM invoice_items WHERE invoice_id = ?",
-            (invoice_id,),
-        ).fetchone()
-        return row["total"] if row else 0
+def get_invoice(connection, invoice_id, lock=False):
+    suffix = " FOR UPDATE" if lock else ""
+    return fetch_one(
+        connection,
+        "SELECT i.*, c.full_name customer_name, c.phone customer_phone, "
+        "u.full_name created_by_name FROM invoices i "
+        "JOIN customers c ON c.id = i.customer_id AND c.tenant_id = i.tenant_id "
+        "JOIN users u ON u.id = i.created_by "
+        "WHERE i.id = %s AND i.tenant_id = @petcare_tenant_id" + suffix,
+        (invoice_id,),
+    )
 
-    @staticmethod
-    def is_visit_billed(conn: sqlite3.Connection, visit_id: int) -> bool:
-        row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM invoice_items WHERE visit_id = ?",
-            (visit_id,),
-        ).fetchone()
-        return (row["cnt"] if row else 0) > 0
 
-    @staticmethod
-    def mark_as_paid(conn: sqlite3.Connection, invoice_id: int, paid_at_str: str) -> bool:
-        cursor = conn.execute(
-            """
-            UPDATE invoices
-            SET status = 'paid', paid_at = ?
-            WHERE id = ? AND status = 'unpaid'
-            """,
-            (paid_at_str, invoice_id),
-        )
-        return cursor.rowcount > 0
+def list_items(connection, invoice_id):
+    return fetch_all(
+        connection,
+        "SELECT * FROM invoice_items WHERE invoice_id = %s "
+        "AND tenant_id = @petcare_tenant_id ORDER BY id",
+        (invoice_id,),
+    )
 
-    @staticmethod
-    def cancel_invoice(conn: sqlite3.Connection, invoice_id: int) -> bool:
-        """Hủy hóa đơn unpaid: xóa các chi tiết invoice_items để giải phóng visit_id, đổi status = cancelled."""
-        # 1. Xóa các dòng chi tiết
-        conn.execute("DELETE FROM invoice_items WHERE invoice_id = ?", (invoice_id,))
-        # 2. Cập nhật trạng thái
-        cursor = conn.execute(
-            "UPDATE invoices SET status = 'cancelled' WHERE id = ? AND status = 'unpaid'",
-            (invoice_id,),
-        )
-        return cursor.rowcount > 0
 
-    @staticmethod
-    def list_all(
-        conn: sqlite3.Connection,
-        status: str | None = None,
-        owner_id: int | None = None,
-        limit: int = 100,
-    ) -> list[dict[str, Any]]:
-        query = """
-            SELECT inv.*, o.full_name AS owner_name, o.phone AS owner_phone,
-                   COALESCE(SUM(ii.amount_vnd), 0) AS total_amount_vnd,
-                   COUNT(ii.id) AS item_count
-            FROM invoices inv
-            JOIN owners o ON inv.owner_id = o.id
-            LEFT JOIN invoice_items ii ON inv.id = ii.invoice_id
-            WHERE 1=1
-        """
-        params: list[Any] = []
-        if status and status.strip():
-            query += " AND inv.status = ?"
-            params.append(status.strip())
+def get_items_for_update(connection, invoice_id):
+    return fetch_all(
+        connection,
+        "SELECT * FROM invoice_items WHERE invoice_id = %s "
+        "AND tenant_id = @petcare_tenant_id "
+        "ORDER BY item_type, product_id, pet_id FOR UPDATE",
+        (invoice_id,),
+    )
 
-        if owner_id:
-            query += " AND inv.owner_id = ?"
-            params.append(int(owner_id))
 
-        query += " GROUP BY inv.id ORDER BY inv.id DESC LIMIT ?"
-        params.append(limit)
+def create_invoice(connection, customer_id, actor_id, note, currency_code):
+    return execute(
+        connection,
+        "INSERT INTO invoices (tenant_id, customer_id, created_by, note, currency_code) "
+        "VALUES (@petcare_tenant_id, %s, %s, %s, %s)",
+        (customer_id, actor_id, note, currency_code),
+    )[0]
 
-        rows = conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
+
+def add_item(connection, invoice_id, item, currency_code):
+    legacy_unit_price = int(item["unit_price"]) if currency_code == "VND" else 0
+    legacy_line_total = int(item["line_total"]) if currency_code == "VND" else 0
+    execute(
+        connection,
+        "INSERT INTO invoice_items "
+        "(tenant_id, invoice_id, item_type, product_id, pet_id, item_code_snapshot, name_snapshot, "
+        "unit_price, unit_price_vnd, quantity, line_total, line_total_vnd) "
+        "VALUES (@petcare_tenant_id, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            invoice_id, item["item_type"], item["product_id"], item["pet_id"],
+            item["code"], item["name"], item["unit_price"], legacy_unit_price,
+            item["quantity"], item["line_total"], legacy_line_total,
+        ),
+    )
+
+
+def update_paid(connection, invoice_id):
+    return execute(
+        connection,
+        "UPDATE invoices SET status = 'paid', paid_at = NOW() "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id AND status = 'unpaid'",
+        (invoice_id,),
+    )[1]
+
+
+def update_cancelled(connection, invoice_id):
+    return execute(
+        connection,
+        "UPDATE invoices SET status = 'cancelled' "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id AND status = 'unpaid'",
+        (invoice_id,),
+    )[1]

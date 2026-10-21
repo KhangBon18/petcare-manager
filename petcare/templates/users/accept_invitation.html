@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Tham gia cửa hàng') }}{% endblock %}
+{% block content %}
+<section class="auth-card invitation-card panel">
+  <a class="brand auth-brand" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
+  <span class="eyebrow">{{ t('LỜI MỜI THÀNH VIÊN') }}</span>
+  <h1>{{ t('Tham gia cửa hàng') }} {{ invite.tenant_name }}</h1>
+  <p>{{ t('Bạn được mời với vai trò') }} <strong>{{ t('quản trị viên') if invite.role == 'admin' else t('nhân viên') }}</strong>. {{ t('Email nhận lời mời:') }} <strong>{{ invite.email or t('lời mời cũ') }}</strong>.</p>
+  <form method="post" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="token" value="{{ token }}">
+    <label>{{ t('Tên đăng nhập') }}<input name="username" minlength="3" maxlength="80" pattern="[A-Za-z0-9_.-]{3,80}" autocomplete="username" required autofocus></label>
+    <label>{{ t('Mật khẩu') }}<input name="password" type="password" minlength="8" maxlength="1024" autocomplete="current-password" required><small>{{ t('Nếu chưa có tài khoản, mật khẩu này sẽ được dùng để tạo tài khoản mới.') }}</small></label>
+    <label>{{ t('Tên hiển thị') }} <span class="muted">{{ t('(chỉ cần khi tạo tài khoản mới)') }}</span><input name="full_name" maxlength="160" autocomplete="name"></label>
+    <button class="button button-primary button-block">{{ t('Chấp nhận lời mời') }} <span>→</span></button>
+  </form>
+</section>
+{% endblock %}

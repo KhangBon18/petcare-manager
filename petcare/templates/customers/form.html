@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Sửa khách hàng') if customer else t('Thêm khách hàng') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading"><div><a class="back-link" href="{{ url_for('customers.index') }}">← {{ t('Khách hàng') }}</a><span class="eyebrow">{{ t('THÔNG TIN LIÊN HỆ') }}</span><h1>{{ t('Chỉnh sửa khách hàng') if customer else t('Thêm khách hàng mới') }}</h1><p>{{ t('Thông tin được lưu để gắn với các hóa đơn của cửa hàng.') }}</p></div></div>
+<section class="form-card panel"><form method="post" class="form-stack">
+<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<div class="form-grid"><label class="field-wide">{{ t('Họ và tên') }}<input name="full_name" value="{{ customer.full_name if customer else '' }}" maxlength="160" required autofocus placeholder="{{ t('Ví dụ: Nguyễn Thị Lan') }}"></label><label>{{ t('Số điện thoại') }}<input name="phone" value="{{ customer.phone if customer else '' }}" maxlength="32" required placeholder="0901234567"><small>{{ t('Nhập từ 8 đến 15 chữ số; có thể dùng dấu cách hoặc +.') }}</small></label><label class="field-wide">{{ t('Địa chỉ') }}<textarea name="address" maxlength="255" rows="3" placeholder="{{ t('Địa chỉ giao dịch (không bắt buộc)') }}">{{ customer.address if customer else '' }}</textarea></label></div>
+<div class="form-actions"><a class="button button-light" href="{{ url_for('customers.index') }}">{{ t('Hủy') }}</a><button class="button button-primary" type="submit">{{ t('Lưu thay đổi') if customer else t('Tạo khách hàng') }} <span>→</span></button></div>
+</form></section>
+{% endblock %}

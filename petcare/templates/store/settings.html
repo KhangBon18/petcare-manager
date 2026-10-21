@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Cài đặt cửa hàng') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading">
+  <div><span class="eyebrow">{{ t('QUẢN TRỊ CỬA HÀNG') }}</span><h1>{{ t('Cài đặt cửa hàng') }}</h1><p>{{ t('Thông tin và múi giờ áp dụng cho cửa hàng đang chọn.') }}</p></div>
+</div>
+<div class="account-settings-stack">
+  <section class="panel form-card account-email-card">
+    <div class="section-heading"><div><h2>{{ t('Thông tin chung') }}</h2><p>{{ t('Chỉ chủ cửa hàng và quản trị viên mới có thể thay đổi.') }}</p></div></div>
+    <form method="post" class="form-stack" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label for="store-name">{{ t('Tên cửa hàng') }}<input id="store-name" name="name" maxlength="160" value="{{ tenant.name }}" autocomplete="organization" required></label>
+      <label for="store-slug">{{ t('Mã cửa hàng') }}<input id="store-slug" value="{{ tenant.slug }}" readonly aria-describedby="store-slug-help"><small id="store-slug-help">{{ t('Mã này dùng khi đăng nhập và trong liên kết cửa hàng nên không thể đổi tại đây.') }}</small></label>
+      <label for="store-currency">{{ t('Tiền tệ') }}<input id="store-currency" value="{{ tenant.default_currency }}" readonly aria-describedby="store-currency-help"><small id="store-currency-help">{{ t('Tiền tệ được cố định sau khi tạo cửa hàng để bảo toàn giá và lịch sử hóa đơn.') }}</small></label>
+      <label for="store-timezone">{{ t('Múi giờ IANA') }}<input id="store-timezone" name="timezone" list="store-timezone-options" maxlength="64" value="{{ tenant.timezone }}" autocomplete="off" required><datalist id="store-timezone-options">{% for timezone_name in common_timezones %}<option value="{{ timezone_name }}">{% endfor %}</datalist><small>{{ t('Múi giờ ảnh hưởng cách hiển thị thời gian và ranh giới ngày báo cáo. Thời gian đã lưu vẫn giữ theo UTC.') }}</small></label>
+      <div class="form-actions"><button class="button button-primary" type="submit">{{ t('Lưu cài đặt') }}</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}

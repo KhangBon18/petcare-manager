@@ -1,0 +1,114 @@
+{% from "partials/icons.html" import icon %}
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}PetCare Manager{% endblock %} · {{ t('Cửa hàng thú cưng') }}</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% if g.user %}app-body{% else %}auth-body{% endif %}{% if request.endpoint == 'pets.find_similar' %} pet-search-page{% endif %}">
+{% if g.user %}
+<div class="app-shell">
+  <aside class="sidebar">
+    <a class="brand" href="{{ url_for('main.dashboard') }}">
+      <span class="brand-mark">P</span>
+      <span><strong>petcare</strong><small>SHOP MANAGER</small></span>
+    </a>
+    <div class="side-caption">{{ t('CỬA HÀNG') }}</div>
+    <nav class="side-nav" aria-label="{{ t('Điều hướng chính') }}">
+      <a class="nav-link nav-link-dashboard {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}" {% if request.endpoint == 'main.dashboard' %}aria-current="page"{% endif %}>{{ icon('dashboard', 'nav-icon') }} {{ t('Tổng quan') }}</a>
+      <a class="nav-link nav-link-customers {% if request.blueprint == 'customers' %}active{% endif %}" href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers', 'nav-icon') }} {{ t('Khách hàng') }}</a>
+      <a class="nav-link nav-link-pets {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.index') }}" {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('pets', 'nav-icon') }} {{ t('Thú cưng') }}</a>
+      <a class="nav-link nav-link-search {% if request.endpoint == 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search', 'nav-icon') }} {{ t('Tìm bằng ảnh') }}</a>
+      <a class="nav-link nav-link-products {% if request.blueprint == 'products' %}active{% endif %}" href="{{ url_for('products.index') }}" {% if request.blueprint == 'products' %}aria-current="page"{% endif %}>{{ icon('products', 'nav-icon') }} {{ t('Sản phẩm') }}</a>
+      <a class="nav-link nav-link-invoices {% if request.blueprint == 'invoices' %}active{% endif %}" href="{{ url_for('invoices.index') }}" {% if request.blueprint == 'invoices' %}aria-current="page"{% endif %}>{{ icon('invoice', 'nav-icon') }} {{ t('Hóa đơn') }}</a>
+      <a class="nav-link nav-link-reports {% if request.blueprint == 'reports' %}active{% endif %}" href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports', 'nav-icon') }} {{ t('Báo cáo') }}</a>
+    </nav>
+    {% if g.user.role == 'admin' %}
+    <div class="side-caption side-caption-spaced">{{ t('QUẢN TRỊ') }}</div>
+    <nav class="side-nav">
+      <a class="nav-link nav-link-admin {% if request.blueprint == 'store' %}active{% endif %}" href="{{ url_for('store.settings') }}" {% if request.blueprint == 'store' %}aria-current="page"{% endif %}>{{ icon('store', 'nav-icon') }} {{ t('Cài đặt cửa hàng') }}</a>
+      <a class="nav-link nav-link-admin {% if request.blueprint == 'users' %}active{% endif %}" href="{{ url_for('users.index') }}" {% if request.blueprint == 'users' %}aria-current="page"{% endif %}>{{ icon('team', 'nav-icon') }} {{ t('Tài khoản') }}</a>
+      <a class="nav-link nav-link-admin {% if request.blueprint == 'audit' %}active{% endif %}" href="{{ url_for('audit.index') }}" {% if request.blueprint == 'audit' %}aria-current="page"{% endif %}>{{ icon('activity', 'nav-icon') }} {{ t('Nhật ký hoạt động') }}</a>
+    </nav>
+    {% endif %}
+    <div class="sidebar-bottom">
+      <div class="store-status"><span></span><div><strong>{{ g.tenant.name if g.tenant else t('Cửa hàng') }}</strong><small>{{ t('Mã cửa hàng') }}: {{ g.tenant.slug if g.tenant else '—' }}</small></div></div>
+      {% if g.user.store_memberships|length > 1 %}
+      <form class="store-switcher" action="{{ url_for('auth.switch_store') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="visually-hidden" for="store-switch">{{ t('Chuyển cửa hàng') }}</label>
+        <select id="store-switch" name="store_slug" aria-label="{{ t('Chọn cửa hàng') }}">
+          {% for store in g.user.store_memberships %}<option value="{{ store.tenant_slug }}" {% if store.tenant_id == g.tenant.id %}selected{% endif %}>{{ store.tenant_name }}</option>{% endfor %}
+        </select>
+        <button class="button button-light button-small" type="submit">{{ t('Chuyển cửa hàng') }}</button>
+      </form>
+      {% endif %}
+      <div class="sidebar-note">{{ t('Quản lý bán hàng gọn gàng mỗi ngày.') }}</div>
+      {% with language_picker_id="sidebar" %}{% include "partials/language_picker.html" %}{% endwith %}
+    </div>
+  </aside>
+  <main class="main-area">
+    <header class="topbar{% if g.user.store_memberships|length > 1 %} topbar-multi-store{% endif %}">
+      <div class="mobile-brand"><span class="brand-mark">P</span><strong>petcare</strong></div>
+      <div class="topbar-spacer"></div>
+      {% with language_picker_id="topbar" %}{% include "partials/language_picker.html" %}{% endwith %}
+      {% if g.user.store_memberships|length > 1 %}
+      <form class="topbar-store-switcher" action="{{ url_for('auth.switch_store') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="visually-hidden" for="topbar-store-switch">{{ t('Chuyển cửa hàng') }}</label>
+        <select id="topbar-store-switch" name="store_slug" aria-label="{{ t('Chọn cửa hàng') }}">
+          {% for store in g.user.store_memberships %}<option value="{{ store.tenant_slug }}" {% if store.tenant_id == g.tenant.id %}selected{% endif %}>{{ store.tenant_name }}</option>{% endfor %}
+        </select>
+        <button class="button button-light button-small" type="submit">{{ t('Đổi') }}</button>
+      </form>
+      {% endif %}
+      <a class="user-chip user-chip-link" href="{{ url_for('account.settings') }}" aria-label="{{ t('Cài đặt tài khoản của') }} {{ g.user.full_name }}"><span class="avatar">{{ g.user.full_name[:1]|upper }}</span><span><strong>{{ g.user.full_name }}</strong><small>{{ t('Quản trị viên') if g.user.role == 'admin' else t('Nhân viên') }}</small></span></a>
+      {% if g.user.role == 'admin' %}<a class="mobile-admin-link" href="{{ url_for('users.index') }}">{{ icon('team') }}<span>{{ t('Tài khoản') }}</span></a>{% endif %}
+      <form action="{{ url_for('auth.logout') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="icon-button logout-button" title="{{ t('Đăng xuất') }}" aria-label="{{ t('Đăng xuất') }}">{{ icon('logout', 'logout-icon') }}<span class="logout-label">{{ t('Đăng xuất') }}</span></button>
+      </form>
+    </header>
+    <section class="page-wrap">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash flash-{{ category }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
+      {% endwith %}
+      {% block content %}{% endblock %}
+    </section>
+    <footer class="app-footer">PetCare Manager <span>•</span> {{ t('Quản lý cửa hàng thú cưng') }}</footer>
+  </main>
+</div>
+<button class="assistant-launcher" id="assistant-launcher" type="button" aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button>
+<aside class="assistant-panel" id="assistant-panel" aria-label="{{ t('Trợ lý PetCare') }}" hidden>
+  <header class="assistant-header"><div><span class="assistant-avatar">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý AI PetCare') }}</strong><small>{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('AI tạo sinh đang bật') }}{% else %}{{ t('Tra cứu cục bộ · AI tạo sinh chưa kết nối') }}{% endif %}</small></span></div><div class="assistant-header-actions"><button class="assistant-clear" id="assistant-clear" type="button" aria-label="{{ t('Xóa cuộc trò chuyện') }}" title="{{ t('Xóa cuộc trò chuyện') }}">{{ icon('refresh') }}</button><button class="assistant-close" id="assistant-close" type="button" aria-label="{{ t('Đóng trợ lý') }}">×</button></div></header>
+  <p class="assistant-privacy">{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('Câu hỏi, tối đa 8 tin nhắn gần nhất và dữ liệu cửa hàng liên quan được gửi tới endpoint AI đã cấu hình; dữ liệu có thể gồm tên/giá sản phẩm hoặc tên/đặc điểm thú cưng. Hồ sơ khách hàng không tự gửi; thông tin bạn nhập vào chat vẫn được gửi.') }}{% else %}{{ t('Không gọi endpoint AI bên ngoài; ứng dụng trả lời câu hỏi bằng dữ liệu cửa hàng hiện có.') }}{% endif %}</p>
+  <div class="assistant-messages" id="assistant-messages" aria-live="polite"><div class="assistant-message assistant-message-bot">{{ t('Hỏi về doanh thu, tồn kho, sản phẩm hoặc thú cưng đang bán. Câu trả lời cục bộ lấy từ dữ liệu MySQL; muốn chat tạo sinh, hãy cấu hình endpoint AI.') }}</div><div class="assistant-suggestions" data-assistant-suggestions aria-label="{{ t('Câu hỏi gợi ý') }}"><button type="button" data-assistant-prompt="{{ t('Tìm mèo lông trắng đang bán') }}">{{ t('Mèo lông trắng') }}</button><button type="button" data-assistant-prompt="{{ t('Sản phẩm nào sắp hết?') }}">{{ t('Tồn kho thấp') }}</button><button type="button" data-assistant-prompt="{{ t('Doanh thu hôm nay?') }}">{{ t('Doanh thu hôm nay') }}</button><button type="button" data-assistant-prompt="{{ t('Hướng dẫn lập hóa đơn') }}">{{ t('Cách lập hóa đơn') }}</button></div><a class="assistant-quick-link" href="{{ url_for('pets.find_similar') }}">{{ icon('search') }} {{ t('Mở tìm thú cưng bằng ảnh') }}</a></div>
+  <form class="assistant-form" id="assistant-form" action="{{ url_for('assistant.chat') }}" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="visually-hidden" for="assistant-input">{{ t('Câu hỏi cho trợ lý') }}</label>
+    <input id="assistant-input" name="message" maxlength="1000" placeholder="{{ t('Ví dụ: sản phẩm nào sắp hết?') }}" autocomplete="off" required>
+    <button type="submit" aria-label="{{ t('Gửi câu hỏi') }}">{{ icon('send') }}</button>
+  </form>
+</aside>
+{% else %}
+<main class="auth-shell">
+  {% with language_picker_id="auth" %}{% include "partials/language_picker.html" %}{% endwith %}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}<div class="flash-stack auth-flashes">{% for category, message in messages %}<div class="flash flash-{{ category }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
+  {% endwith %}
+  {% if request.endpoint == 'auth.login' %}
+    {% block auth_content %}{% endblock %}
+  {% else %}
+    {{ self.content() }}
+  {% endif %}
+</main>
+{% endif %}
+{% block scripts %}{% endblock %}
+<script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+{% if g.user %}<script src="{{ url_for('static', filename='js/assistant.js') }}" defer></script>{% endif %}
+</body>
+</html>

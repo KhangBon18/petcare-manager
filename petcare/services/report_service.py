@@ -1,100 +1,42 @@
-"""Dịch vụ tổng hợp báo cáo thống kê hoạt động và doanh thu."""
+from datetime import timedelta
 
-from datetime import date, timedelta
-from pathlib import Path
-import sqlite3
-from typing import Any
-
-from petcare.database.connection import get_connection
-from petcare.date_utils import parse_date
-from petcare.repositories.report_repo import ReportRepository
-from petcare.services.auth_service import AuthService, AuthSession
+from petcare.database.connection import read_connection
+from petcare.repositories import report_repo
+from petcare.services.common import date_value, require_actor
+from petcare.timezones import tenant_today, utc_window_for_local_dates, utc_window_for_local_day
 
 
-class ReportService:
-    """Quy tắc nghiệp vụ tổng hợp thống kê và phân tích số liệu."""
+def _period(start, end, timezone_name):
+    local_today = tenant_today(timezone_name)
+    start_date = date_value(start, "Từ ngày") if start else local_today.replace(day=1)
+    end_date = date_value(end, "Đến ngày") if end else local_today
+    if start_date > end_date:
+        raise ValueError("Ngày bắt đầu không được sau ngày kết thúc.")
+    start_at_utc, end_at_utc = utc_window_for_local_dates(
+        start_date, end_date + timedelta(days=1), timezone_name
+    )
+    return start_date, end_date, start_at_utc, end_at_utc
 
-    def __init__(self, db_path: Path | str | None = None):
-        self.db_path = db_path
 
-    def _get_connection(self) -> sqlite3.Connection:
-        return get_connection(self.db_path)
+def dashboard(actor_id):
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id)
+        today = tenant_today(actor["timezone"])
+        start_at_utc, end_at_utc = utc_window_for_local_day(today, actor["timezone"])
+        return report_repo.dashboard(connection, start_at_utc, end_at_utc)
 
-    def _validate_session(
-        self,
-        session: AuthSession,
-        required_role: str = "staff",
-        conn: sqlite3.Connection | None = None,
-    ) -> dict[str, Any]:
-        if conn is not None:
-            return AuthService.verify_session(conn, session, required_role=required_role)
-        temp_conn = self._get_connection()
-        try:
-            return AuthService.verify_session(temp_conn, session, required_role=required_role)
-        finally:
-            temp_conn.close()
 
-    def get_summary(
-        self,
-        session: AuthSession,
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> dict[str, Any]:
-        """Tổng hợp các chỉ số: doanh thu, lượt khám, thú cưng đã tiêm, phân bố loài, dịch vụ phổ biến."""
-        # Mặc định: từ đầu tháng hiện tại đến hôm nay
-        today = date.today()
-        if not start_date or not str(start_date).strip():
-            start_d = today.replace(day=1)
-            start_date_str = start_d.isoformat()
-        else:
-            try:
-                start_d = parse_date(start_date, field_name="Ngày bắt đầu")
-                start_date_str = start_d.isoformat()
-            except ValueError:
-                raise ValueError("Ngày bắt đầu không đúng định dạng YYYY-MM-DD")
-
-        if not end_date or not str(end_date).strip():
-            end_d = today
-            end_date_str = end_d.isoformat()
-        else:
-            try:
-                end_d = parse_date(end_date, field_name="Ngày kết thúc")
-                end_date_str = end_d.isoformat()
-            except ValueError:
-                raise ValueError("Ngày kết thúc không đúng định dạng YYYY-MM-DD")
-
-        if start_d > end_d:
-            raise ValueError("Ngày bắt đầu không được lớn hơn ngày kết thúc")
-
-        # Ranh giới thời gian cho paid_at: từ 00:00:00 ngày bắt đầu đến trước 00:00:00 của ngày tiếp theo ngày kết thúc
-        start_datetime = f"{start_date_str}T00:00:00"
-        next_day = end_d + timedelta(days=1)
-        end_datetime = f"{next_day.isoformat()}T00:00:00"
-
-        conn = self._get_connection()
-        try:
-            self._validate_session(session, conn=conn)
-            # 1. Doanh thu và số hóa đơn đã thanh toán
-            rev_info = ReportRepository.get_revenue_summary(conn, start_datetime, end_datetime)
-
-            # 2. Lượt khám và thú cưng tiêm phòng
-            med_info = ReportRepository.get_medical_summary(conn, start_date_str, end_date_str)
-
-            # 3. Phân bố loài
-            species_dist = ReportRepository.get_species_distribution(conn)
-
-            # 4. Top dịch vụ phổ biến
-            popular_services = ReportRepository.get_popular_services(conn, start_datetime, end_datetime)
-
-            return {
-                "start_date": start_date_str,
-                "end_date": end_date_str,
-                "total_revenue_vnd": rev_info["total_revenue_vnd"],
-                "paid_invoices_count": rev_info["paid_invoices_count"],
-                "exam_count": med_info["exam_count"],
-                "vaccinated_pets_count": med_info["vaccinated_pets_count"],
-                "species_distribution": species_dist,
-                "popular_services": popular_services,
-            }
-        finally:
-            conn.close()
+def report(actor_id, start=None, end=None):
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id)
+        start_date, end_date, start_at_utc, end_at_utc = _period(
+            start, end, actor["timezone"]
+        )
+        return {
+            "start_date": start_date,
+            "end_date": end_date,
+            "summary": report_repo.summary(connection, start_at_utc, end_at_utc),
+            "top_products": report_repo.top_products(connection, start_at_utc, end_at_utc),
+            "inventory": report_repo.inventory(connection),
+            "pets_sold": report_repo.pets_sold(connection, start_at_utc, end_at_utc),
+        }

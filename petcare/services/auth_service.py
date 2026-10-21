@@ -1,189 +1,282 @@
-"""Dịch vụ xác thực và quản lý tài khoản người dùng."""
+import hashlib
+import hmac
+import secrets
 
-from dataclasses import dataclass
-from pathlib import Path
-import sqlite3
-from typing import Any
+from flask import current_app
 
-from petcare.database.connection import get_connection, transaction
-from petcare.repositories.user_repo import UserRepository
+from petcare.database.connection import read_connection, transaction
+from petcare.i18n import SUPPORTED_LOCALES
+from petcare.repositories import account_token_repo, audit_repo, login_throttle_repo, user_repo
 from petcare.security import hash_password, verify_password
+from petcare.services.common import password_hash_value, require_actor, username_value, text_value
+from petcare.services.exceptions import ConflictError, ForbiddenError, ValidationError
 
 
-@dataclass(frozen=True)
-class AuthSession:
-    """Phiên đăng nhập hiện tại; không lưu mật khẩu hoặc hash."""
-    user_id: int
-    username: str
-    role: str
-    full_name: str
-
-    def is_admin(self) -> bool:
-        return self.role == "admin"
-
-    def is_staff(self) -> bool:
-        return self.role in ("admin", "staff")
+_DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(32))
 
 
-class AuthService:
-    """Xử lý đăng nhập, phân quyền và quản lý tài khoản."""
+def _login_throttle_keys(username, remote_addr):
+    secret = str(current_app.config["SECRET_KEY"]).encode("utf-8")
+    identities = []
+    normalized_username = (username or "").strip().casefold()[:80]
+    if normalized_username:
+        identities.append(("account", normalized_username))
+    identities.append(("address", (remote_addr or "unknown")[:80]))
+    return sorted(
+        (
+            scope,
+            hmac.new(
+                secret, f"login:{scope}:{value}".encode("utf-8"), hashlib.sha256
+            ).hexdigest(),
+        )
+        for scope, value in identities
+    )
 
-    def __init__(self, db_path: Path | str | None = None):
-        self.db_path = db_path
 
-    def _get_connection(self) -> sqlite3.Connection:
-        return get_connection(self.db_path)
+def login_blocked(username, remote_addr):
+    keys = [key for _, key in _login_throttle_keys(username, remote_addr)]
+    with read_connection() as connection:
+        return login_throttle_repo.is_blocked(connection, keys)
 
-    def login(self, username: str, password: str) -> AuthSession:
-        """Xác thực tài khoản và trả về AuthSession."""
-        if not username or not password:
-            raise ValueError("Tên đăng nhập và mật khẩu không được để trống")
 
-        conn = self._get_connection()
+def record_login_failure(username, remote_addr):
+    keys = _login_throttle_keys(username, remote_addr)
+    with transaction() as connection:
+        # Stable order keeps simultaneous requests from deadlocking on shared keys.
+        blocked = False
+        for scope, key in keys:
+            threshold = 10 if scope == "account" else 40
+            blocked = login_throttle_repo.record_failure(connection, key, threshold) or blocked
+        login_throttle_repo.prune_old(connection)
+    return blocked
+
+
+def clear_login_failures(username, remote_addr):
+    # Clear the account-specific counter after a valid login. Keep the shared
+    # address counter so another valid account cannot erase its abuse history.
+    keys = [key for scope, key in _login_throttle_keys(username, remote_addr) if scope == "account"]
+    with transaction() as connection:
+        login_throttle_repo.clear(connection, keys)
+
+
+def authenticate(username, password, tenant_slug="main"):
+    username = username.strip() if isinstance(username, str) else ""
+    tenant_slug = tenant_slug.strip().lower() if isinstance(tenant_slug, str) else ""
+    password = password if isinstance(password, str) else ""
+    valid_username = 1 <= len(username) <= 80
+    valid_password = len(password) <= 1024
+    with read_connection() as connection:
+        user = user_repo.get_by_username(connection, username) if valid_username else None
+    password_matches = verify_password(
+        password if valid_password else "" ,
+        user["password_hash"] if user else _DUMMY_PASSWORD_HASH,
+    )
+    if not valid_username or not valid_password or not user or not user["active"] or not password_matches:
+        return None
+    with read_connection() as connection:
+        membership = user_repo.get_membership_by_slug(connection, user["id"], tenant_slug)
+    if not membership or not membership["active"]:
+        return None
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "email": user["email"],
+        "email_verified_at": user["email_verified_at"],
+        "full_name": user["full_name"],
+        "preferred_locale": user["preferred_locale"],
+        "session_version": user["session_version"],
+        "role": "staff" if membership["role"] == "staff" else "admin",
+        "tenant_id": membership["tenant_id"],
+        "tenant_name": membership["tenant_name"],
+        "tenant_slug": membership["tenant_slug"],
+        "default_currency": membership["default_currency"],
+        "timezone": membership["timezone"],
+    }
+
+
+def record_auth_event(user_id, tenant_id, event_type, summary):
+    """Append a tenant-scoped authentication event without storing request PII."""
+    allowed_events = {
+        "auth.login_succeeded",
+        "auth.logout",
+        "auth.store_switched",
+    }
+    if event_type not in allowed_events:
+        raise ValueError("Unsupported authentication audit event.")
+
+    with transaction() as connection:
+        membership = user_repo.get_active_membership(connection, user_id, tenant_id)
+        if not membership:
+            return False
+        cursor = connection.cursor()
         try:
-            user = UserRepository.get_by_username(conn, username.strip())
-            if not user:
-                raise ValueError("Tên đăng nhập hoặc mật khẩu không chính xác")
+            cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
+        finally:
+            cursor.close()
+        audit_repo.add_event(
+            connection,
+            user_id,
+            event_type,
+            "session",
+            None,
+            summary,
+            {"authentication_method": "password"} if event_type == "auth.login_succeeded" else None,
+        )
+    return True
 
-            if not user["active"]:
-                raise ValueError("Tài khoản này đã bị khóa hoặc ngừng kích hoạt")
 
-            if not verify_password(password, user["password_hash"], user["salt"]):
-                raise ValueError("Tên đăng nhập hoặc mật khẩu không chính xác")
+def load_active_user(user_id, tenant_id=None, session_version=None):
+    if session_version is None:
+        return None
+    with read_connection() as connection:
+        memberships = user_repo.list_memberships(connection, user_id)
+        if tenant_id is None:
+            membership = memberships[0] if len(memberships) == 1 else None
+            tenant_id = membership["tenant_id"] if membership else None
+        user = user_repo.get_by_id(connection, user_id, tenant_id) if tenant_id else None
+    if (
+        not user
+        or not user["active"]
+        or int(user["session_version"]) != int(session_version)
+    ):
+        return None
+    return {
+        "id": user["id"],
+        "username": user["username"],
+        "email": user["email"],
+        "email_verified_at": user["email_verified_at"],
+        "full_name": user["full_name"],
+        "preferred_locale": user["preferred_locale"],
+        "role": user["role"],
+        "store_memberships": memberships,
+        "tenant": {
+            "id": user["tenant_id"],
+            "name": user["tenant_name"],
+            "slug": user["tenant_slug"],
+            "default_currency": user["default_currency"],
+            "timezone": user["timezone"],
+        },
+    }
 
-            return AuthSession(
-                user_id=user["id"],
-                username=user["username"],
-                role=user["role"],
-                full_name=user["full_name"],
+
+def update_preferred_locale(user_id, locale):
+    if locale not in SUPPORTED_LOCALES:
+        raise ValidationError("Ngôn ngữ không được hỗ trợ.")
+    with transaction() as connection:
+        user_repo.update_preferred_locale(connection, user_id, locale)
+
+
+def store_membership(user_id, slug):
+    with read_connection() as connection:
+        membership = user_repo.get_membership_by_slug(connection, user_id, slug)
+    return membership if membership and membership["active"] else None
+
+
+def list_users(actor_id):
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id, admin=True)
+        return user_repo.list_users(connection, actor["tenant_id"])
+
+
+def create_user(actor_id, data):
+    username = username_value(data.get("username"))
+    full_name = text_value(data.get("full_name"), "Họ tên", 160)
+    role = data.get("role", "staff")
+    if role not in ("admin", "staff"):
+        raise ValidationError("Vai trò không hợp lệ.")
+    password_hash = password_hash_value(data.get("password", ""))
+    try:
+        with transaction() as connection:
+            actor = require_actor(connection, actor_id, admin=True)
+            user_id = user_repo.create_user(
+                connection, username, password_hash, full_name, role, actor["tenant_id"]
             )
-        finally:
-            conn.close()
+            audit_repo.add_event(
+                connection, actor_id, "user.created", "user", user_id,
+                f"Tạo tài khoản #{user_id} ({role})", {"role": role},
+            )
+            return user_id
+    except Exception as exc:
+        if getattr(exc, "errno", None) == 1062:
+            raise ConflictError("Tên đăng nhập đã được sử dụng.") from exc
+        raise
 
-    @staticmethod
-    def verify_session(
-        conn: sqlite3.Connection,
-        session: AuthSession,
-        required_role: str = "staff",
-    ) -> dict[str, Any]:
-        """Xác thực phiên trực tiếp từ DB: kiểm tra tài khoản tồn tại, active và quyền mới nhất."""
-        if not session or not session.user_id:
-            raise PermissionError("Phiên đăng nhập không hợp lệ hoặc đã hết hạn")
 
-        user = UserRepository.get_by_id(conn, session.user_id)
-        if not user:
-            raise PermissionError("Tài khoản người dùng không còn tồn tại trong hệ thống")
-
-        if not user["active"]:
-            raise PermissionError("Tài khoản này đã bị khóa hoặc ngừng kích hoạt")
-
-        actual_role = user["role"]
-        if required_role == "admin" and actual_role != "admin":
-            raise PermissionError("Chỉ Quản trị viên (Admin) mới có quyền thực hiện thao tác này")
-        elif required_role == "staff" and actual_role not in ("admin", "staff"):
-            raise PermissionError("Thao tác yêu cầu quyền Nhân viên hoặc Quản trị viên")
-
-        return dict(user)
-
-    def create_user(
-        self,
-        session: AuthSession,
-        username: str,
-        password: str,
-        role: str,
-        full_name: str,
-    ) -> int:
-        """Tạo tài khoản mới (chỉ Admin)."""
-        u_name = username.strip() if username else ""
-        if not u_name or len(u_name) < 3:
-            raise ValueError("Tên đăng nhập phải có ít nhất 3 ký tự")
-
-        if not password or len(password) < 6:
-            raise ValueError("Mật khẩu phải có ít nhất 6 ký tự")
-
-        if role not in ("admin", "staff"):
-            raise ValueError("Vai trò người dùng phải là 'admin' hoặc 'staff'")
-
-        f_name = full_name.strip() if full_name else ""
-        if not f_name:
-            raise ValueError("Họ và tên không được để trống")
-
-        conn = self._get_connection()
-        try:
-            with transaction(conn):
-                self.verify_session(conn, session, required_role="admin")
-                existing = UserRepository.get_by_username(conn, u_name)
-                if existing:
-                    raise ValueError(f"Tên đăng nhập '{u_name}' đã tồn tại")
-
-                pwd_hash, salt = hash_password(password)
-                return UserRepository.create(conn, u_name, pwd_hash, salt, role, f_name)
-        finally:
-            conn.close()
-
-    def update_user(
-        self,
-        session: AuthSession,
-        user_id: int,
-        full_name: str,
-        role: str,
-        active: int,
-    ) -> bool:
-        """Cập nhật thông tin tài khoản (chỉ Admin)."""
-        if role not in ("admin", "staff"):
-            raise ValueError("Vai trò người dùng phải là 'admin' hoặc 'staff'")
-
-        if not full_name or not full_name.strip():
-            raise ValueError("Họ và tên không được để trống")
-
-        conn = self._get_connection()
-        try:
-            with transaction(conn):
-                self.verify_session(conn, session, required_role="admin")
-                target = UserRepository.get_by_id(conn, user_id)
-                if not target:
-                    raise ValueError("Không tìm thấy tài khoản cần cập nhật")
-
-                # Kiểm tra nếu là admin đang hoạt động mà bị hạ quyền hoặc khóa
-                if target["role"] == "admin" and target["active"] == 1:
-                    if role != "admin" or active != 1:
-                        admin_count = UserRepository.count_active_admins(conn)
-                        if admin_count <= 1:
-                            raise ValueError("Không thể khóa hoặc hạ quyền Admin hoạt động duy nhất")
-
-                return UserRepository.update(conn, user_id, full_name.strip(), role, active)
-        finally:
-            conn.close()
-
-    def reset_password(
-        self,
-        session: AuthSession,
-        user_id: int,
-        new_password: str,
-    ) -> bool:
-        """Admin đặt lại mật khẩu cho tài khoản."""
-        if not new_password or len(new_password) < 6:
-            raise ValueError("Mật khẩu mới phải có ít nhất 6 ký tự")
-
-        conn = self._get_connection()
-        try:
-            with transaction(conn):
-                self.verify_session(conn, session, required_role="admin")
-                target = UserRepository.get_by_id(conn, user_id)
-                if not target:
-                    raise ValueError("Không tìm thấy tài khoản cần đặt lại mật khẩu")
-
-                pwd_hash, salt = hash_password(new_password)
-                return UserRepository.update_password(conn, user_id, pwd_hash, salt)
-        finally:
-            conn.close()
-
-    def list_users(self, session: AuthSession, active_only: bool = False) -> list[dict[str, Any]]:
-        """Lấy danh sách tài khoản (chỉ Admin)."""
-        conn = self._get_connection()
-        try:
-            self.verify_session(conn, session, required_role="admin")
-            return UserRepository.list_all(conn, active_only=active_only)
-        finally:
-            conn.close()
-
+def update_user(actor_id, user_id, data):
+    full_name = text_value(data.get("full_name"), "Họ tên", 160)
+    role = data.get("role", "staff")
+    active = data.get("active") == "1"
+    if role not in ("admin", "staff"):
+        raise ValidationError("Vai trò không hợp lệ.")
+    password = data.get("password") or ""
+    password_hash = password_hash_value(password) if password else None
+    try:
+        with transaction() as connection:
+            actor = require_actor(connection, actor_id, admin=True)
+            cursor = connection.cursor()
+            try:
+                cursor.execute(
+                    "SELECT user_id FROM tenant_users WHERE tenant_id = %s "
+                    "AND role IN ('owner', 'admin') AND active = 1 "
+                    "ORDER BY user_id FOR UPDATE",
+                    (actor["tenant_id"],),
+                )
+                active_admin_ids = {row[0] for row in cursor.fetchall()}
+            finally:
+                cursor.close()
+            user = user_repo.get_by_id_for_update(connection, user_id, actor["tenant_id"])
+            if not user:
+                raise ValidationError("Không tìm thấy tài khoản.")
+            if user["membership_role"] == "owner":
+                raise ForbiddenError(
+                    "Không thể đổi vai trò hoặc khóa chủ cửa hàng tại đây. "
+                    "Tên và email được quản lý trong Cài đặt tài khoản; "
+                    "mật khẩu dùng luồng Quên mật khẩu."
+                )
+            if password_hash or full_name != user["full_name"]:
+                cursor = connection.cursor()
+                try:
+                    cursor.execute(
+                        "SELECT COUNT(*) FROM tenant_users WHERE user_id = %s",
+                        (user_id,),
+                    )
+                    membership_count = cursor.fetchone()[0]
+                finally:
+                    cursor.close()
+                if password_hash and membership_count > 1:
+                    raise ForbiddenError(
+                        "Tài khoản đang dùng ở nhiều cửa hàng; không thể đổi mật khẩu từ một cửa hàng riêng lẻ."
+                    )
+                if full_name != user["full_name"] and membership_count > 1:
+                    raise ForbiddenError(
+                        "Tài khoản đang dùng ở nhiều cửa hàng; người dùng cần đổi tên hiển thị trong cài đặt tài khoản."
+                    )
+            if user["id"] == actor["id"] and (not active or role != "admin"):
+                raise ForbiddenError("Không thể tự khóa hoặc tự hạ quyền quản trị của mình.")
+            if user["id"] in active_admin_ids and (
+                not active or role != "admin"
+            ):
+                if len(active_admin_ids) <= 1:
+                    raise ForbiddenError("Không thể khóa hoặc hạ quyền quản trị viên cuối cùng.")
+            changed = user_repo.update_user(
+                connection, user_id, actor["tenant_id"], full_name, role,
+                int(active), password_hash,
+                invalidate_sessions=bool(user["active"]) != bool(active),
+            )
+            if changed:
+                if password_hash:
+                    account_token_repo.consume_open_for_user(
+                        connection, user_id, "email_verification"
+                    )
+                    account_token_repo.consume_open_for_user(
+                        connection, user_id, "password_reset"
+                    )
+                audit_repo.add_event(
+                    connection, actor_id, "user.updated", "user", user_id,
+                    f"Cập nhật tài khoản #{user_id}",
+                    {"role": role, "active": bool(active), "password_changed": bool(password_hash)},
+                )
+    except Exception as exc:
+        if getattr(exc, "errno", None) == 1062:
+            raise ConflictError("Không thể cập nhật tài khoản.") from exc
+        raise

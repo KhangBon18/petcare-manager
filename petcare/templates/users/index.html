@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Tài khoản') }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><span class="eyebrow">{{ t('QUẢN TRỊ CỬA HÀNG') }}</span><h1>{{ t('Tài khoản') }}</h1><p>{{ t('Quản lý quyền truy cập trong cửa hàng đang chọn.') }}</p></div>
+  <div class="heading-actions">
+    <a class="button button-light" href="{{ url_for('users.ownership') }}">{{ t('Bàn giao chủ cửa hàng') }}</a>
+    <a class="button button-light" href="{{ url_for('users.export_current_store') }}">{{ t('Xuất dữ liệu cửa hàng') }}</a>
+    <a class="button button-primary" href="{{ url_for('users.create') }}">{{ icon('plus') }} {{ t('Tạo tài khoản') }}</a>
+  </div>
+</div>
+
+<section class="panel form-card" aria-labelledby="invite-title">
+  <div class="section-heading"><div><h2 id="invite-title">{{ t('Mời thành viên') }}</h2><p>{{ t('Lời mời chỉ dùng một lần và hết hạn sau 7 ngày.') }} {% if invitation_email_configured %}{{ t('Liên kết được gửi tới email đã nhập.') }}{% else %}{{ t('Hệ thống đang ở chế độ thủ công; gửi riêng liên kết tới email đó.') }}{% endif %}</p></div></div>
+  <form method="post" action="{{ url_for('users.create_invitation') }}" class="invite-create-form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="inline-field">{{ t('Email thành viên') }}<input type="email" name="email" maxlength="254" autocomplete="email" required placeholder="name@example.com"></label>
+    <label class="inline-field">{{ t('Quyền trong cửa hàng') }}<select name="role"><option value="staff">{{ t('Nhân viên') }}</option><option value="admin">{{ t('Quản trị viên') }}</option></select></label>
+    <button class="button button-primary">{{ t('Gửi lời mời') }} <span>→</span></button>
+  </form>
+  {% if invitations %}
+  <div class="table-scroll"><table class="user-table"><thead><tr><th>{{ t('EMAIL') }}</th><th>{{ t('VAI TRÒ') }}</th><th>{{ t('GỬI EMAIL') }}</th><th>{{ t('HẾT HẠN') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
+  {% for invite in invitations %}<tr>
+    <td>{{ invite.email or t('Lời mời cũ') }}</td>
+    <td>{{ t('Quản trị viên') if invite.role == 'admin' else t('Nhân viên') }}</td>
+    <td>{% if invite.email_status == 'sent' %}{{ t('Đã gửi') }}{% elif invite.email_status in ['pending', 'processing'] %}{{ t('Đang gửi') }}{% elif invite.email_status == 'failed' %}{{ t('Gửi thất bại') }}{% elif invite.email %}{{ t('Thủ công') }}{% else %}—{% endif %}</td>
+    <td>{{ format_datetime(invite.expires_at) }}</td>
+    <td><span class="status-pill {{ 'status-active' if invite.status == 'pending' else 'status-muted' }}">{{ t({'pending':'Đang chờ','accepted':'Đã sử dụng','revoked':'Đã thu hồi','expired':'Đã hết hạn'}[invite.status]) }}</span></td>
+    <td>{% if invite.status == 'pending' %}<form method="post" action="{{ url_for('users.revoke_invitation', invitation_id=invite.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-light button-small">{{ t('Thu hồi') }}</button></form>{% endif %}</td>
+  </tr>{% endfor %}
+  </tbody></table></div>
+  {% endif %}
+</section>
+
+<section class="panel" aria-label="{{ t('Thành viên cửa hàng') }}"><div class="table-scroll"><table class="user-table"><thead><tr><th>{{ t('NHÂN VIÊN') }}</th><th>{{ t('TÊN ĐĂNG NHẬP') }}</th><th>{{ t('VAI TRÒ') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th>{{ t('CẬP NHẬT') }}</th></tr></thead><tbody>
+{% for user in users %}<tr>
+  <td><div class="person-cell"><span class="avatar avatar-soft">{{ user.full_name[:1]|upper }}</span><strong>{{ user.full_name }}</strong></div></td>
+  <td>{{ user.username }}</td>
+  <td>{% if user.membership_role == 'owner' %}{{ t('Chủ cửa hàng') }}{% else %}{{ t('Quản trị viên') if user.role == 'admin' else t('Nhân viên') }}{% endif %}</td>
+  <td><span class="status-pill {{ 'status-active' if user.active else 'status-muted' }}">{{ t('Đang hoạt động') if user.active else t('Đã khóa') }}</span></td>
+  <td>{% if user.membership_role == 'owner' %}<small>{{ t('Tên và email được quản lý trong Cài đặt tài khoản; mật khẩu dùng luồng Quên mật khẩu. Không thể đổi vai trò hoặc khóa tại đây.') }}</small>{% else %}
+    <form method="post" action="{{ url_for('users.update', user_id=user.id) }}" class="user-update-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input name="full_name" value="{{ user.full_name }}" maxlength="160" required aria-label="{{ t('Họ tên') }}">
+      <select name="role" aria-label="{{ t('Vai trò') }}"><option value="staff" {{ 'selected' if user.role == 'staff' }}>{{ t('Nhân viên') }}</option><option value="admin" {{ 'selected' if user.role == 'admin' }}>{{ t('Quản trị viên') }}</option></select>
+      <select name="active" aria-label="{{ t('Trạng thái') }}"><option value="1" {{ 'selected' if user.active }}>{{ t('Hoạt động') }}</option><option value="0" {{ 'selected' if not user.active }}>{{ t('Đã khóa') }}</option></select>
+      <input type="password" name="password" minlength="8" maxlength="1024" placeholder="{{ t('Mật khẩu mới (nếu đổi)') }}" aria-label="{{ t('Mật khẩu mới') }}"><button class="button button-light button-small">{{ t('Lưu') }}</button>
+    </form>{% endif %}</td>
+</tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Tiến độ xuất dữ liệu') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading">
+  <div>
+    <a class="back-link" href="{{ url_for('users.export_current_store') }}">← {{ t('Xuất dữ liệu') }}</a>
+    <span class="eyebrow">{{ t('BẢN XUẤT RIÊNG TƯ') }}</span>
+    <h1>{{ t('Đang xử lý yêu cầu') }}</h1>
+    <p>{{ t('Yêu cầu') }} #{{ job.id }} · {{ t('Cửa hàng') }} {{ g.tenant.name }}</p>
+  </div>
+</div>
+
+<section class="panel form-card" aria-labelledby="export-job-title">
+  <div class="section-heading">
+    <div>
+      <h2 id="export-job-title">{{ t('Trạng thái bản xuất') }}</h2>
+      <p id="export-job-message" role="status" aria-live="polite" aria-atomic="true">
+        {% if job.expired %}{{ t('Bản xuất đã hết hạn và được xóa khỏi hệ thống.') }}
+        {% elif job.status == 'pending' %}{{ t('Yêu cầu đang chờ worker xử lý.') }}
+        {% elif job.status == 'processing' %}{{ t('Đang đóng gói dữ liệu và ảnh của cửa hàng. Bạn có thể để trang này mở; tiến độ sẽ tự cập nhật.') }}
+        {% elif job.status == 'ready' %}{{ t('Bản xuất đã sẵn sàng. Hãy tải về trước thời hạn lưu trữ.') }}
+        {% else %}{{ t('Không thể tạo bản xuất. Hãy yêu cầu tạo lại hoặc liên hệ quản trị hệ thống.') }}
+        {% endif %}
+      </p>
+    </div>
+  </div>
+  <div class="form-actions">
+    {% if job.status == 'ready' and not job.expired %}
+      <a class="button button-primary" id="export-download" href="{{ url_for('users.download_export', job_id=job.id) }}">{{ t('Tải gói mã hóa') }}</a>
+    {% else %}
+      <a class="button button-primary" id="export-download" href="#" hidden>{{ t('Tải gói mã hóa') }}</a>
+    {% endif %}
+    <a class="button button-light" href="{{ url_for('users.export_current_store') }}">{{ t('Tạo yêu cầu khác') }}</a>
+    <a class="button button-light" href="{{ url_for('users.index') }}">{{ t('Quản lý tài khoản') }}</a>
+  </div>
+  <p class="privacy-note">{{ t('File được mã hóa trước khi lưu trữ. Chỉ tài khoản quản trị đã yêu cầu mới tải được file. File tự xóa sau') }} {{ config.TENANT_EXPORT_RETENTION_HOURS }} {{ t('giờ; sau khi tải, hãy lưu ở nơi riêng tư và giữ passphrase tách biệt.') }}</p>
+</section>
+<div data-export-job
+     data-status-url="{{ url_for('users.export_job_status', job_id=job.id) }}"
+     data-initial-status="{{ 'expired' if job.expired else job.status }}"
+     {% if job.status in ('pending', 'processing') and not job.expired %}data-poll="true"{% endif %}></div>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/export-job.js') }}" defer></script>{% endblock %}

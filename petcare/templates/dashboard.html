@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Tổng quan') }}{% endblock %}
+{% block content %}
+<div class="page-heading">
+  <div><span class="eyebrow">{{ t('TỔNG QUAN CỬA HÀNG') }}</span><h1>{{ t('Chào') }} {{ g.user.full_name }} <span class="wave">{{ icon('sparkle') }}</span></h1><p>{{ t('Đây là tình hình cửa hàng của bạn hôm nay.') }}</p></div>
+  <a class="button button-primary" href="{{ url_for('invoices.create') }}">{{ icon('plus') }} {{ t('Lập hóa đơn') }}</a>
+</div>
+<div class="stat-grid">
+  <article class="stat-card stat-peach"><div class="stat-top"><span>{{ t('Doanh thu hôm nay') }}</span><span class="stat-icon">{{ icon('reports') }}</span></div><strong>{{ format_money(metrics.today) }}</strong><small>{{ t('Đơn đã thanh toán trong ngày') }}</small></article>
+  <article class="stat-card stat-lilac"><div class="stat-top"><span>{{ t('Khách hàng') }}</span><span class="stat-icon">{{ icon('customers') }}</span></div><strong>{{ metrics.customers }}</strong><small>{{ t('Khách hàng đang hoạt động') }}</small></article>
+  <article class="stat-card stat-mint"><div class="stat-top"><span>{{ t('Sản phẩm') }}</span><span class="stat-icon">{{ icon('products') }}</span></div><strong>{{ metrics.products }}</strong><small>{% if metrics.low_stock == 1 %}{{ t('1 sản phẩm sắp hết hàng') }}{% else %}{{ metrics.low_stock }} {{ t('sản phẩm sắp hết hàng') }}{% endif %}</small></article>
+  <article class="stat-card stat-blue"><div class="stat-top"><span>{{ t('Thú cưng đang bán') }}</span><span class="stat-icon">{{ icon('pets') }}</span></div><strong>{{ metrics.pets_available }}</strong><small>{{ t('Các cá thể đang sẵn sàng') }}</small></article>
+</div>
+<div class="dashboard-bottom-grid">
+  <section class="panel dashboard-list-panel">
+    <div class="panel-heading">
+      <div><span class="eyebrow">{{ t('CẦN THEO DÕI') }}</span><h2>{{ t('Tồn kho sắp hết') }}</h2></div>
+      <a class="text-link" href="{{ url_for('products.index') }}">{{ t('Quản lý kho →') }}</a>
+    </div>
+    {% if metrics.low_stock_items %}
+    <div class="dashboard-list">
+      {% for product in metrics.low_stock_items %}
+      <a class="dashboard-list-row" href="{{ url_for('products.edit', product_id=product.id) if g.user.role == 'admin' else url_for('products.index', q=product.code) }}">
+        <span class="dashboard-list-icon inventory-icon" aria-hidden="true">{{ icon('products') }}</span>
+        <span class="dashboard-list-copy"><strong>{{ product.name }}</strong><small>{{ product.code }} · {{ t('Ngưỡng cảnh báo') }} {{ product.reorder_level }}</small></span>
+        <span class="dashboard-stock {{ 'dashboard-stock-empty' if product.stock_qty == 0 else '' }}">{{ product.stock_qty }} <small>{{ t('còn') }}</small></span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="dashboard-empty"><span class="empty-icon" aria-hidden="true">{{ icon('check') }}</span><strong>{{ t('Tồn kho đang ổn') }}</strong><p>{{ t('Chưa có sản phẩm nào chạm ngưỡng bổ sung.') }}</p></div>
+    {% endif %}
+  </section>
+  <section class="panel dashboard-list-panel">
+    <div class="panel-heading">
+      <div><span class="eyebrow">{{ t('GIAO DỊCH MỚI') }}</span><h2>{{ t('Hóa đơn gần đây') }}</h2></div>
+      <a class="text-link" href="{{ url_for('invoices.index') }}">{{ t('Tất cả hóa đơn →') }}</a>
+    </div>
+    {% if metrics.recent_invoices %}
+    <div class="dashboard-list">
+      {% for invoice in metrics.recent_invoices %}
+      <a class="dashboard-list-row" href="{{ url_for('invoices.detail', invoice_id=invoice.id) }}">
+        <span class="dashboard-list-icon invoice-icon" aria-hidden="true">▤</span>
+        <span class="dashboard-list-copy"><strong>#{{ '%06d'|format(invoice.id) }} · {{ invoice.customer_name }}</strong><small>{{ format_datetime(invoice.created_at) if invoice.created_at else '—' }}</small></span>
+        <span class="dashboard-invoice-total"><strong>{{ format_money(invoice.total_amount, invoice.currency_code) }}</strong><small class="status-pill {{ {'unpaid':'status-pending','paid':'status-active','cancelled':'status-muted'}[invoice.status] }}">{{ t({'unpaid':'Chưa thu','paid':'Đã thu','cancelled':'Đã hủy'}[invoice.status]) }}</small></span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="dashboard-empty"><span class="empty-icon" aria-hidden="true">▤</span><strong>{{ t('Chưa có giao dịch') }}</strong><p>{{ t('Lập hóa đơn đầu tiên để theo dõi hoạt động bán hàng.') }}</p><a class="text-link" href="{{ url_for('invoices.create') }}">{{ t('Lập hóa đơn') }} →</a></div>
+    {% endif %}
+  </section>
+</div>
+<div class="dashboard-grid">
+  <section class="panel welcome-panel">
+    <div class="panel-heading"><div><span class="eyebrow">{{ t('BẮT ĐẦU NHANH') }}</span><h2>{{ t('Cửa hàng hôm nay') }}</h2></div><span class="soft-badge">{{ t('Tổng quan') }}</span></div>
+    <p class="muted">{{ t('Chọn một việc bạn muốn làm để tiếp tục quản lý cửa hàng.') }}</p>
+    <div class="quick-grid">
+      <a class="quick-card" href="{{ url_for('customers.create') }}"><span class="quick-icon quick-peach">{{ icon('customers') }}</span><span><strong>{{ t('Thêm khách hàng') }}</strong><small>{{ t('Lưu thông tin người mua') }}</small></span><b>{{ icon('arrow') }}</b></a>
+      <a class="quick-card" href="{{ url_for('invoices.create') }}"><span class="quick-icon quick-lilac">{{ icon('invoice') }}</span><span><strong>{{ t('Tạo hóa đơn') }}</strong><small>{{ t('Bán sản phẩm hoặc thú cưng') }}</small></span><b>{{ icon('arrow') }}</b></a>
+      <a class="quick-card" href="{{ url_for('products.index') }}"><span class="quick-icon quick-mint">{{ icon('products') }}</span><span><strong>{{ t('Kiểm tra tồn kho') }}</strong><small>{% if metrics.low_stock == 1 %}{{ t('1 mặt hàng cần chú ý') }}{% else %}{{ metrics.low_stock }} {{ t('mặt hàng cần chú ý') }}{% endif %}</small></span><b>{{ icon('arrow') }}</b></a>
+      <a class="quick-card" href="{{ url_for('reports.index') }}"><span class="quick-icon quick-blue">{{ icon('reports') }}</span><span><strong>{{ t('Xem báo cáo') }}</strong><small>{{ t('Doanh thu và hàng bán chạy') }}</small></span><b>{{ icon('arrow') }}</b></a>
+    </div>
+  </section>
+  <aside class="panel side-spotlight">
+    <span class="eyebrow">{{ t('MẸO NHỎ') }}</span><div class="spotlight-art"><span>{{ icon('sparkle') }}</span><b>{{ icon('pets') }}</b></div>
+    <h2>{{ t('Mỗi giao dịch,') }}<br>{{ t('một lịch sử rõ ràng.') }}</h2><p>{{ t('Hóa đơn đã thanh toán sẽ tự cập nhật tồn kho và lưu lại thông tin người mua.') }}</p>
+    <a class="text-link" href="{{ url_for('invoices.index') }}">{{ t('Xem hóa đơn') }} <span>→</span></a>
+  </aside>
+</div>
+{% endblock %}

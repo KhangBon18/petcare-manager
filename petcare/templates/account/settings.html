@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Cài đặt tài khoản') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading"><div><span class="eyebrow">{{ t('TÀI KHOẢN & BẢO MẬT') }}</span><h1>{{ t('Cài đặt tài khoản') }}</h1><p>{{ t('Quản lý thông tin dùng chung cho danh tính của bạn trên các cửa hàng.') }}</p></div></div>
+<div class="account-settings-stack">
+  <section class="panel form-card account-email-card">
+    <div class="section-heading"><div><h2>{{ t('Tên hiển thị') }}</h2><p>{{ t('Tên này xuất hiện ở mọi cửa hàng bạn tham gia.') }}</p></div></div>
+    <form method="post" action="{{ url_for('account.update_profile') }}" class="form-stack" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>{{ t('Tên hiển thị') }}<input name="full_name" maxlength="160" value="{{ user.full_name }}" autocomplete="name" required></label>
+      <label>{{ t('Mật khẩu hiện tại') }}<input type="password" name="current_password" autocomplete="current-password" minlength="8" maxlength="1024" required></label>
+      <div class="form-actions"><button class="button button-primary" type="submit">{{ t('Cập nhật tên') }}</button></div>
+    </form>
+  </section>
+  <section class="panel form-card account-email-card">
+    <div class="section-heading"><div><h2>{{ t('Địa chỉ email') }}</h2><p>{% if user.email_verified_at %}{{ t('Đã xác minh') }}{% elif user.email %}{{ t('Đang chờ xác minh') }}{% else %}{{ t('Chưa thêm email') }}{% endif %}</p></div></div>
+    {% if user.email %}<p class="account-email-current"><strong>{{ user.email }}</strong>{% if user.email_verified_at %}<span class="status-pill status-active">{{ t('Đã xác minh') }}</span>{% else %}<span class="status-pill status-muted">{{ t('Chưa xác minh') }}</span>{% endif %}</p>{% endif %}
+    <form method="post" class="form-stack" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>{{ t('Email mới') }}<input type="email" name="email" maxlength="254" value="{{ user.email or '' }}" autocomplete="email" placeholder="name@example.com"><small>{{ t('Để trống để gỡ email. Bạn cần xác minh email mới trước khi dùng khôi phục mật khẩu.') }}</small></label>
+      <label>{{ t('Mật khẩu hiện tại') }}<input type="password" name="current_password" autocomplete="current-password" minlength="8" maxlength="1024" required></label>
+      <div class="form-actions"><button class="button button-primary" type="submit">{{ t('Cập nhật email') }}</button></div>
+    </form>
+    {% if user.email and not user.email_verified_at %}
+    <form method="post" action="{{ url_for('account.resend_verification') }}" class="account-resend-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="button button-light" type="submit">{{ t('Gửi lại liên kết xác minh') }}</button>
+    </form>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

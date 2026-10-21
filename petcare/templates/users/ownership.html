@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Bàn giao chủ cửa hàng') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading">
+  <div><span class="eyebrow">{{ t('QUẢN TRỊ CỬA HÀNG') }}</span><h1>{{ t('Bàn giao chủ cửa hàng') }}</h1><p>{{ t('Chuyển quyền owner trong cửa hàng đang chọn.') }}</p></div>
+  <div class="heading-actions"><a class="button button-light" href="{{ url_for('users.index') }}">← {{ t('Thành viên') }}</a></div>
+</div>
+
+<section class="panel form-card" aria-labelledby="ownership-safety-title">
+  <div class="section-heading"><div><h2 id="ownership-safety-title">{{ t('Xác nhận hai phía') }}</h2><p>{{ t('Yêu cầu hết hạn sau 72 giờ. Người nhận phải đăng nhập bằng tài khoản quản trị viên của cửa hàng và nhập lại mật khẩu để chấp nhận. Email thông báo (nếu có) không thay thế bước xác nhận này.') }}</p></div></div>
+
+  {% if transfer %}
+  <div class="callout callout-info" role="status">
+    <strong>{{ t('Đang chờ bàn giao') }}</strong>
+    <p>{{ transfer.requester_name }} (@{{ transfer.requester_username }}) {{ t('muốn bàn giao quyền owner cho') }} {{ transfer.target_name }} (@{{ transfer.target_username }}).</p>
+    <p>{{ t('Hết hạn:') }} {{ format_datetime(transfer.expires_at) }}.
+      {% if transfer.email_status == 'sent' %}{{ t('Email thông báo đã gửi.') }}{% elif transfer.email_status in ['pending', 'processing'] %}{{ t('Email thông báo đang được gửi.') }}{% elif transfer.email_status == 'failed' %}{{ t('Email thông báo gửi thất bại; người nhận vẫn có thể xác nhận sau khi đăng nhập.') }}{% else %}{{ t('Hãy báo trực tiếp cho người nhận đăng nhập để xác nhận.') }}{% endif %}
+    </p>
+  </div>
+
+  {% if can_accept %}
+  <form method="post" action="{{ url_for('users.accept_ownership_transfer', transfer_id=transfer.id) }}" class="form-stack" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p>{{ t('Khi chấp nhận, tài khoản của bạn trở thành owner và tài khoản đã khởi tạo chuyển thành admin.') }}</p>
+    <label for="accept-transfer-password">{{ t('Mật khẩu hiện tại') }}<input id="accept-transfer-password" type="password" name="current_password" autocomplete="current-password" minlength="8" maxlength="1024" required></label>
+    <div class="form-actions"><button class="button button-primary" type="submit">{{ t('Xác nhận nhận bàn giao') }}</button></div>
+  </form>
+  {% elif can_cancel %}
+  <form method="post" action="{{ url_for('users.cancel_ownership_transfer', transfer_id=transfer.id) }}" class="form-stack" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="cancel-transfer-password">{{ t('Nhập mật khẩu để thu hồi') }}<input id="cancel-transfer-password" type="password" name="current_password" autocomplete="current-password" minlength="8" maxlength="1024" required></label>
+    <div class="form-actions"><button class="button button-light" type="submit">{{ t('Thu hồi yêu cầu') }}</button></div>
+  </form>
+  {% endif %}
+
+  {% elif membership_role == 'owner' %}
+  <form method="post" action="{{ url_for('users.start_ownership_transfer') }}" class="form-stack" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if candidates %}
+    <label for="transfer-target">{{ t('Chọn quản trị viên nhận quyền owner') }}<select id="transfer-target" name="target_user_id" required><option value="">{{ t('Chọn thành viên') }}</option>{% for candidate in candidates %}<option value="{{ candidate.id }}">{{ candidate.full_name }} · @{{ candidate.username }}</option>{% endfor %}</select></label>
+    <label for="start-transfer-password">{{ t('Mật khẩu hiện tại') }}<input id="start-transfer-password" type="password" name="current_password" autocomplete="current-password" minlength="8" maxlength="1024" required></label>
+    <p>{{ t('Sau khi người nhận chấp thuận, bạn sẽ tiếp tục là quản trị viên của cửa hàng. Nếu đổi ý, bạn có thể thu hồi yêu cầu trước khi nó được chấp nhận.') }}</p>
+    <div class="form-actions"><button class="button button-primary" type="submit">{{ t('Gửi yêu cầu bàn giao') }}</button></div>
+    {% else %}
+    <div class="empty-state"><h2>{{ t('Chưa có quản trị viên đủ điều kiện') }}</h2><p>{{ t('Mời một thành viên làm quản trị viên trước khi tạo yêu cầu bàn giao.') }}</p><a class="button button-light" href="{{ url_for('users.index') }}">{{ t('Quản lý thành viên') }}</a></div>
+    {% endif %}
+  </form>
+  {% else %}
+  <div class="empty-state"><h2>{{ t('Không có yêu cầu dành cho tài khoản này') }}</h2><p>{{ t('Chỉ owner hiện tại mới khởi tạo được yêu cầu. Nếu bạn được chọn làm người nhận, yêu cầu sẽ xuất hiện tại đây sau khi đăng nhập đúng cửa hàng.') }}</p></div>
+  {% endif %}
+</section>
+{% endblock %}

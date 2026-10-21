@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Sửa hồ sơ thú cưng') if pet else t('Thêm thú cưng') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading"><div><a class="back-link" href="{{ url_for('pets.index') }}">{{ icon('arrow') }} {{ t('Thú cưng') }}</a><span class="eyebrow">{{ t('CÁ THỂ BÁN LẺ') }}</span><h1>{{ t('Chỉnh sửa hồ sơ') if pet else t('Thêm thú cưng mới') }}</h1><p>{{ t('Người mua chỉ được gắn khi hóa đơn thanh toán thành công.') }}</p></div></div>
+<section class="form-card panel"><form method="post" enctype="multipart/form-data" class="form-stack"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="form-grid">
+<label>{{ t('Mã cá thể') }}<input name="code" maxlength="48" required value="{{ pet.code if pet else '' }}" placeholder="PET-002"></label>
+<label>{{ t('Tên gọi') }}<input name="name" maxlength="120" required value="{{ pet.name if pet else '' }}" placeholder="{{ t('Miu') }}"></label>
+<label>{{ t('Loài') }}<input name="species" maxlength="80" required value="{{ pet.species if pet else '' }}" placeholder="{{ t('Mèo') }}"></label>
+<label>{{ t('Giống') }}<input name="breed" maxlength="100" value="{{ pet.breed if pet else '' }}" placeholder="{{ t('Mèo ta') }}"></label>
+<label>{{ t('Giới tính') }}<select name="sex"><option value="unknown" {{ 'selected' if not pet or pet.sex == 'unknown' }}>{{ t('Chưa rõ') }}</option><option value="male" {{ 'selected' if pet and pet.sex == 'male' }}>{{ t('Đực') }}</option><option value="female" {{ 'selected' if pet and pet.sex == 'female' }}>{{ t('Cái') }}</option></select></label>
+<label>{{ t('Ngày sinh') }}<input name="birth_date" type="date" value="{{ pet.birth_date.isoformat() if pet and pet.birth_date else '' }}"></label>
+<label>{{ t('Cân nặng (kg)') }}<input name="weight_kg" type="number" min="0.01" max="9999.99" step="0.01" value="{{ pet.weight_kg if pet and pet.weight_kg else '' }}" placeholder="3.50"></label>
+<label>{{ t('Màu lông') }}<input name="coat_color" maxlength="80" value="{{ pet.coat_color if pet else '' }}" placeholder="{{ t('Tam thể') }}"></label>
+<label>{{ t('Màu mắt') }}<input name="eye_color" maxlength="60" value="{{ pet.eye_color if pet else '' }}" placeholder="{{ t('Xanh lá') }}"></label>
+<label class="field-wide">{{ t('Đặc điểm ngoại hình') }}<input name="appearance_tags" maxlength="255" value="{{ pet.appearance_tags if pet else '' }}" placeholder="{{ t('Lông ngắn, dáng nhỏ, tai cụp') }}"></label>
+<label class="field-wide photo-upload-field">{{ t('Ảnh hồ sơ') }} <small>{{ t('JPEG, PNG hoặc WebP; tối đa 5 MB. Ảnh được chuẩn hóa, lưu riêng tư và dùng để tìm thú cưng tương tự.') }}</small><input type="file" name="photo" accept="image/jpeg,image/png,image/webp" data-photo-input data-too-large-message="{{ t('Ảnh cần nhỏ hơn 5 MB.') }}" data-new-caption="{{ t('Ảnh mới:') }}"></label>
+{% if pet and pet.photo_filename %}<div class="photo-upload-preview field-wide" data-preview-wrap><img src="{{ url_for('pets.photo', filename=pet.photo_filename) }}" alt="{{ t('Ảnh') }} {{ pet.name }}" data-photo-preview><span data-preview-caption>{{ t('Ảnh hiện tại · sẽ được thay khi chọn ảnh mới') }}</span></div>{% else %}<div class="photo-upload-preview field-wide" data-preview-wrap hidden><img alt="{{ t('Xem trước ảnh thú cưng') }}" data-photo-preview><span data-preview-caption>{{ t('Xem trước ảnh') }}</span></div>{% endif %}
+<label>{{ t('Giá bán') }} ({{ g.tenant.default_currency }})<input name="sale_price" type="number" min="0" step="{{ currency_step(g.tenant.default_currency) }}" required value="{{ money_input_value(pet.sale_price, g.tenant.default_currency) if pet else '' }}" placeholder="2000000"><small>{% if currency_precision(g.tenant.default_currency) == 0 %}{{ t('Không dùng phần thập phân.') }}{% else %}{{ t('Tối đa') }} {{ currency_precision(g.tenant.default_currency) }} {{ t('chữ số thập phân.') }}{% endif %}</small></label>
+</div><div class="form-actions"><a class="button button-light" href="{{ url_for('pets.index') }}">{{ t('Hủy') }}</a><button class="button button-primary">{{ t('Lưu thay đổi') if pet else t('Thêm thú cưng') }} <span>→</span></button></div></form></section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/photo_preview.js') }}" defer></script>{% endblock %}

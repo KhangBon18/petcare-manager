@@ -1,220 +1,209 @@
-"""Dịch vụ quản lý thông tin thú cưng (Pets)."""
+from decimal import Decimal, InvalidOperation
 
-from datetime import date
-from pathlib import Path
-import sqlite3
-from typing import Any
+from flask import current_app
 
-from petcare.database.connection import get_connection, transaction
-from petcare.date_utils import normalize_date, parse_date
-from petcare.repositories.owner_repo import OwnerRepository
-from petcare.repositories.pet_repo import PetRepository
-from petcare.services.auth_service import AuthService, AuthSession
+from petcare.database.connection import read_connection, transaction
+from petcare.repositories import audit_repo, pet_repo
+from petcare.services.common import date_value, money_value, page_window, positive_id, require_actor, text_value
+from petcare.services.exceptions import ConflictError, NotFoundError, ValidationError
+from petcare.timezones import tenant_today
+from petcare.vision.photo_storage import remove_pet_photo, store_pet_photo
+from petcare.vision.media_storage import get_media_storage, media_tenant_id
 
 
-class PetService:
-    """Quy tắc nghiệp vụ và xác thực dữ liệu cho thú cưng."""
+def list_pets(actor_id, search="", status="", page=None):
+    if status not in ("", "available", "sold", "inactive"):
+        status = ""
+    search = (search or "").strip()[:120]
+    with read_connection() as connection:
+        require_actor(connection, actor_id)
+        if page is not None:
+            total = pet_repo.count_pets(connection, search, status)
+            _current_page, offset, pagination = page_window(page, total)
+            return {
+                "items": pet_repo.list_pets_page(
+                    connection, search, status, pagination["page_size"], offset
+                ),
+                "pagination": pagination,
+            }
+        return pet_repo.list_pets(connection, search, status)
 
-    def __init__(self, db_path: Path | str | None = None):
-        self.db_path = db_path
 
-    def _get_connection(self) -> sqlite3.Connection:
-        return get_connection(self.db_path)
+def get_pet(actor_id, pet_id):
+    pet_id = positive_id(pet_id, "Thú cưng")
+    with read_connection() as connection:
+        require_actor(connection, actor_id)
+        pet = pet_repo.get_pet(connection, pet_id)
+    if not pet:
+        raise NotFoundError("Không tìm thấy thú cưng.")
+    return pet
 
-    def _validate_session(
-        self,
-        session: AuthSession,
-        required_role: str = "staff",
-        conn: sqlite3.Connection | None = None,
-    ) -> dict[str, Any]:
-        if conn is not None:
-            return AuthService.verify_session(conn, session, required_role=required_role)
-        temp_conn = self._get_connection()
+
+def owns_photo(actor_id, filename):
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id)
         try:
-            return AuthService.verify_session(temp_conn, session, required_role=required_role)
-        finally:
-            temp_conn.close()
+            scoped_tenant_id = media_tenant_id(filename)
+        except ValueError:
+            return False
+        return (
+            (scoped_tenant_id is None or scoped_tenant_id == actor["tenant_id"])
+            and pet_repo.has_photo(connection, filename)
+        )
 
-    def _validate_data(self, data: dict[str, Any]) -> dict[str, Any]:
-        name = data.get("name", "")
-        if not name or not str(name).strip():
-            raise ValueError("Tên thú cưng không được để trống")
 
-        species = data.get("species", "")
-        if not species or not str(species).strip():
-            raise ValueError("Loài thú cưng (Chó, Mèo,...) không được để trống")
+def _pet_data(data, currency_code, timezone_name):
+    birth_date = date_value(data.get("birth_date"), "Ngày sinh")
+    if birth_date and birth_date > tenant_today(timezone_name):
+        raise ValidationError("Ngày sinh không được ở tương lai.")
+    raw_weight = (data.get("weight_kg") or "").strip()
+    try:
+        weight = Decimal(raw_weight) if raw_weight else None
+    except InvalidOperation:
+        raise ValidationError("Cân nặng không hợp lệ.")
+    if weight is not None and (weight <= 0 or weight > Decimal("9999.99")):
+        raise ValidationError("Cân nặng phải lớn hơn 0 và không vượt quá 9999.99 kg.")
+    sex = data.get("sex", "unknown")
+    if sex not in ("male", "female", "unknown"):
+        raise ValidationError("Giới tính không hợp lệ.")
+    return {
+        "code": text_value(data.get("code"), "Mã thú cưng", 48).upper(),
+        "name": text_value(data.get("name"), "Tên thú cưng", 120),
+        "species": text_value(data.get("species"), "Loài", 80),
+        "breed": text_value(data.get("breed"), "Giống", 100, required=False),
+        "sex": sex,
+        "birth_date": birth_date,
+        "weight_kg": weight,
+        "coat_color": text_value(data.get("coat_color"), "Màu lông", 80, required=False),
+        "eye_color": text_value(data.get("eye_color"), "Màu mắt", 60, required=False),
+        "appearance_tags": text_value(
+            data.get("appearance_tags"), "Đặc điểm ngoại hình", 255, required=False
+        ),
+        "sale_price": money_value(data.get("sale_price"), "Giá bán", currency_code),
+        "legacy_sale_price_vnd": 0,
+    }
 
-        sex = data.get("sex", "unknown")
-        if sex not in ("male", "female", "unknown"):
-            raise ValueError("Giới tính phải là 'male' (Đực), 'female' (Cái) hoặc 'unknown' (Chưa rõ)")
 
-        weight_raw = data.get("weight_kg")
-        weight_kg = None
-        if weight_raw is not None and str(weight_raw).strip() != "":
-            try:
-                weight_kg = float(weight_raw)
-                if weight_kg < 0:
-                    raise ValueError("Cân nặng không được là số âm")
-            except (TypeError, ValueError) as e:
-                if "không được là số âm" in str(e):
-                    raise
-                raise ValueError("Cân nặng phải là một số hợp lệ")
+def _store_upload(actor_id, image_upload):
+    if not image_upload or not getattr(image_upload, "filename", ""):
+        return None
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id, admin=True)
+    tenant_id = actor["tenant_id"]
+    return store_pet_photo(
+        image_upload,
+        get_media_storage(current_app.config, "pets"),
+        current_app.config["PET_IMAGE_MAX_BYTES"],
+        tenant_id=tenant_id,
+    )
 
-        birth_date = data.get("birth_date")
-        if birth_date and str(birth_date).strip():
-            try:
-                b_date = parse_date(birth_date, field_name="Ngày sinh")
-                if b_date > date.today():
-                    raise ValueError("Ngày sinh không được lớn hơn ngày hiện tại")
-                b_str = b_date.isoformat()
-            except ValueError as e:
-                if "không được lớn hơn" in str(e):
-                    raise
-                raise ValueError("Ngày sinh không đúng định dạng chuẩn YYYY-MM-DD")
-        else:
-            b_str = None
 
-        return {
-            "name": str(name).strip(),
-            "species": str(species).strip(),
-            "breed": str(data.get("breed", "")).strip() or None,
-            "sex": sex,
-            "birth_date": b_str,
-            "weight_kg": weight_kg,
-            "coat_color": str(data.get("coat_color", "")).strip() or None,
-        }
-
-    def create_pet(self, session: AuthSession, data: dict[str, Any]) -> int:
-        """Tạo thú cưng mới; chủ nuôi phải tồn tại và đang hoạt động."""
-        owner_id = data.get("owner_id")
-        if not owner_id:
-            raise ValueError("Vui lòng chọn chủ nuôi cho thú cưng")
-
-        validated = self._validate_data(data)
-
-        conn = self._get_connection()
-        try:
-            with transaction(conn):
-                self._validate_session(session, conn=conn)
-                owner = OwnerRepository.get_by_id(conn, int(owner_id))
-                if not owner:
-                    raise ValueError("Chủ nuôi không tồn tại trong hệ thống")
-                if not owner["active"]:
-                    raise ValueError("Không thể thêm thú cưng cho chủ nuôi đã ngừng theo dõi")
-
-                return PetRepository.create(
-                    conn=conn,
-                    owner_id=int(owner_id),
-                    name=validated["name"],
-                    species=validated["species"],
-                    breed=validated["breed"],
-                    sex=validated["sex"],
-                    birth_date=validated["birth_date"],
-                    weight_kg=validated["weight_kg"],
-                    coat_color=validated["coat_color"],
-                )
-        finally:
-            conn.close()
-
-    def update_pet(self, session: AuthSession, pet_id: int, data: dict[str, Any]) -> bool:
-        """Cập nhật thông tin thú cưng; chặn đổi chủ nếu thú cưng đã có hóa đơn."""
-        validated = self._validate_data(data)
-        active = int(data.get("active", 1))
-
-        conn = self._get_connection()
-        try:
-            with transaction(conn):
-                self._validate_session(session, conn=conn)
-                existing = PetRepository.get_by_id(conn, pet_id)
-                if not existing:
-                    raise ValueError("Không tìm thấy thú cưng cần cập nhật")
-
-                new_owner_id = data.get("owner_id")
-                target_owner_id = None
-                if new_owner_id is not None and int(new_owner_id) != existing["owner_id"]:
-                    # Kiểm tra xem có hóa đơn chưa
-                    if PetRepository.has_invoices(conn, pet_id):
-                        raise ValueError("Không thể đổi chủ nuôi cho thú cưng đã có hóa đơn trong hệ thống")
-                    new_owner = OwnerRepository.get_by_id(conn, int(new_owner_id))
-                    if not new_owner or not new_owner["active"]:
-                        raise ValueError("Chủ nuôi mới không hợp lệ hoặc đã ngừng hoạt động")
-                    target_owner_id = int(new_owner_id)
-
-                return PetRepository.update(
-                    conn=conn,
-                    pet_id=pet_id,
-                    name=validated["name"],
-                    species=validated["species"],
-                    breed=validated["breed"],
-                    sex=validated["sex"],
-                    birth_date=validated["birth_date"],
-                    weight_kg=validated["weight_kg"],
-                    coat_color=validated["coat_color"],
-                    active=active,
-                    owner_id=target_owner_id,
-                )
-        finally:
-            conn.close()
-
-    def get_pet(self, session: AuthSession, pet_id: int) -> dict[str, Any] | None:
-        """Lấy thông tin chi tiết một thú cưng kèm thông tin chủ nuôi."""
-        conn = self._get_connection()
-        try:
-            self._validate_session(session, conn=conn)
-            return PetRepository.get_by_id(conn, pet_id)
-        finally:
-            conn.close()
-
-    def get_pets_by_owner(
-        self, session: AuthSession, owner_id: int, active_only: bool = True
-    ) -> list[dict[str, Any]]:
-        """Lấy danh sách thú cưng của một chủ nuôi."""
-        conn = self._get_connection()
-        try:
-            self._validate_session(session, conn=conn)
-            return PetRepository.get_by_owner_id(conn, owner_id, active_only=active_only)
-        finally:
-            conn.close()
-
-    def search_pets(
-        self,
-        session: AuthSession,
-        keyword: str = "",
-        species: str = "",
-        active_only: bool = True,
-    ) -> list[dict[str, Any]]:
-        """Tìm kiếm thú cưng theo tên, giống loài, hoặc tên chủ nuôi."""
-        conn = self._get_connection()
-        try:
-            self._validate_session(session, conn=conn)
-            return PetRepository.search(
-                conn, keyword=keyword, species=species, active_only=active_only
+def create_pet(actor_id, data, image_upload=None):
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id, admin=True)
+    pet = _pet_data(data, actor["default_currency"], actor["timezone"])
+    pet["legacy_sale_price_vnd"] = (
+        int(pet["sale_price"]) if actor["default_currency"] == "VND" else 0
+    )
+    stored = None
+    try:
+        stored = _store_upload(actor_id, image_upload)
+        if stored:
+            pet["photo_filename"] = stored.filename
+            pet["photo_descriptor"] = stored.descriptor_json
+        with transaction() as connection:
+            require_actor(connection, actor_id, admin=True)
+            pet_id = pet_repo.create_pet(connection, pet)
+            audit_repo.add_event(
+                connection, actor_id, "pet.created", "pet", pet_id,
+                f"Tạo hồ sơ thú cưng {pet['code']}",
+                {"photo_attached": bool(stored)},
             )
-        finally:
-            conn.close()
+            return pet_id
+    except Exception as exc:
+        if stored:
+            remove_pet_photo(stored.filename, get_media_storage(current_app.config, "pets"))
+        if getattr(exc, "errno", None) == 1062:
+            raise ConflictError("Mã thú cưng đã tồn tại.") from exc
+        raise
 
-    def list_pets(self, session: AuthSession, active_only: bool = True) -> list[dict[str, Any]]:
-        """Lấy danh sách toàn bộ thú cưng."""
-        return self.search_pets(session, keyword="", species="", active_only=active_only)
 
-    def delete_or_deactivate_pet(self, session: AuthSession, pet_id: int) -> str:
-        """Nếu thú cưng đã có lịch sử y tế/hóa đơn, chuyển sang ngừng theo dõi; nếu chưa thì xóa."""
-        conn = self._get_connection()
+def update_pet(actor_id, pet_id, data, image_upload=None):
+    pet_id = positive_id(pet_id, "Thú cưng")
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id, admin=True)
+    pet = _pet_data(data, actor["default_currency"], actor["timezone"])
+    pet["legacy_sale_price_vnd"] = (
+        int(pet["sale_price"]) if actor["default_currency"] == "VND" else 0
+    )
+    stored = None
+    current = None
+    try:
+        stored = _store_upload(actor_id, image_upload)
+        with transaction() as connection:
+            require_actor(connection, actor_id, admin=True)
+            current = pet_repo.get_pet(connection, pet_id, lock=True)
+            if not current:
+                raise NotFoundError("Không tìm thấy thú cưng.")
+            if current["sale_status"] == "sold":
+                raise ValidationError("Không thể sửa thú cưng đã bán.")
+            pet["photo_filename"] = stored.filename if stored else current["photo_filename"]
+            pet["photo_descriptor"] = (
+                stored.descriptor_json if stored else current["photo_descriptor"]
+            )
+            changed = pet_repo.update_pet(connection, pet_id, pet)
+            if not changed:
+                raise ValidationError("Không thể cập nhật thú cưng này.")
+            changed_fields = [
+                field for field in (
+                    "code", "name", "species", "breed", "sex", "birth_date",
+                    "weight_kg", "coat_color", "eye_color", "appearance_tags",
+                    "sale_price",
+                ) if current[field] != pet[field]
+            ]
+            if stored:
+                changed_fields.append("photo")
+            audit_repo.add_event(
+                connection, actor_id, "pet.updated", "pet", pet_id,
+                f"Cập nhật hồ sơ thú cưng #{pet_id}",
+                {"changed_fields": changed_fields},
+            )
+    except Exception as exc:
+        if stored:
+            remove_pet_photo(stored.filename, get_media_storage(current_app.config, "pets"))
+        if getattr(exc, "errno", None) == 1062:
+            raise ConflictError("Mã thú cưng đã được sử dụng.") from exc
+        raise
+    if stored and current and current["photo_filename"]:
         try:
-            with transaction(conn):
-                self._validate_session(session, conn=conn)
-                pet = PetRepository.get_by_id(conn, pet_id)
-                if not pet:
-                    raise ValueError("Không tìm thấy thú cưng")
+            with read_connection() as connection:
+                references = pet_repo.count_photo_references(
+                    connection, current["photo_filename"]
+                )
+            if references == 0:
+                remove_pet_photo(
+                    current["photo_filename"], get_media_storage(current_app.config, "pets")
+                )
+        except Exception:
+            current_app.logger.exception("Could not clean up an unreferenced pet image")
 
-                has_hist = PetRepository.has_history(conn, pet_id)
-                has_inv = PetRepository.has_invoices(conn, pet_id)
 
-                if has_hist or has_inv:
-                    PetRepository.deactivate(conn, pet_id)
-                    return "deactivated"
-                else:
-                    PetRepository.delete(conn, pet_id)
-                    return "deleted"
-        finally:
-            conn.close()
+def set_inactive(actor_id, pet_id, inactive):
+    pet_id = positive_id(pet_id, "Thú cưng")
+    with transaction() as connection:
+        require_actor(connection, actor_id, admin=True)
+        pet = pet_repo.get_pet(connection, pet_id)
+        if not pet:
+            raise NotFoundError("Không tìm thấy thú cưng.")
+        if pet["sale_status"] == "sold":
+            raise ValidationError("Thú cưng đã bán không thể thay đổi trạng thái.")
+        target_status = "inactive" if inactive else "available"
+        if pet["sale_status"] == target_status:
+            return
+        if not pet_repo.set_inactive(connection, pet_id, inactive):
+            raise ValidationError("Không thể cập nhật trạng thái thú cưng.")
+        audit_repo.add_event(
+            connection, actor_id, "pet.status_changed", "pet", pet_id,
+            f"{'Ngừng bán' if inactive else 'Đưa thú cưng trở lại bán'} #{pet_id}",
+            {"sale_status": target_status},
+        )

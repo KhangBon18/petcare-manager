@@ -1,3 +1,11 @@
-# Giai đoạn bộ khung không có thư viện pip bắt buộc.
-# tkinter, sqlite3, unittest thuộc thư viện chuẩn Python.
-# Tkinter cần được kiểm tra riêng trên mỗi máy.
+Flask>=3.0,<4.0
+Flask-WTF>=1.2,<2.0
+mysql-connector-python>=9.0,<10.0
+Babel>=2.18,<3.0
+tzdata>=2025.2
+python-dotenv>=1.0,<2.0
+Pillow>=10.0,<13.0
+qrcode>=8.0,<9.0
+cryptography>=44.0,<52.0
+boto3>=1.35,<2.0
+gunicorn>=23.0,<24.0; platform_system != "Windows"

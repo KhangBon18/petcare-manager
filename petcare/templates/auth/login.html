@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Đăng nhập') }}{% endblock %}
+{% block auth_content %}
+<div class="login-layout">
+  <section class="login-art">
+    <a class="brand brand-light" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
+    <div class="login-art-copy">
+      <span class="eyebrow">{{ t('CỬA HÀNG THÚ CƯNG CỦA BẠN') }}</span>
+      <h1>{{ t('Chăm sóc tốt.') }}<br><em>{{ t('Quản lý nhẹ nhàng.') }}</em></h1>
+      <p>{{ t('Mọi khách hàng, sản phẩm và giao dịch trong một không gian gọn gàng.') }}</p>
+    </div>
+    <div class="art-pet" aria-hidden="true"><span class="sun"></span><span class="plant plant-one"></span><span class="plant plant-two"></span><span class="cat-body"></span><span class="cat-head"><i></i><b></b></span><span class="cat-tail"></span></div>
+    <div class="login-art-footer">{{ t('BẢN QUẢN TRỊ NỘI BỘ') }} <span>•</span> PETCARE MANAGER</div>
+  </section>
+  <section class="login-panel">
+    <div class="login-card">
+      <a class="brand login-mobile-brand" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
+      <span class="eyebrow">{{ t('CHÀO MỪNG TRỞ LẠI') }}</span>
+      <h2>{{ t('Đăng nhập') }}</h2>
+      <p class="muted">{{ t('Nhập cửa hàng và tài khoản của bạn để tiếp tục.') }}</p>
+      <form method="post" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>{{ t('Mã cửa hàng') }}<input type="text" name="store_slug" value="{{ request.form.get('store_slug', 'main') }}" autocomplete="organization" required placeholder="{{ t('Ví dụ: main') }}"></label>
+        <label>{{ t('Tên đăng nhập') }}<input type="text" name="username" autocomplete="username" required autofocus placeholder="{{ t('Ví dụ: admin') }}"></label>
+        <label>{{ t('Mật khẩu') }}<input type="password" name="password" autocomplete="current-password" required placeholder="{{ t('Nhập mật khẩu') }}"></label>
+        <button class="button button-primary button-wide" type="submit">{{ t('Đăng nhập') }} <span>→</span></button>
+      </form>
+      <p class="login-recovery"><a href="{{ url_for('account.forgot_password') }}">{{ t('Quên mật khẩu?') }}</a></p>
+      {% if public_signup_enabled %}<p class="login-recovery">{{ t('Mở cửa hàng mới?') }} <a href="{{ url_for('auth.signup') }}">{{ t('Tạo tài khoản cửa hàng') }}</a></p>{% endif %}
+      <div class="login-help"><span class="help-icon">i</span><span>{{ t('Ứng dụng dành cho nhân viên cửa hàng. Liên hệ quản trị viên nếu bạn cần tài khoản.') }}</span></div>
+    </div>
+  </section>
+</div>
+{% endblock %}

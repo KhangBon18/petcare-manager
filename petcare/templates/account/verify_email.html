@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Xác minh email') }}{% endblock %}
+{% block content %}
+<section class="auth-card panel recovery-card">
+  <a class="brand auth-brand" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
+  <span class="eyebrow">{{ t('BẢO MẬT TÀI KHOẢN') }}</span><h1>{{ t('Xác minh email') }}</h1>
+  <p>{{ t('Xác minh quyền truy cập địa chỉ email để dùng khôi phục tài khoản.') }}</p>
+  <form method="post" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="token" value="{{ token }}">
+    <button class="button button-primary button-wide" type="submit">{{ t('Xác minh email') }}</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,10 @@
+<form class="language-picker" action="{{ url_for('auth.set_language') }}" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+  {% set picker_id = language_picker_id|default('auth') %}
+  <label class="visually-hidden" for="language-select-{{ picker_id }}">{{ t('Language') }}</label>
+  <select id="language-select-{{ picker_id }}" name="locale" aria-label="{{ t('Language') }}">
+    {% for code, label in locale_labels.items() %}<option value="{{ code }}" {% if locale == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  <button class="button button-light button-small" type="submit">{{ t('Áp dụng') }}</button>
+</form>

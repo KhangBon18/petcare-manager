@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Không đủ quyền') }}{% endblock %}
+{% block content %}
+<div class="empty-state error-state"><span class="empty-icon">{{ icon('team') }}</span><h1>{{ t('Bạn chưa có quyền truy cập') }}</h1><p>{{ t('Chức năng này chỉ dành cho quản trị viên cửa hàng.') }}</p><a class="button button-primary" href="{{ url_for('main.dashboard') }}">{{ t('Về tổng quan') }}</a></div>
+{% endblock %}

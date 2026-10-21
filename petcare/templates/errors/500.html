@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Có lỗi xảy ra') }}{% endblock %}
+{% block content %}
+<section class="panel error-panel">
+  <span class="eyebrow">{{ t('LỖI HỆ THỐNG') }}</span>
+  <h1>{{ t('Trang này chưa thể hoàn tất') }}</h1>
+  <p>{{ t('Yêu cầu gặp sự cố ngoài dự kiến. Dữ liệu chưa được xác nhận; vui lòng thử lại hoặc quay về tổng quan.') }}</p>
+  <div class="heading-actions">
+    <a class="button button-primary" href="{{ url_for('main.dashboard') if g.user else url_for('auth.login') }}">{{ t('Về tổng quan') if g.user else t('Đăng nhập lại') }} <span>→</span></a>
+    <button class="button button-light" type="button" data-reload-page>{{ t('Thử lại') }}</button>
+  </div>
+</section>
+{% endblock %}
