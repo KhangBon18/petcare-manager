@@ -3,7 +3,11 @@ class ServiceError(Exception):
 
 
 class ValidationError(ServiceError):
-    pass
+    def __init__(self, message, *, field=None, field_errors=None):
+        super().__init__(message)
+        self.field_errors = dict(field_errors or {})
+        if field:
+            self.field_errors[field] = message
 
 
 class NotFoundError(ServiceError):

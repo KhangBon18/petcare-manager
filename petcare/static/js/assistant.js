@@ -13,13 +13,16 @@
   const history = [];
   const welcomeNodes = Array.from(messages.children, node => node.cloneNode(true));
   let activeRequest = null;
+  let previousFocus = launcher;
   const csrf = form.querySelector('[name="csrf_token"]')?.value || "";
 
   function setOpen(open) {
+    if (open) previousFocus = document.activeElement;
     panel.hidden = !open;
     launcher.setAttribute("aria-expanded", String(open));
     pageOpeners.forEach(button => button.setAttribute("aria-expanded", String(open)));
     if (open) input.focus();
+    else previousFocus?.focus();
   }
 
   function appendMessage(text, role) {
@@ -29,6 +32,30 @@
     messages.append(bubble);
     messages.scrollTop = messages.scrollHeight;
     return bubble;
+  }
+
+  function renderCards(catalog, parent) {
+    if (!catalog || !Array.isArray(catalog.items)) return;
+    const group = document.createElement("div"); group.className = "assistant-catalog";
+    const heading = document.createElement("strong");
+    heading.textContent = english ? `${catalog.total} database matches · showing ${catalog.items.length}` : `${catalog.total} kết quả từ MySQL · hiển thị ${catalog.items.length}`;
+    group.append(heading);
+    for (const item of catalog.items) {
+      if (typeof item.url !== "string" || !/^\/(pets|products)\/\d+$/.test(item.url)) continue;
+      const card = document.createElement("article"); card.className = "assistant-result-card";
+      if (item.photo_url && /^\/(pets|products)\/photo\//.test(item.photo_url)) {
+        const image = document.createElement("img"); image.src = item.photo_url; image.alt = item.name;
+        image.loading = "lazy"; card.append(image);
+      } else { const art = document.createElement("span"); art.className = "assistant-result-art"; art.textContent = item.kind === "pet" ? "🐾" : "▦"; card.append(art); }
+      const body = document.createElement("div");
+      const title = document.createElement("strong"); title.textContent = item.name;
+      const meta = document.createElement("small"); meta.textContent = `${item.code} · ${item.status_label} · ${english ? "stock" : "tồn"} ${item.stock}`;
+      const price = document.createElement("b"); price.textContent = item.price_label;
+      const link = document.createElement("a"); link.href = item.url;
+      link.textContent = english ? "Open profile →" : "Mở hồ sơ →";
+      body.append(title, meta, price, link); card.append(body); group.append(card);
+    }
+    parent.append(group);
   }
 
   launcher.addEventListener("click", () => setOpen(panel.hidden));
@@ -42,6 +69,16 @@
     form.requestSubmit();
   });
   close?.addEventListener("click", () => setOpen(false));
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && !panel.hidden && !document.querySelector("dialog[open]")) {
+      event.preventDefault(); setOpen(false);
+    }
+  });
+  function setBusy(busy) {
+    form.setAttribute("aria-busy", String(busy));
+    const submit = form.querySelector("button[type='submit']");
+    if (submit) submit.disabled = busy;
+  }
   clear?.addEventListener("click", () => {
     activeRequest?.abort();
     activeRequest = null;
@@ -50,6 +87,7 @@
     input.value = "";
     const submit = form.querySelector("button[type='submit']");
     if (submit) submit.disabled = false;
+    setBusy(false);
     input.focus();
   });
   form.addEventListener("submit", async event => {
@@ -65,6 +103,7 @@
     if (submit) submit.disabled = true;
     const controller = new AbortController();
     activeRequest = controller;
+    setBusy(true);
     try {
       const response = await fetch(form.action, {
         method: "POST",
@@ -84,7 +123,9 @@
       if (!response.ok) throw new Error(english
         ? "The request could not be completed. Please try again."
         : payload.error || "Chưa gửi được câu hỏi.");
+      if (activeRequest !== controller || controller.signal.aborted) return;
       pending.textContent = payload.reply;
+      renderCards(payload.catalog, pending);
       if (payload.mode) {
         const source = document.createElement("span");
         source.className = "assistant-message-source";
@@ -105,9 +146,9 @@
     } finally {
       if (activeRequest === controller) {
         activeRequest = null;
-        if (submit) submit.disabled = false;
+        setBusy(false);
         messages.scrollTop = messages.scrollHeight;
-        input.focus();
+        if (!panel.hidden) input.focus();
       }
     }
   });

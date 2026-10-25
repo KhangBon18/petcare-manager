@@ -7,6 +7,7 @@ original copy while localization is completed module by module.
 
 import re
 
+# pyrefly: ignore[missing-import]
 from flask import g, session
 
 

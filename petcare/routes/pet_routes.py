@@ -2,12 +2,13 @@ import base64
 from io import BytesIO
 from urllib.parse import urlparse
 
-from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from petcare.auth import admin_required, login_required
 from petcare.services import pet_image_service, pet_service
 from petcare.services import request_throttle_service
 from petcare.services.exceptions import ServiceError
+from petcare.services.ui_text import ui_text
 from petcare.vision.image_features import read_upload
 from petcare.vision.media_storage import get_media_storage
 
@@ -50,7 +51,8 @@ def find_similar():
                 if not photo or not photo.filename:
                     raise ValueError("Hãy chọn ảnh mèo hoặc thú cưng để tìm kiếm.")
                 image_bytes = read_upload(photo.stream, current_app.config["PET_IMAGE_MAX_BYTES"])
-                matches = pet_image_service.search_similar(g.user["id"], image_bytes)
+                filters = {"species": request.form.get("species", ""), "status": request.form.get("status", "available")}
+                matches = pet_image_service.search_similar(g.user["id"], image_bytes, **filters)
             except (ServiceError, ValueError) as exc:
                 flash(str(exc), "error")
     phone_qr_data = None
@@ -82,6 +84,8 @@ def find_similar():
     return render_template(
         "pets/search_image.html",
         matches=matches,
+        image_species=request.form.get("species", ""),
+        image_status=request.form.get("status", "available"),
         phone_capture_enabled=phone_capture_enabled,
         phone_qr_data=phone_qr_data,
         vision_enabled=bool(
@@ -90,6 +94,22 @@ def find_similar():
             and current_app.config.get("AI_MODEL")
         ),
     ), status_code, headers
+
+
+@bp.post("/suggest-attributes")
+@admin_required
+def suggest_attributes():
+    allowed, retry_after = request_throttle_service.consume_with_ip_limit(g.user["id"], request.remote_addr, "vision")
+    if not allowed:
+        return jsonify(error=ui_text("Đã phân tích nhiều ảnh. Hãy thử lại sau.", "Too many image analyses. Try again later.")), 429, {"Retry-After": str(retry_after)}
+    try:
+        photo = request.files.get("photo")
+        if not photo or not photo.filename:
+            return jsonify(error=ui_text("Vui lòng chọn ảnh hồ sơ.", "Please choose a profile photo.")), 400
+        content = read_upload(photo.stream, current_app.config["PET_IMAGE_MAX_BYTES"])
+        return jsonify(pet_image_service.suggest_attributes(g.user["id"], content))
+    except (ServiceError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
 
 
 @bp.get("/photo/<filename>")

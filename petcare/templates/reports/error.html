@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Báo cáo') }}{% endblock %}
+{% block content %}
+<div class="page-heading"><div><span class="eyebrow">{{ t('SỐ LIỆU CỬA HÀNG') }}</span><h1>{{ t('Báo cáo') }}</h1></div></div>
+<section class="panel report-detail-panel"><p class="form-feedback" role="alert">{{ message }}</p><p>{{ 'Chọn kỳ ngắn hơn hoặc kiểm tra lại ngày. Không có dữ liệu nào bị cắt để tạo báo cáo.' if locale == 'vi' else 'Choose a shorter period or check the dates. No records were silently removed from the report.' }}</p>
+<form method="get" action="{{ url_for('reports.index') }}" class="filter-row"><label>{{ t('Từ ngày') }}<input type="date" name="start" value="{{ request.args.get('start','') }}"></label><label>{{ t('Đến ngày') }}<input type="date" name="end" value="{{ request.args.get('end','') }}"></label><button class="button button-primary" type="submit">{{ t('Xem báo cáo theo kỳ') }}</button></form>
+<div class="quick-periods"><a class="button button-light" href="{{ url_for('reports.index',period='today') }}">{{ 'Hôm nay' if locale == 'vi' else 'Today' }}</a><a class="button button-light" href="{{ url_for('reports.index',period='7d') }}">{{ '7 ngày' if locale == 'vi' else '7 days' }}</a></div></section>
+{% endblock %}

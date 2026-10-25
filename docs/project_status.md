@@ -1,6 +1,32 @@
 # Trạng thái PetCare Manager
 
-Cập nhật: 2026-10-19. Nhánh làm việc: solo/khang-petcare. Commit gốc: 1c62a48. Chưa push, merge main, tạo PR hoặc tag.
+Cập nhật: 2026-10-25. Nhánh làm việc: solo/khang-petcare. Commit gốc: 1c62a48. Chưa push, merge main, tạo PR hoặc tag.
+
+## Nghiệm thu Phase 4 — 2026-10-25
+
+- **283/283 Python tests**, không fail/error/skip: **171 unit, 55 web, 57 MySQL integration**, 32,014 giây; **19/19 JavaScript tests** đạt.
+- Tổng duyệt Chrome/MySQL: Admin/Staff, validation giữ dữ liệu/focus, quick customer, đơn sản phẩm + cá thể, trạng thái trước/sau thu, báo cáo, trợ lý Việt và upload ảnh local. Thanh toán lặp/tranh chấp đơn vị cuối được kiểm bằng transaction MySQL thật.
+- Excel tải bằng Chrome sau đơn 2.250.000 VND: tổng 7 ngày **2.583.000 VND**, 3 đơn, 1 pet, tồn 499 khớp màn hình và workbook 4 sheet. Đây là số QA, không phải dữ liệu dev.
+- `python run.py prepare-demo [--json]` đo ngoài process **0,760 / 0,671 giây**; MySQL không kết nối báo exit 1/mã 2003 trong 0,754 giây. Preflight có ngân sách 4,7 giây và kiểm đúng server/database, làm mới timestamp marker paid, không thu/trừ kho lặp.
+- AST/Jinja/JS, Compose, pip check, dependency audit, git diff check và Bandit baseline đạt. Giữ nguyên i18n từng byte. Dev giữ 20 bảng, 14/22/74/68 và tổng tồn 501; /readyz 5055 trả 200. Hai DB test/scoped grant và tab QA đã dọn.
+- Ma trận, công thức kiểm chứng và giới hạn: [nghiệm thu Phase 4](phase4_acceptance.md). Kịch bản bảo vệ: [DEMO_SCRIPT.md](../DEMO_SCRIPT.md).
+
+## Nghiệm thu Phase 3 — 2026-10-25
+
+- Đã hoàn tất 3.1–3.4: tra cứu SQL toàn danh mục với card hồ sơ; gợi ý nhập kho có công thức từ paid 14/30 ngày; biểu đồ/kỳ so sánh/bản tin Python, Excel snapshot và in/PDF; tìm ảnh có bộ lọc/giải thích và gợi ý thuộc tính có duyệt.
+- 271/271 Python (162 unit, 53 web, 56 MySQL integration) và 19/19 JavaScript tests đạt. Provider LLM/Vision được mô phỏng cả thành công/lỗi; local đã chạy thực tế trên trình duyệt.
+- Excel đã render kiểm tra 4 sheet, PDF 2 trang được xuất bằng Chrome và render kiểm tra; số liệu khớp. Báo cáo mobile 390×844 không tràn ngang.
+- Giữ schema 20 bảng, dữ liệu dev 14/22/74/68 và tổng tồn 501; không seed/migrate/reset dev. i18n giữ nguyên từng byte. App local 5055 `/readyz` 200; DB test tạm và tab/viewport đã dọn.
+- Chi tiết công thức, snapshot 15 phút và giới hạn 366 ngày/5.000 dòng ở [Phase 3](phase3_ai_automation.md). Đây là snapshot Phase 3; xem mục Phase 4 phía trên cho kết quả mới nhất.
+
+## Nghiệm thu Phase 2 — 2026-10-25
+
+- Chuẩn hóa CSS/breakpoint, system font, màu `#287A62`, badge, toast, empty state và reduced motion.
+- POS hai vùng với catalog ảnh/giá/tồn, tìm kiếm/phân trang, giỏ hàng và thêm nhanh khách hàng ngay trong modal. Sản phẩm tăng đến tồn; thú cưng là cá thể, số lượng 1. Server vẫn xác thực và tính tiền.
+- Loading và khóa gửi lặp cho lookup/chat/tìm ảnh/export; modal và trợ lý hỗ trợ Esc/focus. Pool MySQL chờ tối đa 3 giây khi cạn slot để phục vụ burst ảnh mà không tăng giới hạn kết nối.
+- Đã seed dev sau backup mã hóa: 14 khách hàng, 22 sản phẩm, 74 thú cưng, 68 ảnh và 7 hóa đơn demo; tổng tồn sản phẩm giữ 501 trước/sau lần làm mới. Ngày demo tương đối được cập nhật khi chạy lại seed; ảnh thiếu được bổ sung. Các snapshot 10 thú cưng/4 ảnh bên dưới là lịch sử.
+- 236/236 Python tests (139 unit, 44 web, 53 MySQL integration) và 15/15 JavaScript tests đạt. MySQL dùng database `_test` riêng. Chrome: POS 1280×800, 768×1024, 390×844 không tràn ngang; giỏ hàng giữ nguyên qua tìm kiếm và modal.
+- Module `petcare.i18n` giữ nguyên từng byte so với trước Phase 1; Phase 3 chưa thực hiện.
 
 ## Phạm vi hiện hành
 
@@ -15,7 +41,7 @@ Cập nhật: 2026-10-19. Nhánh làm việc: solo/khang-petcare. Commit gốc: 
 ## Đã hoàn thiện
 
 - App factory, blueprint, đăng nhập/đăng xuất, CSRF, session có user/tenant/version đã ký, thu hồi phiên sau đổi mật khẩu hoặc đổi trạng thái membership; membership/role được tải lại ở mỗi request.
-- Schema hiện có 19 bảng gồm `schema_migrations`, tenants, users/account_tokens/email_outbox, tenant memberships/invitations/owner transfers/export jobs, dữ liệu nghiệp vụ, audit và throttle; business data tenant-scoped, composite foreign keys chống ghép chéo; migration cộng thêm backfill DB cũ vào `main`, không DROP.
+- Schema hiện có 20 bảng gồm `schema_migrations`, tenants, users/account_tokens/email_outbox, tenant memberships/invitations/owner transfers/export jobs, dữ liệu nghiệp vụ, audit và throttle; business data tenant-scoped, composite foreign keys chống ghép chéo; migration cộng thêm backfill DB cũ vào `main`, không DROP.
 - Cửa hàng mới có thể được provision qua `python -m petcare.database.create_store`; user nhiều membership chọn/đổi cửa hàng, role khác nhau theo từng store.
 - Tên hiển thị/mật khẩu là thuộc tính toàn nền tảng; admin không sửa hồ sơ toàn cục của user nhiều membership, còn người dùng đổi tên ở cài đặt tài khoản sau re-auth.
 - Admin tạo/thu hồi liên kết mời dùng một lần, 7 ngày; với SMTP cấu hình, lời mời gửi qua encrypted outbox; môi trường local chưa có SMTP dùng link thủ công. Người nhận gắn tài khoản đã xác minh đúng email hoặc tạo tài khoản mới. Email tài khoản có thể xác minh; khôi phục mật khẩu dùng token một lần. SMTP provider thật chưa được kiểm tra.
@@ -56,7 +82,7 @@ Cập nhật: 2026-10-19. Nhánh làm việc: solo/khang-petcare. Commit gốc: 
 
 ## Chạy cục bộ
 
-- URL hiện tại khi server đang chạy: http://127.0.0.1:5000.
+- URL hiện tại khi server đang chạy: http://127.0.0.1:5055.
 - Tài khoản demo: admin / Admin@123, staff1 / Staff@123; chỉ dùng với database demo local.
 - Bí mật được lưu trong .env đã gitignore; .env.example chỉ chứa placeholder.
 - Database trống dùng dữ liệu thật có thể khởi tạo admin đầu tiên bằng `python -m petcare.database.create_admin`; xác nhận tên database và nhập mật khẩu ẩn qua terminal.

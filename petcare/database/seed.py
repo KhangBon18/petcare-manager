@@ -173,6 +173,8 @@ DEMO_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "demo" / "pets
 
 def seed_database():
     """Add demo rows without replacing data already maintained by the user."""
+    if not Config.DB_NAME.endswith(("_dev", "_test")):
+        raise RuntimeError("Demo data requires a dedicated _dev or _test database.")
     created_photos = []
     pet_media_storage = get_media_storage(Config, "pets")
     try:
@@ -235,7 +237,7 @@ def seed_database():
                         "SELECT id, photo_filename FROM pets WHERE tenant_id = %s AND code = %s",
                         (tenant_id, code),
                     )
-                    existed_before_seed = cursor.fetchone() is not None
+                    existing_pet = cursor.fetchone()
                     cursor.execute(
                         "INSERT INTO pets "
                         "(tenant_id, code, name, species, breed, sex, birth_date, weight_kg, coat_color, "
@@ -246,7 +248,14 @@ def seed_database():
                     )
                     filename = DEMO_PET_IMAGES.get(code)
                     source = DEMO_ASSET_DIR / filename if filename else None
-                    if not existed_before_seed and source and source.is_file():
+                    previous_photo = existing_pet[1] if existing_pet else None
+                    needs_photo = not previous_photo
+                    if previous_photo and source:
+                        try:
+                            pet_media_storage.read(previous_photo)
+                        except FileNotFoundError:
+                            needs_photo = True
+                    if needs_photo and source and source.is_file():
                         with source.open("rb") as stream:
                             stored = store_pet_photo(
                                 FileStorage(stream=stream, filename=source.name),
@@ -257,8 +266,9 @@ def seed_database():
                         created_photos.append(stored.filename)
                         cursor.execute(
                             "UPDATE pets SET photo_filename = %s, photo_descriptor = %s "
-                            "WHERE tenant_id = %s AND code = %s AND photo_filename IS NULL",
-                            (stored.filename, stored.descriptor_json, tenant_id, code),
+                            "WHERE tenant_id = %s AND code = %s "
+                            "AND (photo_filename IS NULL OR photo_filename = %s)",
+                            (stored.filename, stored.descriptor_json, tenant_id, code, previous_photo),
                         )
                         if cursor.rowcount:
                             cursor.execute(
@@ -269,6 +279,10 @@ def seed_database():
                             pet_repo.replace_photo_search_index(
                                 connection, tenant_id, pet_id, stored.descriptor_json
                             )
+                        else:
+                            # A concurrent uploader filled the photo first.
+                            remove_pet_photo(stored.filename, pet_media_storage)
+                            created_photos.remove(stored.filename)
             finally:
                 cursor.close()
     except Exception:
@@ -325,7 +339,7 @@ def _seed_demo_sales():
     for marker, days_ago, customer_index, lines in DEMO_SALES:
         note = f"[DEMO] {marker} · dữ liệu giao dịch mẫu"
         existing_invoice = existing.get(note)
-        if existing_invoice and existing_invoice[1] != "unpaid":
+        if existing_invoice and existing_invoice[1] == "cancelled":
             continue
         if existing_invoice:
             invoice_id = existing_invoice[0]
@@ -342,7 +356,8 @@ def _seed_demo_sales():
                     for code, quantity in lines
                 ],
             )
-        invoice_service.pay_invoice(admin["id"], invoice_id)
+        if not existing_invoice or existing_invoice[1] == "unpaid":
+            invoice_service.pay_invoice(admin["id"], invoice_id)
         paid_at = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days_ago)
         with transaction() as connection:
             cursor = connection.cursor()
@@ -354,22 +369,15 @@ def _seed_demo_sales():
                     "AND status = 'paid' AND note = %s",
                     (paid_at, paid_at, invoice_id, note),
                 )
+                cursor.execute(
+                    "UPDATE stock_movements sm JOIN invoices i ON i.id = sm.invoice_id "
+                    "AND i.tenant_id = sm.tenant_id SET sm.created_at = i.paid_at "
+                    "WHERE i.id = %s AND i.tenant_id = @petcare_tenant_id "
+                    "AND sm.tenant_id = @petcare_tenant_id AND i.status = 'paid' AND i.note = %s",
+                    (invoice_id, note),
+                )
             finally:
                 cursor.close()
-
-    with transaction() as connection:
-        cursor = connection.cursor()
-        try:
-            cursor.execute("SET @petcare_tenant_id = %s", (tenant["id"],))
-            cursor.execute(
-                "UPDATE stock_movements sm JOIN invoices i ON i.id = sm.invoice_id "
-                "AND i.tenant_id = sm.tenant_id "
-                "SET sm.created_at = i.paid_at "
-                "WHERE i.tenant_id = @petcare_tenant_id AND sm.tenant_id = @petcare_tenant_id "
-                "AND i.status = 'paid' AND i.note LIKE '[DEMO] DEMO-SALE-%'"
-            )
-        finally:
-            cursor.close()
 
 
 if __name__ == "__main__":

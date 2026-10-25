@@ -1,0 +1,13 @@
+{% macro explanation(item) %}
+<div class="restock-explanation">
+  <p><strong>{{ 'Cần bổ sung' if item.warning and locale == 'vi' else 'Restock suggested' if item.warning else 'Đủ tồn theo kế hoạch' if locale == 'vi' else 'Stock covers the plan' }}</strong> · {{ 'Gợi ý nhập' if locale == 'vi' else 'Suggested order' }} <b>{{ item.suggested_qty }}</b></p>
+  {% if item.basis == 'sales' %}<p>{{ 'Đã bán' if locale == 'vi' else 'Sold' }} {{ item.sold_14 }}/14 {{ 'ngày' if locale == 'vi' else 'days' }} · {{ item.sold_30 }}/30 {{ 'ngày' if locale == 'vi' else 'days' }}. {{ 'Còn khoảng' if locale == 'vi' else 'About' }} <b>{{ '%.1f'|format(item.days_left) }}</b> {{ 'ngày tồn' if locale == 'vi' else 'days of stock' }}.</p>
+  <small>{{ 'Tốc độ' if locale == 'vi' else 'Rate' }} = {{ item['sold_' ~ item.window] }}/{{ item.window }} ≈ {{ '%.2f'|format(item.rate) }}/{{ 'ngày' if locale == 'vi' else 'day' }}. {{ 'Ngày tồn' if locale == 'vi' else 'Days left' }} = {{ item.stock_qty }}/({{ item['sold_' ~ item.window] }}/{{ item.window }}). {{ 'Cảnh báo khi ≤ 7 ngày hoặc chạm ngưỡng.' if locale == 'vi' else 'Warn at ≤7 days or reorder level.' }}</small>
+  {% else %}<p>{{ 'Chưa bán trong 30 ngày; dùng ngưỡng nhập lại, không đoán tốc độ.' if locale == 'vi' else 'No sales in 30 days; using reorder level without inventing velocity.' }}</p>{% endif %}
+  <small>{{ 'Lượng nhập' if locale == 'vi' else 'Order quantity' }} = max(0, max({{ item.reorder_level }} + 1, ceil({% if item.window %}({{ item['sold_' ~ item.window] }}/{{ item.window }}){% else %}0{% endif %} × 14)) − {{ item.stock_qty }}) = {{ item.suggested_qty }}. {{ 'Tính bằng tốc độ chưa làm tròn; chưa tính thời gian giao hàng.' if locale == 'vi' else 'Uses unrounded rate; supplier lead time is not included.' }}</small>
+</div>
+{% endmacro %}
+{% macro panel(items, title) %}
+<section class="panel restock-panel"><div class="panel-heading"><div><span class="eyebrow">{{ 'GỢI Ý CÓ GIẢI THÍCH' if locale == 'vi' else 'EXPLAINABLE SUGGESTIONS' }}</span><h2>{{ title }}</h2></div><span class="soft-badge">14 / 30 {{ 'ngày' if locale == 'vi' else 'days' }}</span></div>
+<div class="restock-list">{% for item in items %}<article class="restock-item"><a href="{{ url_for('products.detail', product_id=item.id) }}"><strong>{{ item.name }}</strong><small>{{ item.code }} · {{ 'Tồn kho' if locale == 'vi' else 'Stock' }} {{ item.stock_qty }} · {{ 'ngưỡng' if locale == 'vi' else 'level' }} {{ item.reorder_level }}</small></a>{{ explanation(item) }}</article>{% else %}<p class="muted">{{ 'Không có mặt hàng cần bổ sung theo kế hoạch hiện tại.' if locale == 'vi' else 'No products need restocking under the current plan.' }}</p>{% endfor %}</div></section>
+{% endmacro %}

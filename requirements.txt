@@ -4,8 +4,11 @@ mysql-connector-python>=9.0,<10.0
 Babel>=2.18,<3.0
 tzdata>=2025.2
 python-dotenv>=1.0,<2.0
-Pillow>=13.0,<14.0
+# 12.x remains demo-compatible; prefer >=13 for patched image decoders.
+Pillow>=12.0,<14.0
 qrcode>=8.0,<9.0
 cryptography>=44.0,<52.0
 boto3>=1.35,<2.0
 gunicorn>=23.0,<24.0; platform_system != "Windows"
+
+XlsxWriter>=3.2,<4.0

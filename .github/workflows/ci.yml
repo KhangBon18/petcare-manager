@@ -59,6 +59,8 @@ jobs:
         run: docker compose config --quiet
       - name: Run unit, web and MySQL integration tests
         run: python -m unittest discover -s tests -v
+      - name: Run JavaScript form and lookup regressions
+        run: node --test tests/js/*.test.cjs
 
   source-security:
     runs-on: ubuntu-latest

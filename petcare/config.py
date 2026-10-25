@@ -23,7 +23,7 @@ class Config:
     PERMANENT_SESSION_LIFETIME = 60 * 60 * 8
     WTF_CSRF_TIME_LIMIT = 60 * 60
     WTF_CSRF_SSL_STRICT = APP_ENV == "production"
-    APP_PORT = int(os.getenv("APP_PORT", "5000"))
+    APP_PORT = int(os.getenv("APP_PORT", "5055"))
     PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", f"http://127.0.0.1:{APP_PORT}").strip().rstrip("/")
     PUBLIC_SIGNUP_ENABLED = os.getenv("PUBLIC_SIGNUP_ENABLED", "0") == "1"
     PUBLIC_SIGNUP_EMAIL_RATE_LIMIT_PER_MINUTE = int(os.getenv("PUBLIC_SIGNUP_EMAIL_RATE_LIMIT_PER_MINUTE", "3"))

@@ -23,6 +23,7 @@
     loadError: "Could not load the list. Please try again.",
     left: "left",
     submitting: "Creating invoice…",
+    emptyOrder: "Choose at least one item from the catalog.",
   } : {
     duplicatePet: "Thú cưng chỉ có thể xuất hiện một lần trong hóa đơn. Hãy chọn cá thể khác hoặc xóa dòng trùng.",
     duplicateItem: "Mặt hàng đã có ở dòng khác. Hãy cộng số lượng vào dòng đã có rồi xóa dòng trùng.",
@@ -37,6 +38,7 @@
     loadError: "Không tải được danh sách. Hãy thử lại.",
     left: "còn",
     submitting: "Đang lập hóa đơn…",
+    emptyOrder: "Chọn ít nhất một mặt hàng từ danh mục.",
   };
 
   if (!lines || !template || !addButton) return;
@@ -77,12 +79,13 @@
       const isPet = option && option.dataset.kind === "pet";
       const duplicate = Boolean(select.value && selectedValues.has(select.value));
       if (select.value) selectedValues.add(select.value);
-      select.classList.toggle("field-invalid", duplicate);
+      select.dataset.duplicate = String(duplicate);
+      select.classList.toggle("field-invalid", duplicate || Boolean(select.dataset.serverError));
       if (duplicate) select.setAttribute("aria-invalid", "true");
-      else select.removeAttribute("aria-invalid");
+      else if (!select.dataset.serverError) select.removeAttribute("aria-invalid");
       if (isPet && quantity) {
-        quantity.value = "1";
-        quantity.readOnly = true;
+        if (!quantity.dataset.serverError) quantity.value = "1";
+        quantity.readOnly = !quantity.dataset.serverError;
       } else if (quantity) {
         quantity.readOnly = false;
       }
@@ -91,12 +94,12 @@
         total += toMinorUnits(option.dataset.price) * BigInt(quantityValue);
       }
       const remove = row.querySelector(".remove-line");
-      if (remove) remove.disabled = rows.length === 1;
+      if (remove) remove.disabled = !form.dataset.pos && rows.length === 1;
     }
     count.textContent = String(rows.length);
     estimate.textContent = formatMoney(total);
     const duplicateSelect = rows.map(row => row.querySelector(".item-select"))
-      .find(select => select?.getAttribute("aria-invalid") === "true");
+      .find(select => select?.dataset.duplicate === "true");
     const duplicateExists = Boolean(duplicateSelect);
     feedback.hidden = !duplicateExists;
     if (duplicateExists) {
@@ -106,18 +109,24 @@
     }
   }
 
+  form.invoiceUI = {formatMoney, refresh};
+
   function resetOptions(widget) {
     const select = widget.querySelector("[data-lookup-select]");
     const placeholder = select.options[0]?.textContent || copy.selectOne;
     select.replaceChildren(new Option(placeholder, ""));
+    refresh();
   }
 
   function appendLookupOptions(widget, payload, append) {
     const select = widget.querySelector("[data-lookup-select]");
     const kind = widget.dataset.lookupKind;
     if (!append) resetOptions(widget);
+    const existing = new Set([...select.options].map(option => option.value));
     if (kind === "customers") {
       for (const customer of payload.items || []) {
+        if (existing.has(String(customer.id))) continue;
+        existing.add(String(customer.id));
         select.add(new Option(
           `${customer.full_name} · ${customer.phone}`,
           String(customer.id),
@@ -139,6 +148,8 @@
       groups[label] = group;
     }
     for (const product of payload.products || []) {
+      if (existing.has(`product:${product.id}`)) continue;
+      existing.add(`product:${product.id}`);
       const option = new Option(
         `${product.code} · ${product.name} · ${formatMoney(product.unit_price)} (${copy.left} ${product.stock_qty})`,
         `product:${product.id}`,
@@ -149,6 +160,8 @@
       groups[productLabel].append(option);
     }
     for (const pet of payload.pets || []) {
+      if (existing.has(`pet:${pet.id}`)) continue;
+      existing.add(`pet:${pet.id}`);
       const option = new Option(
         `${pet.code} · ${pet.name} · ${formatMoney(pet.sale_price)}`,
         `pet:${pet.id}`,
@@ -223,6 +236,7 @@
         params.set("pet_page", String(petPage));
       }
       select.disabled = true;
+      widget.setAttribute("aria-busy", "true");
       if (more) more.disabled = true;
       if (status) status.textContent = append ? copy.loadingMore : copy.searching;
       try {
@@ -233,6 +247,9 @@
         });
         if (!response.ok) throw new Error(copy.loadError);
         let payload = await response.json();
+        // Aborting fetch is best-effort. Ignore stale responses even if they
+        // finished decoding after a new search was scheduled.
+        if (controller !== activeController || activeController.signal.aborted) return;
         if (append && widget.dataset.lookupKind === "items") {
           payload = {
             ...payload,
@@ -242,60 +259,93 @@
         }
         appendLookupOptions(widget, payload, append);
         describeLookup(widget, payload, append);
+        refresh();
       } catch (error) {
-        if (error.name !== "AbortError" && status) {
+        if (controller === activeController && !activeController.signal.aborted && status) {
           status.textContent = error.message || copy.loadError;
         }
       } finally {
         if (controller === activeController) {
           select.disabled = false;
+          widget.setAttribute("aria-busy", "false");
           if (more) more.disabled = false;
         }
       }
     }
 
     input.addEventListener("input", () => {
+      clearTimeout(timer);
+      controller?.abort();
+      controller = null;
       query = input.value.trim();
       widget.dataset.lookupPage = "0";
       widget.dataset.productPage = "0";
       widget.dataset.petPage = "0";
       resetOptions(widget);
       select.disabled = true;
+      widget.setAttribute("aria-busy", "true");
       if (more) {
         more.hidden = true;
         more.disabled = true;
       }
-      clearTimeout(timer);
       timer = setTimeout(() => load(false), 250);
     });
-    more?.addEventListener("click", () => load(true));
+    more?.addEventListener("click", () => { clearTimeout(timer); load(true); });
+    // Cancel requests when a line is removed or the page is left.
+    widget.addEventListener("lookup-dispose", () => {
+      clearTimeout(timer);
+      controller?.abort();
+      controller = null;
+      select.disabled = false;
+      widget.setAttribute("aria-busy", "false");
+      if (more) more.disabled = false;
+    });
     if (autoload) load(false);
   }
 
   addButton.addEventListener("click", () => {
     lines.append(template.content.cloneNode(true));
     const row = lines.lastElementChild;
-    bindLookup(row.querySelector("[data-lookup-widget]"), true);
+    if (!form.dataset.pos) bindLookup(row.querySelector("[data-lookup-widget]"), true);
     refresh();
     row.querySelector("[data-lookup-search]")?.focus();
   });
 
   lines.addEventListener("click", event => {
     const button = event.target.closest(".remove-line");
-    if (button && lines.querySelectorAll(".invoice-line").length > 1) {
+    if (button && (form.dataset.pos || lines.querySelectorAll(".invoice-line").length > 1)) {
+      button.closest(".invoice-line").querySelector("[data-lookup-widget]")
+        ?.dispatchEvent(new Event("lookup-dispose"));
       button.closest(".invoice-line").remove();
       refresh();
     }
   });
 
   customers && bindLookup(customers);
-  lines.querySelectorAll("[data-lookup-widget]").forEach(widget => bindLookup(widget));
+  if (!form.dataset.pos) lines.querySelectorAll("[data-lookup-widget]").forEach(widget => bindLookup(widget));
   lines.addEventListener("change", refresh);
   lines.addEventListener("input", refresh);
+  window.addEventListener("pagehide", () => {
+    form.querySelectorAll("[data-lookup-widget]").forEach(widget => {
+      widget.dispatchEvent(new Event("lookup-dispose"));
+    });
+  });
   form?.addEventListener("submit", event => {
     const customerSelect = customers?.querySelector("[data-lookup-select]");
     const selected = [...lines.querySelectorAll(".item-select")];
     const duplicate = selected.find(select => select.getAttribute("aria-invalid") === "true");
+    if (!selected.length) {
+      event.preventDefault();
+      feedback.textContent = copy.emptyOrder;
+      feedback.hidden = false;
+      return;
+    }
+    if (customerSelect?.disabled || selected.some(select => select.disabled)) {
+      event.preventDefault();
+      feedback.textContent = copy.searching;
+      feedback.hidden = false;
+      return;
+    }
     if (!customerSelect?.value || selected.some(select => !select.value) || duplicate) {
       event.preventDefault();
       if (!customerSelect?.value) customers?.querySelector("[data-lookup-search]")?.focus();

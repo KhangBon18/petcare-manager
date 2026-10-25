@@ -51,31 +51,60 @@ def _normalize_items(raw_items):
         raise ValidationError("Hóa đơn cần ít nhất một mặt hàng.")
     products = defaultdict(int)
     pets = set()
-    for raw in raw_items:
+    errors = {}
+    for index, raw in enumerate(raw_items):
         item_type = (raw.get("item_type") or "").strip()
-        item_id = positive_id(raw.get("item_id"), "Mặt hàng")
-        if item_type == "product":
-            quantity = integer_value(raw.get("quantity"), "Số lượng", 1, 2_000_000_000)
-            products[item_id] += quantity
-        elif item_type == "pet":
-            quantity = integer_value(raw.get("quantity", "1"), "Số lượng", 1, 1)
-            if item_id in pets:
+        field = f"item_{index}"
+        try:
+            item_id = positive_id(raw.get("item_id"), "Mặt hàng")
+            if item_type not in {"product", "pet"}:
+                raise ValidationError("Loại mặt hàng không hợp lệ.")
+            if item_type == "pet" and item_id in pets:
                 raise ValidationError("Một thú cưng chỉ được thêm một lần vào hóa đơn.")
-            pets.add(item_id)
-        else:
-            raise ValidationError("Loại mặt hàng không hợp lệ.")
+            field = f"quantity_{index}"
+            quantity = integer_value(
+                raw.get("quantity", "1"), "Số lượng", 1,
+                1 if item_type == "pet" else 2_000_000_000,
+            )
+            if item_type == "product":
+                products[item_id] += quantity
+            else:
+                pets.add(item_id)
+        except ValidationError as exc:
+            errors[field] = str(exc)
+    if errors:
+        raise ValidationError(next(iter(errors.values())), field_errors=errors)
     return products, sorted(pets)
 
 
 def create_invoice(actor_id, data, raw_items):
-    customer_id = positive_id(data.get("customer_id"), "Khách hàng")
-    note = text_value(data.get("note"), "Ghi chú", 500, required=False)
-    product_quantities, pet_ids = _normalize_items(raw_items)
+    errors = {}
+    try:
+        customer_id = positive_id(data.get("customer_id"), "Khách hàng")
+    except ValidationError as exc:
+        errors["customer_id"] = str(exc)
+    try:
+        note = text_value(data.get("note"), "Ghi chú", 500, required=False)
+    except ValidationError as exc:
+        errors["note"] = str(exc)
+    try:
+        product_quantities, pet_ids = _normalize_items(raw_items)
+    except ValidationError as exc:
+        errors.update(exc.field_errors or {"item_0": str(exc)})
+    if errors:
+        raise ValidationError(next(iter(errors.values())), field_errors=errors)
+
+    def line_field(kind, item_id, field="item"):
+        return next(
+            f"{field}_{index}" for index, raw in enumerate(raw_items)
+            if raw["item_type"] == kind and int(raw["item_id"]) == item_id
+        )
+
     with transaction() as connection:
         actor = require_actor(connection, actor_id)
         customer = customer_repo.get_customer(connection, customer_id)
         if not customer or not customer["active"]:
-            raise ValidationError("Khách hàng không tồn tại hoặc đã ngừng sử dụng.")
+            raise ValidationError("Khách hàng không tồn tại hoặc đã ngừng sử dụng.", field="customer_id")
         lines = []
         total = Decimal("0")
         for product_id, quantity in sorted(product_quantities.items()):
@@ -86,10 +115,11 @@ def create_invoice(actor_id, data, raw_items):
                 (product_id,),
             )
             if not product or not product["active"]:
-                raise ValidationError("Sản phẩm không còn được bán.")
+                raise ValidationError("Sản phẩm không còn được bán.", field=line_field("product", product_id))
             if product["stock_qty"] < quantity:
                 raise ValidationError(
-                    f"Tồn hiện tại của {product['name']} không đủ; hóa đơn chưa giữ hàng."
+                    f"Tồn hiện tại của {product['name']} không đủ; hóa đơn chưa giữ hàng.",
+                    field=line_field("product", product_id, "quantity"),
                 )
             unit_price = Decimal(product["unit_price"])
             line_total = unit_price * quantity
@@ -108,7 +138,7 @@ def create_invoice(actor_id, data, raw_items):
                 (pet_id,),
             )
             if not pet or pet["sale_status"] != "available":
-                raise ValidationError("Thú cưng đã chọn không còn sẵn sàng để bán.")
+                raise ValidationError("Thú cưng đã chọn không còn sẵn sàng để bán.", field=line_field("pet", pet_id))
             line_total = Decimal(pet["sale_price"])
             lines.append({
                 "item_type": "pet", "product_id": None, "pet_id": pet_id,

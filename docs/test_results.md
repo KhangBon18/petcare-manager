@@ -1,5 +1,55 @@
 # Kết quả kiểm tra
 
+## Phase 4 — 2026-10-25
+
+- **283/283 Python tests**, không fail/error/skip: **171 unit, 55 web, 57 MySQL integration**, 32,014 giây; **19/19 JavaScript tests** đạt.
+- Tổng duyệt Chrome/MySQL: Admin/Staff, validation giữ dữ liệu/focus, quick customer, đơn sản phẩm + cá thể, trạng thái trước/sau thu, báo cáo, trợ lý Việt và upload ảnh local. Thanh toán lặp/tranh chấp đơn vị cuối được kiểm bằng transaction MySQL thật.
+- Excel tải bằng Chrome sau đơn 2.250.000 VND: tổng 7 ngày **2.583.000 VND**, 3 đơn, 1 pet, tồn 499 khớp màn hình và workbook 4 sheet. Đây là số QA, không phải dữ liệu dev.
+- `python run.py prepare-demo [--json]` đo ngoài process **0,760 / 0,671 giây**; MySQL không kết nối báo exit 1/mã 2003 trong 0,754 giây. Preflight có ngân sách 4,7 giây và kiểm đúng server/database, làm mới timestamp marker paid, không thu/trừ kho lặp.
+- AST/Jinja/JS, Compose, pip check, dependency audit, git diff check và Bandit baseline đạt. Giữ nguyên i18n từng byte. Dev giữ 20 bảng, 14/22/74/68 và tổng tồn 501; /readyz 5055 trả 200. Hai DB test/scoped grant và tab QA đã dọn.
+- Ma trận, công thức kiểm chứng và giới hạn: [nghiệm thu Phase 4](phase4_acceptance.md). Kịch bản bảo vệ: [DEMO_SCRIPT.md](../DEMO_SCRIPT.md).
+
+
+## Phase 3 — 2026-10-25
+
+- **271/271 Python tests**, không failed/error/skipped: **162 unit, 53 web, 56 MySQL integration**. Database `_test` tạm riêng và grant scoped đã dọn sau nghiệm thu; không reset database có sẵn.
+- **19/19 JavaScript tests**: card và URL an toàn, fallback/mode, abort/stale ảnh, không ghi đè thuộc tính nhập tay, chống gửi lặp khi xuất, khôi phục nút sau lỗi, mở bảng chi tiết khi in rồi khôi phục trạng thái, cùng các regression POS/lookup/chat từ Phase 1–2.
+- Tra cứu MySQL: chèn hơn 250 pets/100 products, tìm bản ghi chỉ nằm ngoài preview cũ, đếm chính xác, không lộ record tenant khác; local/LLM thành công/lỗi mạng trả cùng card. LLM/Vision dùng phản hồi/lỗi mô phỏng; chưa nghiệm thu provider trực tuyến thật khi không có endpoint cấu hình.
+- Restock: chỉ paid, cửa sổ 14/30 ngày, fallback không lịch sử, cảnh báo/ceil lượng nhập chính xác cả phân số 5/14; chưa thu/hủy không tính. Báo cáo có zero-fill theo ngày địa phương/DST, kỳ so sánh cùng độ dài, nền 0 không tạo phần trăm giả.
+- Excel: đối chiếu tổng quan/ngày/chi tiết, sửa dữ liệu DB sau khi render vẫn xuất đúng snapshot đang xem; chữ ký, hạn 15 phút, actor/tenant, CSRF, dữ liệu bắt đầu bằng công thức và số tiền lớn. Quá giới hạn kỳ/dòng trả trang 400 có đường phục hồi; Dashboard vẫn giữ tổng chính xác.
+- Tìm ảnh: bộ lọc trước xếp hạng, điểm/lý do; gợi ý upload admin-only, CSRF, quota/semaphore, local không gọi AI, Vision lỗi/JSON hỏng về local. UI không tự ghi đè trường có dữ liệu.
+- UI thực tế IAB/Chrome: card mở đúng hồ sơ có ảnh/giá/trạng thái; upload gợi ý giữ loài nhập tay; export tải file; báo cáo 1280 px và 390×844 không tràn ngang. Sidebar desktop có cuộn để điều khiển cuối không bị khuất. Viewport và tab kiểm thử đã dọn.
+- PDF xuất từ nút In/Lưu PDF của Chrome: **2 trang**, có bảng ngày và chi tiết trước đó đang đóng, không có navigation/trợ lý/nút export; sau in bảng trở lại trạng thái cũ. Đã render/kiểm tra cả 2 trang. Excel đã import/render kiểm tra đủ 4 sheet; tổng mẫu **333.000 VND** khớp giữa màn hình/Excel/PDF.
+- Python/Jinja/JS syntax, Compose, `pip check`, `git diff --check`, Bandit theo baseline và dependency audit requirements: đạt. Hai vị trí SQL ghép cấu trúc trong catalog dùng danh sách cố định và giá trị tham số hóa được review/suppress B608 tại chỗ; không thay baseline chung.
+- Dev giữ **20 bảng, 14 khách, 22 sản phẩm, 74 thú cưng, 68 ảnh, tổng tồn 501**. Không chạy lại seed/migrate dev trong Phase 3. `/readyz` cổng 5055 trả 200. `petcare.i18n` giữ nguyên từng byte so với snapshot trước Phase 1.
+
+Các mục Phase 1–2 bên dưới là bằng chứng của các giai đoạn trước.
+
+
+## Phase 2 — 2026-10-25
+
+- Full Python suite: **236/236**, 0 failed/errors/skipped: 139 unit, 44 web, 53 integration trên MySQL 8.4 database `_test` tạm riêng.
+- JavaScript: **15/15**; bao gồm giới hạn tồn/cá thể, abort/stale lookup, giữ giỏ hàng khi tìm kiếm, quick customer/chống gửi lặp, focus/Esc, export polling kết thúc và submit lock.
+- MySQL regression: quick customer có CSRF/phân quyền, seed làm mới đúng marker/ngày và stock movement, không trừ kho khi chạy lại, bảo toàn ảnh hợp lệ, bù ảnh null/file mất, 12 request ảnh đồng thời với pool 2 trả 200.
+- Chrome 1280×800, 768×1024, 390×844: không tràn ngang; ảnh hiển thị tải thành công, tổng tiền/nút tạo đơn ở vùng tóm tắt, modal đóng Esc trả focus, dữ liệu giỏ hàng còn nguyên.
+- Dev sau backup mã hóa và seed: 20 bảng, 14 khách, 22 sản phẩm, 74 thú cưng, 68 ảnh, 7 hóa đơn demo; tổng tồn sản phẩm 501 giữ nguyên. `/readyz` trả 200.
+- Python/Jinja/JS syntax, `git diff --check`, `docker compose config --quiet` và Bandit theo baseline hiện có: đạt, không có finding mới. Database `_test` tạm và grant riêng đã dọn sau nghiệm thu; dev vẫn chạy cổng 5055.
+- Module `petcare.i18n` so sánh byte-for-byte với snapshot trước Phase 1: giữ nguyên. Các kết quả Phase 1 và những ngày trước bên dưới là lịch sử.
+
+
+## Nghiệm thu Phase 1 — 2026-10-24
+
+- Toàn bộ 225 Python tests đạt, không bỏ qua: 137 unit, 38 web, 50 integration trên MySQL 8.4.11 và database `petcare_phase1_*_test` tạo riêng; media test nằm ngoài thư mục ảnh dev.
+- Chạy đủ suite với Pillow 12.3.0 và chạy lại với Pillow 13.0.0: đều đạt. Runtime hiện dùng 13.0.0 để xử lý các advisory phát hiện khi audit môi trường cũ; khai báo >=12.0,<14.0 giữ tương thích theo yêu cầu demo.
+- `node --test tests/js/*.test.cjs`: 9/9 đạt; kiểm tra tổng tiền, debounce, request hủy/response cũ, phân trang không trùng, trạng thái submit và focus/lỗi form.
+- `pip-audit -r requirements.txt`, `pip-audit --local` sau cập nhật, `pip check`, Bandit theo baseline, Python/Jinja/JS syntax, Compose config và `git diff --check`: đạt.
+- Trình duyệt/MySQL: form khách hàng giữ tên/địa chỉ và focus phone lỗi; hóa đơn thiếu tồn giữ khách/mặt hàng/số lượng/ghi chú và focus quantity; thay từ khóa xóa lựa chọn làm tổng về 0 ngay.
+- Trợ lý trên browser trả danh sách mèo cho “Hôm nay còn mèo nào?” và kết quả trắng dưới 3 triệu cho câu lọc kết hợp. JSON message sai kiểu có regression unit/web/MySQL với HTTP 400.
+- `/readyz` tại `http://127.0.0.1:5055/readyz` trả HTTP 200. Database dev có backup mã hóa trước additive initialize; không reset hoặc seed lại dữ liệu dev.
+- So sánh byte-for-byte module i18n với bản trước Phase 1: không đổi; giữ nguyên thay đổi chưa commit của người dùng.
+
+Các kết quả bên dưới là bằng chứng lịch sử, trước Phase 1.
+
 Cập nhật: 2026-10-20. Môi trường kiểm thử: macOS, Python 3.13.3, Flask 3.1.3, Flask-WTF 1.3.0, mysql-connector-python 9.7.0, Babel 2.18.0, tzdata 2026.5, MySQL Server 8.4.11. Suite mới nhất gồm onboarding, tiền tệ, timezone tenant, runtime connection pool, export job/worker, worker health probes, kiểm soát tranh chấp giao dịch/kho/media, form giá đúng precision và giới hạn cấp phát khi xử lý ảnh.
 
 ## Rà soát 2026-10-20

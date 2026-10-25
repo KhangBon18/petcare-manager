@@ -67,7 +67,7 @@
       </form>
       {% endif %}
       <a class="user-chip user-chip-link" href="{{ url_for('account.settings') }}" aria-label="{{ t('Cài đặt tài khoản của') }} {{ g.user.full_name }}"><span class="avatar">{{ g.user.full_name[:1]|upper }}</span><span><strong>{{ g.user.full_name }}</strong><small>{{ t('Quản trị viên') if g.user.role == 'admin' else t('Nhân viên') }}</small></span></a>
-      {% if g.user.role == 'admin' %}<a class="mobile-admin-link" href="{{ url_for('users.index') }}">{{ icon('team') }}<span>{{ t('Tài khoản') }}</span></a>{% endif %}
+      {% if g.user.role == 'admin' %}<details class="mobile-admin-link mobile-admin-menu" data-mobile-menu><summary>{{ icon('team') }}<span>{{ 'Quản trị' if locale == 'vi' else 'Admin' }}</span></summary><nav aria-label="{{ 'Quản trị' if locale == 'vi' else 'Administration' }}"><a href="{{ url_for('store.settings') }}">{{ t('Cài đặt cửa hàng') }}</a><a href="{{ url_for('users.index') }}">{{ t('Tài khoản') }}</a><a href="{{ url_for('audit.index') }}">{{ t('Nhật ký hoạt động') }}</a></nav></details>{% endif %}
       <form action="{{ url_for('auth.logout') }}" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button class="icon-button logout-button" title="{{ t('Đăng xuất') }}" aria-label="{{ t('Đăng xuất') }}">{{ icon('logout', 'logout-icon') }}<span class="logout-label">{{ t('Đăng xuất') }}</span></button>
@@ -108,6 +108,7 @@
 </main>
 {% endif %}
 {% block scripts %}{% endblock %}
+<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 {% if g.user %}<script src="{{ url_for('static', filename='js/assistant.js') }}" defer></script>{% endif %}
 </body>

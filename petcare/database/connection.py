@@ -3,9 +3,11 @@
 from contextlib import contextmanager
 from hashlib import sha256
 from threading import Lock
+from time import monotonic, sleep
 
 import mysql.connector
 from mysql.connector.pooling import MySQLConnectionPool
+from mysql.connector.errors import PoolError
 
 from petcare.config import Config, migration_mysql_config, mysql_config
 
@@ -52,7 +54,20 @@ def _initialize_session(connection):
 
 
 def get_connection():
-    return _initialize_session(_runtime_pool().get_connection())
+    pool = _runtime_pool()
+    # Browsers request several private catalog photos concurrently. Keep the
+    # connection budget fixed, but let short bursts wait for a returned slot.
+    deadline = monotonic() + 3.0
+    while True:
+        try:
+            connection = pool.get_connection()
+            break
+        except PoolError:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise
+            sleep(min(0.02, remaining))
+    return _initialize_session(connection)
 
 
 def get_migration_connection():

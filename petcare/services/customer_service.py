@@ -33,10 +33,25 @@ def get_customer(actor_id, customer_id):
     return customer
 
 
+def _customer_data(data):
+    values, errors = {}, {}
+    validators = {
+        "full_name": lambda value: text_value(value, "Họ tên", 160),
+        "phone": phone_value,
+        "address": lambda value: text_value(value, "Địa chỉ", 255, required=False),
+    }
+    for field, validate in validators.items():
+        try:
+            values[field] = validate(data.get(field))
+        except ValidationError as exc:
+            errors[field] = str(exc)
+    if errors:
+        raise ValidationError(next(iter(errors.values())), field_errors=errors)
+    return values["full_name"], values["phone"], values["address"]
+
+
 def create_customer(actor_id, data):
-    full_name = text_value(data.get("full_name"), "Họ tên", 160)
-    phone = phone_value(data.get("phone"))
-    address = text_value(data.get("address"), "Địa chỉ", 255, required=False)
+    full_name, phone, address = _customer_data(data)
     with transaction() as connection:
         require_actor(connection, actor_id)
         customer_id = customer_repo.create_customer(connection, full_name, phone, address)
@@ -49,9 +64,7 @@ def create_customer(actor_id, data):
 
 def update_customer(actor_id, customer_id, data):
     customer_id = positive_id(customer_id, "Khách hàng")
-    full_name = text_value(data.get("full_name"), "Họ tên", 160)
-    phone = phone_value(data.get("phone"))
-    address = text_value(data.get("address"), "Địa chỉ", 255, required=False)
+    full_name, phone, address = _customer_data(data)
     with transaction() as connection:
         require_actor(connection, actor_id)
         current = customer_repo.get_customer(connection, customer_id)

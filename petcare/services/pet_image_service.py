@@ -13,9 +13,13 @@ from petcare.ai import client as ai_client
 from petcare.database.connection import read_connection
 from petcare.i18n import current_locale
 from petcare.repositories import pet_repo
-from petcare.services.common import require_actor
+from petcare.services.common import require_actor, text_value
+from petcare.services.ui_text import ui_text
+from petcare.services.exceptions import ValidationError
 from petcare.vision.image_features import (
     InvalidImage,
+    descriptor_from_json,
+    similarity_components,
     compare_images_from_json,
     describe_image,
     normalize_image_bytes,
@@ -170,8 +174,18 @@ def _metadata_score(pet: dict, analysis: dict | None, dominant_colors: tuple[str
     return score / total_weight if total_weight else 0.0
 
 
-def search_similar(actor_id: int, image_bytes: bytes) -> dict:
+def search_similar(
+    actor_id: int, image_bytes: bytes, species="", status="available"
+) -> dict:
     """Use a local visual descriptor, optionally refined by a configured vision model."""
+    species = text_value(species, "Loài", 80, required=False)
+    if status not in {"available", "sold", "inactive", ""}:
+        raise ValidationError(
+            ui_text(
+                "Trạng thái tìm ảnh không hợp lệ.",
+                "The image search status is invalid.",
+            )
+        )
     normalized = normalize_image_bytes(image_bytes)
     query = describe_image(normalized)
     analysis, warning = _analysis_from_model(normalized)
@@ -179,16 +193,26 @@ def search_similar(actor_id: int, image_bytes: bytes) -> dict:
     search_scope = "full"
     with read_connection() as connection:
         require_actor(connection, actor_id)
-        has_reference_photos = pet_repo.has_available_reference_photos(connection)
-        indexed_candidates = pet_repo.find_available_image_search_candidates(
-            connection, query.visual_hash
+        filtered = bool(species or status != "available")
+        has_reference_photos = (
+            False if filtered else pet_repo.has_available_reference_photos(connection)
         )
-        if indexed_candidates is None:
-            candidates = pet_repo.iter_available_for_image_search(connection)
+        if filtered:
+            candidates = pet_repo.iter_filtered_for_image_search(
+                connection, species, status
+            )
         else:
-            candidates = iter(indexed_candidates)
-            search_scope = "indexed"
+            indexed_candidates = pet_repo.find_available_image_search_candidates(
+                connection, query.visual_hash
+            )
+            if indexed_candidates is None:
+                candidates = pet_repo.iter_available_for_image_search(connection)
+            else:
+                candidates = iter(indexed_candidates)
+                search_scope = "indexed"
         for pet in candidates:
+            if pet.get("photo_filename"):
+                has_reference_photos = True
             visual_score = compare_images_from_json(query, pet.get("photo_descriptor"))
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
             if visual_score is None:
@@ -204,7 +228,10 @@ def search_similar(actor_id: int, image_bytes: bytes) -> dict:
             result = {
                 "pet": pet,
                 "score": round(max(0.0, min(1.0, score)) * 100),
-                "visual_score": round(visual_score * 100) if visual_score is not None else None,
+                "visual_score": (
+                    round(visual_score * 100) if visual_score is not None else None
+                ),
+                "attribute_score": round(metadata_score * 100),
             }
             # The old display order is descending score/name with ascending id
             # for ties. Keep that exact ordering while bounding memory at top-k.
@@ -213,13 +240,68 @@ def search_similar(actor_id: int, image_bytes: bytes) -> dict:
                 heapq.heappush(top_results, (rank, result))
             elif rank > top_results[0][0]:
                 heapq.heapreplace(top_results, (rank, result))
-    results = [item[1] for item in sorted(top_results, key=lambda item: item[0], reverse=True)]
+    results = [
+        item[1] for item in sorted(top_results, key=lambda item: item[0], reverse=True)
+    ]
+    for result in results:
+        saved = descriptor_from_json(result["pet"].get("photo_descriptor"))
+        parts = similarity_components(query, saved) if saved else None
+        result["components"] = {
+            key: round(value * 100) for key, value in (parts or {}).items()
+        }
+        result["components"]["attributes"] = result["attribute_score"]
+        result["reasons"] = []
+        matched_colors = [
+            color
+            for color in query.dominant_colors
+            if _tokens(color) & _tokens(result["pet"].get("coat_color", ""))
+        ]
+        if matched_colors:
+            result["reasons"].append(
+                {"kind": "coat", "value": ", ".join(matched_colors)}
+            )
+        if parts and parts["color"] >= 0.8:
+            result["reasons"].append({"kind": "color", "value": ""})
+        if parts and parts["structure"] >= 0.8:
+            result["reasons"].append({"kind": "structure", "value": ""})
     return {
+        "filters": {"species": species, "status": status},
         "results": results[:12],
         "dominant_colors": query.dominant_colors,
         "analysis": analysis,
-        "vision_enabled": bool(current_app.config.get("AI_VISION_ENABLED") and ai_client.is_configured()),
+        "vision_enabled": bool(
+            current_app.config.get("AI_VISION_ENABLED") and ai_client.is_configured()
+        ),
         "warning": warning,
         "has_reference_photos": has_reference_photos,
         "search_scope": search_scope,
+    }
+
+
+def suggest_attributes(actor_id, image_bytes):
+    with read_connection() as connection:
+        require_actor(connection, actor_id, admin=True)
+    normalized = normalize_image_bytes(image_bytes)
+    descriptor = describe_image(normalized)
+    analysis, warning = _analysis_from_model(normalized)
+    suggestions = {}
+    if analysis:
+        for key, maximum in (("species", 80), ("coat_color", 80), ("eye_color", 60)):
+            if analysis.get(key):
+                suggestions[key] = analysis[key][:maximum]
+        tags = ", ".join(
+            analysis.get(key, "")
+            for key in ("coat_pattern", "shape")
+            if analysis.get(key)
+        )
+        if tags:
+            suggestions["appearance_tags"] = tags[:255]
+    elif descriptor.dominant_colors:
+        # A color estimate can include the background; the user reviews it.
+        suggestions["coat_color"] = " / ".join(descriptor.dominant_colors)[:80]
+    return {
+        "suggestions": suggestions,
+        "colors": descriptor.dominant_colors,
+        "mode": "vision" if analysis else "local",
+        "warning": warning,
     }

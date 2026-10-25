@@ -1,0 +1,67 @@
+{
+  "runs": [
+    {
+      "external_seconds": 0.76,
+      "exit": 0,
+      "result": {
+        "ok": true,
+        "database": "petcare_shop_dev",
+        "today": "2026-10-25",
+        "url": "http://127.0.0.1:5055",
+        "currency_code": "VND",
+        "refreshed_invoices": 7,
+        "skipped_cancelled": 0,
+        "photo_files_checked": 68,
+        "pet": {
+          "code": "PET-001",
+          "name": "Miu",
+          "price": "2000000.0000"
+        },
+        "expected_total": "2250000.0000",
+        "ai": "local",
+        "checks": [
+          "mysql",
+          "schema",
+          "admin_staff",
+          "demo_stock",
+          "available_pet",
+          "local_photos",
+          "http_readyz"
+        ],
+        "duration_seconds": 0.712
+      }
+    },
+    {
+      "external_seconds": 0.671,
+      "exit": 0,
+      "result": {
+        "ok": true,
+        "database": "petcare_shop_dev",
+        "today": "2026-10-25",
+        "url": "http://127.0.0.1:5055",
+        "currency_code": "VND",
+        "refreshed_invoices": 7,
+        "skipped_cancelled": 0,
+        "photo_files_checked": 68,
+        "pet": {
+          "code": "PET-001",
+          "name": "Miu",
+          "price": "2000000.0000"
+        },
+        "expected_total": "2250000.0000",
+        "ai": "local",
+        "checks": [
+          "mysql",
+          "schema",
+          "admin_staff",
+          "demo_stock",
+          "available_pet",
+          "local_photos",
+          "http_readyz"
+        ],
+        "duration_seconds": 0.629
+      }
+    }
+  ],
+  "business_unchanged": true
+}

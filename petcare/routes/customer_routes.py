@@ -26,19 +26,28 @@ def index():
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 def create():
+    errors = {}
+    form_error = None
     if request.method == "POST":
         try:
             customer_service.create_customer(g.user["id"], request.form)
             flash("Đã thêm khách hàng.", "success")
             return redirect(url_for("customers.index"))
         except ServiceError as exc:
-            flash(str(exc), "error")
-    return render_template("customers/form.html", customer=None)
+            errors = getattr(exc, "field_errors", {})
+            form_error = str(exc)
+    return render_template(
+        "customers/form.html", customer=None,
+        form_data=request.form if request.method == "POST" else {},
+        errors=errors, form_error=form_error,
+    )
 
 
 @bp.route("/<int:customer_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit(customer_id):
+    errors = {}
+    form_error = None
     try:
         customer = customer_service.get_customer(g.user["id"], customer_id)
     except ServiceError as exc:
@@ -50,8 +59,13 @@ def edit(customer_id):
             flash("Đã cập nhật khách hàng.", "success")
             return redirect(url_for("customers.index"))
         except ServiceError as exc:
-            flash(str(exc), "error")
-    return render_template("customers/form.html", customer=customer)
+            errors = getattr(exc, "field_errors", {})
+            form_error = str(exc)
+    return render_template(
+        "customers/form.html", customer=customer,
+        form_data=request.form if request.method == "POST" else customer,
+        errors=errors, form_error=form_error,
+    )
 
 
 @bp.post("/<int:customer_id>/active")

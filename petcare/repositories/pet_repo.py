@@ -275,3 +275,20 @@ def set_inactive(connection, pet_id, inactive):
         "AND tenant_id = @petcare_tenant_id AND sale_status IN ('available', 'inactive')",
         (target, pet_id),
     )[1]
+
+
+def iter_filtered_for_image_search(connection, species="", status="available", batch_size=250):
+    aliases = {"mèo": ("Mèo", "cat", "feline"), "cat": ("Mèo", "cat", "feline"),
+               "chó": ("Chó", "dog", "canine"), "dog": ("Chó", "dog", "canine"),
+               "thỏ": ("Thỏ", "rabbit", "bunny"), "rabbit": ("Thỏ", "rabbit", "bunny")}.get(species.casefold(), (species, species, species))
+    cursor = connection.cursor(dictionary=True, buffered=False)
+    try:
+        cursor.execute("SELECT id, code, name, species, breed, coat_color, eye_color, appearance_tags, "
+                       "sale_status, photo_filename, photo_descriptor, sale_price FROM pets "
+                       "WHERE tenant_id = @petcare_tenant_id "
+                       "AND (%s = '' OR species COLLATE utf8mb4_0900_ai_ci IN (%s, %s, %s)) "
+                       "AND (%s = '' OR sale_status = %s) ORDER BY id", (species, *aliases, status, status))
+        while rows := cursor.fetchmany(max(1, min(batch_size, 1000))):
+            yield from rows
+    finally:
+        cursor.close()

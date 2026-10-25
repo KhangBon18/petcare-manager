@@ -3,7 +3,7 @@
 from threading import BoundedSemaphore
 from urllib.parse import urlsplit
 
-from flask import Flask, abort, flash, g, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, g, jsonify, redirect, render_template, request, session, url_for
 from cryptography.fernet import Fernet, MultiFernet
 from flask_wtf.csrf import CSRFProtect
 import mysql.connector
@@ -34,7 +34,7 @@ from petcare.services.tenant_export_storage import validate_export_storage_confi
 
 csrf = CSRFProtect()
 _IMAGE_PROCESSING_ENDPOINTS = frozenset({
-    "pets.find_similar", "pets.create", "pets.edit",
+    "pets.find_similar", "pets.suggest_attributes", "pets.create", "pets.edit",
     "products.create", "products.edit",
 })
 _CATALOG_IMAGE_UPLOAD_ENDPOINTS = frozenset({
@@ -195,6 +195,8 @@ def create_app(test_config=None):
         if slots.acquire(blocking=False):
             g.image_processing_slot_acquired = True
             return None
+        if request.endpoint == "pets.suggest_attributes":
+            return jsonify(error="Đang xử lý ảnh khác. Hãy thử lại sau." if g.locale == "vi" else "Other images are being processed. Try again shortly."), 429, {"Retry-After": "2"}
         flash("Đang xử lý ảnh khác. Vui lòng thử lại sau vài giây.", "warning")
         response = redirect(url_for(request.endpoint, **(request.view_args or {})))
         response.headers["Retry-After"] = "2"

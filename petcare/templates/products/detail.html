@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% from "partials/restock.html" import explanation with context %}
+{% block title %}{{ product.name }}{% endblock %}
+{% block content %}<div class="page-heading"><div><a class="back-link" href="{{ url_for('products.index') }}">← {{ t('Sản phẩm') }}</a><span class="eyebrow">{{ product.code }}</span><h1>{{ product.name }}</h1><p>{{ product.category }}</p></div>{% if g.user.role == 'admin' %}<a class="button button-primary" href="{{ url_for('products.edit', product_id=product.id) }}">{{ t('Quản lý') }}</a>{% endif %}</div>
+<section class="panel product-profile">{% if product.photo_filename %}<img class="profile-product-photo" src="{{ url_for('products.photo',filename=product.photo_filename) }}" alt="{{ product.name }}">{% endif %}<div><span class="status-pill {{ 'status-active' if product.active else 'status-muted' }}">{{ t('Đang bán') if product.active else t('Đã ngừng') }}</span><h2>{{ format_money(product.unit_price) }}</h2><p>{{ product.description }}</p><p>{{ t('Tồn kho') }}: <strong>{{ product.stock_qty }}</strong></p>{% if suggestion %}{{ explanation(suggestion) }}{% endif %}</div></section>{% endblock %}

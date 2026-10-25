@@ -50,9 +50,9 @@
 ## Slide 7 — Kiểm thử
 
 - MySQL Server 8.4.11 trên môi trường phát triển.
-- Lần kiểm đầy đủ mới nhất (2026-10-19): 197/197 unit, web và MySQL integration tests đạt trên database MySQL tạm, biệt lập và được xóa sau kiểm thử; kiểm currency/minor-unit, UTC migration và tenant timezone/DST, pool session isolation, tenant isolation, email/outbox/onboarding, tenant media, backup/export mã hóa, AI boundary/fallback, audit/localization, authenticated no-store policy và giao dịch cạnh tranh. SMTP và bucket cloud thật chưa được nghiệm thu.
+- Lần kiểm đầy đủ mới nhất (2026-10-25): 283/283 Python tests (171 unit, 55 web, 57 MySQL integration) và 19/19 JavaScript tests đạt trên database MySQL tạm, biệt lập và được xóa sau kiểm thử; kiểm currency/minor-unit, UTC migration và tenant timezone/DST, pool session isolation, tenant isolation, email/outbox/onboarding, tenant media, backup/export mã hóa, AI boundary/fallback, audit/localization, authenticated no-store policy và giao dịch cạnh tranh. SMTP và bucket cloud thật chưa được nghiệm thu.
 - Hai tenant dùng chung mã hàng nhưng không đọc dữ liệu/ảnh/hóa đơn của nhau; kiểm tra switching store và role membership.
-- Seed demo trong source hiện có 22 sản phẩm, 12 khách mẫu, 74 hồ sơ thú cưng (35 chó, 37 mèo, 1 thỏ, 1 hamster), 68 ảnh tổng hợp và lịch sử bán hàng. Cần seed database `_dev` trước demo để nạp bản mới.
+- Seed demo trong source hiện có 22 sản phẩm, 12 khách mẫu, 74 hồ sơ thú cưng (35 chó, 37 mèo, 1 thỏ, 1 hamster), 68 ảnh tổng hợp và lịch sử bán hàng. Dev đã nạp ngày 2026-10-25; chạy seed lại trước demo để làm mới mốc ngày mà không trừ kho lặp. Schema có 20 bảng.
 - Kiểm tra thanh toán cạnh tranh ở đơn vị tồn cuối.
 - Đăng nhập Chrome và xem dashboard với dữ liệu demo.
 
@@ -64,5 +64,20 @@
 - Hoàn tiền, trả hàng, PDF, biểu đồ và thanh toán online là nâng cấp sau nghiệm thu.
 - Trước khi nộp: tác giả cập nhật phần đóng góp cá nhân và ảnh giao diện.
 - Hồ sơ và ảnh minh họa là dữ liệu AI tổng hợp, không phải thú cưng có thật; chat/vision tạo sinh cần endpoint riêng.
-- Bộ dữ liệu/trợ lý vừa được mở rộng trong source ngày 2026-10-20; chưa seed DB và chưa kiểm lại sau thay đổi này.
+- POS có catalog ảnh/giá/tồn, giỏ hàng và modal thêm nhanh khách hàng. Dev hiện có 14 khách (giữ dữ liệu cũ), 22 sản phẩm, 74 thú cưng, 68 ảnh, 7 hóa đơn demo; Chrome đã kiểm tra desktop/tablet/mobile.
 - Tạo sinh AI/Vision cần endpoint tương thích được cấu hình; mặc định trợ lý dùng dữ liệu local và AI Vision tắt. Bộ tìm cục bộ dùng màu/bố cục, không phải mô hình nhận dạng động vật.
+
+
+## Bổ sung Phase 3 — điểm nhấn trình bày
+
+- Trợ lý local/LLM trả card hồ sơ từ SQL toàn danh mục, đếm chính xác; API lỗi vẫn có kết quả local.
+- Nhập hàng có giải thích: paid 14/30 ngày → tốc độ/ngày tồn → kế hoạch 14 ngày; hàng mới dùng reorder_level.
+- Biểu đồ, kỳ so sánh và bản tin Python. Excel bốn sheet và PDF khớp bản số liệu đã chốt; in tự mở chi tiết.
+- Tìm ảnh theo loài/trạng thái, có điểm thành phần/lý do; upload gợi ý thuộc tính để người dùng duyệt, giữ dữ liệu nhập tay.
+- Offline/local đã kiểm thực tế; LLM/Vision có regression mô phỏng thành công/mất mạng. Không tuyên bố đã kiểm provider trực tuyến khi chưa cấu hình.
+
+## Bổ sung Phase 4 — tổng duyệt trước bảo vệ
+
+- Giữ web chạy, gọi `python run.py prepare-demo`: MySQL/schema/quyền/tồn/ảnh/web đúng database, làm mới ngày mẫu; 0,76 / 0,67 giây trên máy nghiệm thu, lỗi trả exit 1.
+- 283 Python + 19 JavaScript tests đạt; tranh chấp tồn cuối và thanh toán lặp chạy trên MySQL thật.
+- Kịch bản 8 phút trong `DEMO_SCRIPT.md`: Dashboard → POS kết hợp/thêm khách → thanh toán → nhập kho → trợ lý → ảnh → Excel/PDF.

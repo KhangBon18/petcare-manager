@@ -325,3 +325,19 @@ def read_upload(upload: BinaryIO, max_bytes: int) -> bytes:
     if not data:
         raise InvalidImage("Vui lòng chọn một ảnh hợp lệ.")
     return data
+
+
+def similarity_components(left, right):
+    """Explain only the shortlisted descriptors, without changing ranking."""
+    histogram = getattr(left, "color_histogram", ())
+    if not right or len(histogram) != len(right.color_histogram) or not histogram:
+        return None
+    grid = getattr(left, "grayscale_grid", ())
+    if not grid or len(grid) != len(right.grayscale_grid):
+        return None
+    color = sum(min(a, b) for a, b in zip(histogram, right.color_histogram))
+    center = getattr(left, "center_color_histogram", ())
+    if center and len(center) == len(right.center_color_histogram):
+        color = (color + sum(min(a, b) for a, b in zip(center, right.center_color_histogram))) / 2
+    structure = max(0, 1 - sum(abs(a - b) for a, b in zip(grid, right.grayscale_grid)) / (255 * len(grid)))
+    return {"color": max(0, min(1, color)), "structure": structure}

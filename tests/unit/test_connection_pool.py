@@ -1,5 +1,6 @@
 import unittest
 from unittest.mock import MagicMock, call, patch
+from mysql.connector.errors import PoolError, DatabaseError
 
 from petcare.config import Config
 from petcare.database import connection as database_connection
@@ -79,6 +80,32 @@ class RuntimeConnectionPoolTests(unittest.TestCase):
             self.assertRaisesRegex(RuntimeError, "DB_POOL_SIZE"),
         ):
             database_connection._runtime_pool()
+
+    def test_short_photo_burst_waits_for_a_returned_connection(self):
+        pooled = MagicMock()
+        pool = MagicMock()
+        pool.get_connection.side_effect = [PoolError("busy"), pooled]
+        with patch.object(database_connection, "_runtime_pool", return_value=pool), patch.object(
+            database_connection, "monotonic", side_effect=[0, 0.01]
+        ), patch.object(database_connection, "sleep") as sleep:
+            self.assertIs(database_connection.get_connection(), pooled)
+        sleep.assert_called_once_with(0.02)
+        self.assertEqual(pool.get_connection.call_count, 2)
+
+    def test_pool_wait_is_bounded_and_does_not_retry_other_database_failures(self):
+        pool = MagicMock()
+        pool.get_connection.side_effect = PoolError("busy")
+        with patch.object(database_connection, "_runtime_pool", return_value=pool), patch.object(
+            database_connection, "monotonic", side_effect=[0, 3.01]
+        ), patch.object(database_connection, "sleep") as sleep, self.assertRaises(PoolError):
+            database_connection.get_connection()
+        sleep.assert_not_called()
+        pool.get_connection.side_effect = DatabaseError("connection lost")
+        with patch.object(database_connection, "_runtime_pool", return_value=pool), patch.object(
+            database_connection, "sleep"
+        ) as sleep, self.assertRaises(DatabaseError):
+            database_connection.get_connection()
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

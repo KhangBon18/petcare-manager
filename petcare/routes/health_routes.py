@@ -1,7 +1,11 @@
 """Unauthenticated probes for local and container orchestration."""
 
+import hashlib
+import hmac
+import json
+
 import mysql.connector
-from flask import Blueprint, current_app, jsonify
+from flask import Blueprint, current_app, jsonify, request
 
 from petcare.database.connection import read_connection
 from petcare.repositories.worker_heartbeat_repo import healthy_worker_names
@@ -170,6 +174,13 @@ def healthz():
     return jsonify(status="ok"), 200
 
 
+def demo_database_signature(settings):
+    """Local-only proof that the web process and preflight share DB/config."""
+    value = settings.get if hasattr(settings, "get") else lambda name: getattr(settings, name)
+    identity = json.dumps([str(value(name)) for name in ("DB_HOST", "DB_PORT", "DB_NAME")], separators=(",", ":"))
+    return hmac.new(str(value("SECRET_KEY")).encode(), identity.encode(), hashlib.sha256).hexdigest()
+
+
 @bp.get("/readyz")
 def readyz():
     try:
@@ -187,7 +198,12 @@ def readyz():
     if not ready:
         current_app.logger.warning("Readiness check failed (required schema is incomplete)")
         return jsonify(status="unavailable"), 503
-    return jsonify(status="ready"), 200
+    response = jsonify(status="ready")
+    if (current_app.config["APP_ENV"] != "production"
+            and current_app.config["DB_NAME"].endswith(("_dev", "_test"))
+            and request.remote_addr in {"127.0.0.1", "::1"}):
+        response.headers["X-PetCare-Demo-Database"] = demo_database_signature(current_app.config)
+    return response, 200
 
 
 @bp.get("/workersz")

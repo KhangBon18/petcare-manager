@@ -1,32 +1,68 @@
 {% extends "base.html" %}
 {% from "partials/icons.html" import icon %}
+{% set errors = errors|default({}) %}
+{% set form_data = form_data|default({}) %}
+{% set form_lines = form_lines|default([{'selection': '', 'quantity': '1'}]) %}
+{% from "partials/form_errors.html" import invalid, field_error, error_summary with context %}
+{% from "partials/invoice_line.html" import invoice_line with context %}
+{% from "partials/pos_card.html" import pos_card with context %}
 {% block title %}{{ t('Lập hóa đơn') }}{% endblock %}
 {% block content %}
-<div class="page-heading compact-heading"><div><a class="back-link" href="{{ url_for('invoices.index') }}">← {{ t('Hóa đơn') }}</a><span class="eyebrow">{{ t('HÓA ĐƠN MỚI') }}</span><h1>{{ t('Lập hóa đơn') }}</h1><p>{{ t('Chọn khách hàng và mặt hàng. Tồn kho chỉ thay đổi sau khi thanh toán.') }}</p></div></div>
-<form method="post" class="invoice-builder" id="invoice-form" data-currency="{{ currency_code }}" data-currency-precision="{{ currency_precision(currency_code) }}" data-locale="{{ locale }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-<section class="panel invoice-form-main"><div class="panel-heading"><div><span class="eyebrow">{{ t('BƯỚC 1') }}</span><h2>{{ t('Thông tin giao dịch') }}</h2></div><span class="soft-badge">{{ t('Chưa thanh toán') }}</span></div>
+<div class="page-heading pos-page-heading"><div><span class="eyebrow">{{ t('HÓA ĐƠN MỚI') }}</span><h1>{{ t('Lập hóa đơn') }}</h1></div><a class="back-link" href="{{ url_for('invoices.index') }}">← {{ t('Hóa đơn') }}</a></div>
+<form method="post" class="invoice-builder pos-builder" id="invoice-form" data-pos="true" data-currency="{{ currency_code }}" data-currency-precision="{{ currency_precision(currency_code) }}" data-locale="{{ locale }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<section class="panel pos-catalog" aria-labelledby="catalog-title">
+  <div class="panel-heading"><div><span class="eyebrow">{{ 'CHỌN MẶT HÀNG' if locale == 'vi' else 'PRODUCT CATALOG' }}</span><h2 id="catalog-title">{{ 'Bán hàng tại quầy' if locale == 'vi' else 'Point of sale' }}</h2></div><span class="soft-badge">{{ products|length + pets|length }} {{ t('lựa chọn') }}</span></div>
+  <div class="pos-toolbar">
+    <label class="pos-search">{{ t('Tìm mặt hàng') }}<input type="search" data-pos-search data-source="{{ url_for('invoices.lookup_items') }}" placeholder="{{ t('Nhập mã hoặc tên mặt hàng') }}" autocomplete="off"></label>
+    <div class="pos-filters" role="group" aria-label="{{ t('Mặt hàng') }}"><button type="button" data-pos-filter="all" aria-pressed="true">{{ 'Tất cả' if locale == 'vi' else 'All' }}</button><button type="button" data-pos-filter="product" aria-pressed="false">{{ t('Sản phẩm') }}</button><button type="button" data-pos-filter="pet" aria-pressed="false">{{ t('Thú cưng') }}</button></div>
+  </div>
+  <p class="pos-status" data-pos-status role="status" aria-live="polite">{{ 'Chạm mặt hàng để thêm vào đơn. Chọn lại sản phẩm để tăng số lượng.' if locale == 'vi' else 'Select an item to add it. Select a product again to increase its quantity.' }}</p>
+  <div class="pos-skeleton" data-pos-skeleton hidden aria-hidden="true">{% for n in range(6) %}<span></span>{% endfor %}</div>
+  <div class="pos-catalog-grid" data-pos-results>
+    {% for product in products %}{{ pos_card(product, 'product') }}{% endfor %}
+    {% for pet in pets %}{{ pos_card(pet, 'pet') }}{% endfor %}
+  </div>
+  <div class="empty-state" data-pos-empty {% if products or pets %}hidden{% endif %}>{{ icon('search', 'empty-icon') }}<h2>{{ t('Chưa có sản phẩm phù hợp') }}</h2><p>{{ 'Thử tên hoặc mã khác, hoặc chọn lại bộ lọc.' if locale == 'vi' else 'Try another name, code, or filter.' }}</p></div>
+  <button class="button button-light pos-more" type="button" data-pos-more data-product-page="1" data-pet-page="1" data-product-has-more="{{ 'true' if product_pagination.has_next else 'false' }}" data-pet-has-more="{{ 'true' if pet_pagination.has_next else 'false' }}" {% if not (product_pagination.has_next or pet_pagination.has_next) %}hidden{% endif %}>{{ t('Hiển thị thêm') }}</button>
+</section>
+<aside class="panel invoice-summary pos-order">
+<div class="pos-order-scroll">
+<div class="pos-order-heading"><div><span class="eyebrow">{{ t('TÓM TẮT') }}</span><h2>{{ 'Đơn hàng hiện tại' if locale == 'vi' else 'Current order' }}</h2></div>{{ icon('invoice') }}</div>
+{{ error_summary(form_error|default(None)) }}
 <div class="lookup-widget customer-lookup" data-lookup-widget data-lookup-kind="customers" data-source="{{ url_for('invoices.lookup_customers') }}" data-lookup-page="1" data-lookup-total="{{ customer_pagination.total }}" data-lookup-has-more="{{ 'true' if customer_pagination.has_next else 'false' }}">
+  <div class="pos-customer-heading"><strong>{{ t('Khách hàng') }}</strong><button type="button" class="text-link" data-quick-customer-open>{{ '+ Thêm nhanh' if locale == 'vi' else '+ Quick add' }}</button></div>
+
+  <label class="lookup-select-label"><span class="visually-hidden">{{ t('Khách hàng') }}</span><select name="customer_id" id="customer_id" data-lookup-select required {{ invalid('customer_id', errors) }} aria-label="{{ t('Chọn khách hàng') }}"><option value="">{{ t('Chọn khách hàng') }}</option>{% for customer in customers %}<option value="{{ customer.id }}" {% if form_data.get('customer_id') == customer.id|string %}selected{% endif %}>{{ customer.full_name }} · {{ customer.phone }}</option>{% endfor %}</select>{{ field_error('customer_id', errors) }}</label>
+  <details class="pos-customer-search"><summary>{{ 'Tìm theo tên / số điện thoại' if locale == 'vi' else 'Search by name / phone' }}</summary>
   <label class="lookup-search-label">{{ t('Tìm khách hàng theo tên hoặc số điện thoại') }}<input type="search" data-lookup-search aria-label="{{ t('Tìm khách hàng theo tên hoặc số điện thoại') }}" placeholder="{{ t('Nhập tên hoặc số điện thoại') }}" autocomplete="off"></label>
-  <label class="lookup-select-label">{{ t('Khách hàng') }}<select name="customer_id" data-lookup-select required aria-label="{{ t('Chọn khách hàng') }}"><option value="">{{ t('Chọn khách hàng') }}</option>{% for customer in customers %}<option value="{{ customer.id }}">{{ customer.full_name }} · {{ customer.phone }}</option>{% endfor %}</select></label>
   <div class="lookup-footer"><small data-lookup-status aria-live="polite">{% if customer_pagination.total %}{{ t('Đang hiển thị') }} {{ customers|length }} / {{ customer_pagination.total }} {{ t('khách hàng') }}.{% else %}{{ t('Chưa có khách hàng phù hợp') }}.{% endif %}</small><button class="lookup-more" type="button" data-lookup-more {% if not customer_pagination.has_next %}hidden{% endif %}>{{ t('Hiển thị thêm') }}</button></div>
+</details>
 </div>
-<div class="invoice-items-heading"><div><span class="eyebrow">{{ t('BƯỚC 2') }}</span><h2>{{ t('Mặt hàng') }}</h2></div><button class="button button-light button-small" type="button" id="add-item">{{ icon('plus') }} {{ t('Thêm dòng') }}</button></div>
-<div class="invoice-line-head"><span>{{ t('SẢN PHẨM / THÚ CƯNG') }}</span><span>{{ t('SỐ LƯỢNG') }}</span><span></span></div>
+<div class="invoice-items-heading"><div><span class="eyebrow">{{ t('BƯỚC 2') }}</span><h2>{{ t('Mặt hàng') }}</h2></div><button class="button button-light button-small" type="button" id="add-item" data-pos-fallback>{{ icon('plus') }} {{ t('Thêm dòng') }}</button></div>
+<div class="invoice-line-head pos-fallback-only"><span>{{ t('SẢN PHẨM / THÚ CƯNG') }}</span><span>{{ t('SỐ LƯỢNG') }}</span><span></span></div>
+<div class="pos-cart-empty" data-cart-empty hidden>{{ icon('invoice') }}<strong>{{ 'Đơn hàng đang trống' if locale == 'vi' else 'Your order is empty' }}</strong><span>{{ 'Chọn mặt hàng ở danh mục để bắt đầu.' if locale == 'vi' else 'Choose an item from the catalog to start.' }}</span></div>
 <div id="invoice-lines">
-<div class="invoice-line">
-<div class="invoice-line-choice lookup-widget" data-lookup-widget data-lookup-kind="items" data-source="{{ url_for('invoices.lookup_items') }}" data-product-page="1" data-pet-page="1" data-product-label="{{ t('Sản phẩm') }}" data-pet-label="{{ t('Thú cưng đang bán') }}" data-product-has-more="{{ 'true' if product_pagination.has_next else 'false' }}" data-pet-has-more="{{ 'true' if pet_pagination.has_next else 'false' }}">
-  <label class="lookup-search-label">{{ t('Tìm mặt hàng') }}<input type="search" data-lookup-search aria-label="{{ t('Tìm sản phẩm hoặc thú cưng') }}" placeholder="{{ t('Nhập mã hoặc tên mặt hàng') }}" autocomplete="off"></label>
-  <select name="item_selection" class="item-select" data-lookup-select aria-label="{{ t('Chọn sản phẩm hoặc thú cưng') }}" required><option value="">{{ t('Chọn mặt hàng') }}</option><optgroup label="{{ t('Sản phẩm') }}">{% for product in products %}<option value="product:{{ product.id }}" data-kind="product" data-price="{{ product.unit_price }}" data-name="{{ product.name }}">{{ product.code }} · {{ product.name }} · {{ format_money(product.unit_price) }} ({{ t('còn') }} {{ product.stock_qty }})</option>{% endfor %}</optgroup><optgroup label="{{ t('Thú cưng đang bán') }}">{% for pet in pets %}<option value="pet:{{ pet.id }}" data-kind="pet" data-price="{{ pet.sale_price }}" data-name="{{ pet.name }}">{{ pet.code }} · {{ pet.name }} · {{ format_money(pet.sale_price) }}</option>{% endfor %}</optgroup></select>
-  <div class="lookup-footer"><small data-lookup-status aria-live="polite">{{ t('Đang hiển thị') }} {{ products|length + pets|length }} / {{ product_pagination.total + pet_pagination.total }} {{ t('lựa chọn') }}.</small><button class="lookup-more" type="button" data-lookup-more {% if not (product_pagination.has_next or pet_pagination.has_next) %}hidden{% endif %}>{{ t('Hiển thị thêm') }}</button></div>
-</div>
-<input name="quantity" type="number" min="1" step="1" value="1" required class="quantity-input" aria-label="{{ t('Số lượng') }}"><button type="button" class="remove-line" aria-label="{{ t('Xóa dòng mặt hàng') }}">×</button>
-</div>
+{% for line in form_lines %}{{ invoice_line(line, loop.index0) }}{% endfor %}
 </div>
 <p class="form-feedback" id="invoice-form-feedback" role="alert" hidden></p>
-<label class="note-field">{{ t('Ghi chú') }}<textarea name="note" maxlength="500" rows="2" placeholder="{{ t('Ghi chú nội bộ (không bắt buộc)') }}"></textarea></label>
-</section>
-<aside class="panel invoice-summary"><span class="eyebrow">{{ t('TÓM TẮT') }}</span><h2>{{ t('Hóa đơn mới') }}</h2><div class="summary-row"><span>{{ t('Số dòng hàng') }}</span><strong id="line-count">1</strong></div><div class="summary-divider"></div><div class="summary-total"><span>{{ t('Tổng tạm tính') }}</span><strong id="estimate">{{ format_money(0, currency_code) }}</strong></div><p class="summary-note">{{ currency_code }} · {{ t('Giá và tổng tiền cuối cùng được xác nhận từ MySQL khi lập hóa đơn.') }}</p><button class="button button-primary button-wide" id="invoice-submit" type="submit">{{ t('Tạo hóa đơn') }} <span>→</span></button><a class="button button-light button-wide" href="{{ url_for('invoices.index') }}">{{ t('Hủy') }}</a></aside>
+<details class="pos-note" {% if errors.get('note') %}open{% endif %}><summary>{{ t('Ghi chú') }}</summary><label class="note-field">{{ t('Ghi chú') }}<textarea name="note" id="note" {{ invalid('note', errors) }} maxlength="500" rows="2" placeholder="{{ t('Ghi chú nội bộ (không bắt buộc)') }}">{{ form_data.get('note', '') }}</textarea>{{ field_error('note', errors) }}</label></details>
+</div>
+<div class="pos-order-bottom">
+<div class="summary-row"><span>{{ t('Số dòng hàng') }}</span><strong id="line-count">{{ form_lines|length }}</strong></div><div class="summary-divider"></div><div class="summary-total"><span>{{ t('Tổng tạm tính') }}</span><strong id="estimate">{{ format_money(0, currency_code) }}</strong></div><p class="summary-note">{{ currency_code }} · {{ t('Giá và tổng tiền cuối cùng được xác nhận từ MySQL khi lập hóa đơn.') }}</p><button class="button button-primary button-wide" id="invoice-submit" type="submit">{{ t('Tạo hóa đơn') }} <span>→</span></button><a class="button button-light button-wide" href="{{ url_for('invoices.index') }}">{{ t('Hủy') }}</a></div></aside>
 </form>
-<template id="line-template"><div class="invoice-line"><div class="invoice-line-choice lookup-widget" data-lookup-widget data-lookup-kind="items" data-source="{{ url_for('invoices.lookup_items') }}" data-product-page="0" data-pet-page="0" data-product-label="{{ t('Sản phẩm') }}" data-pet-label="{{ t('Thú cưng đang bán') }}" data-product-has-more="false" data-pet-has-more="false"><label class="lookup-search-label">{{ t('Tìm mặt hàng') }}<input type="search" data-lookup-search aria-label="{{ t('Tìm sản phẩm hoặc thú cưng') }}" placeholder="{{ t('Nhập mã hoặc tên mặt hàng') }}" autocomplete="off"></label><select name="item_selection" class="item-select" data-lookup-select aria-label="{{ t('Chọn sản phẩm hoặc thú cưng') }}" required><option value="">{{ t('Chọn mặt hàng') }}</option></select><div class="lookup-footer"><small data-lookup-status aria-live="polite">{{ t('Đang tải danh mục…') }}</small><button class="lookup-more" type="button" data-lookup-more hidden>{{ t('Hiển thị thêm') }}</button></div></div><input name="quantity" type="number" min="1" step="1" value="1" required class="quantity-input" aria-label="{{ t('Số lượng') }}"><button type="button" class="remove-line" aria-label="{{ t('Xóa dòng mặt hàng') }}">×</button></div></template>
+<template id="line-template">{{ invoice_line({'selection': '', 'quantity': '1'}, 'new', true) }}</template>
+
+<dialog class="quick-customer-dialog" id="quick-customer-dialog" aria-labelledby="quick-customer-title">
+  <form id="quick-customer-form" class="form-stack" action="{{ url_for('invoices.quick_customer') }}" method="post">
+    <div class="dialog-heading"><div><span class="eyebrow">{{ t('Khách hàng') }}</span><h2 id="quick-customer-title">{{ 'Thêm nhanh khách hàng' if locale == 'vi' else 'Quick add customer' }}</h2></div><button type="button" class="icon-button" data-quick-customer-close aria-label="{{ 'Đóng' if locale == 'vi' else 'Close' }}">×</button></div>
+    <p class="muted">{{ 'Mặt hàng đã chọn vẫn được giữ trong đơn.' if locale == 'vi' else 'Your selected items will stay in the order.' }}</p>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="form-feedback" data-quick-error role="alert" tabindex="-1" hidden></p>
+    <label>{{ t('Họ và tên') }}<input name="full_name" id="quick-full_name" maxlength="160" required autocomplete="name"><small class="field-error" id="quick-full_name-error" hidden></small></label>
+    <label>{{ t('Số điện thoại') }}<input name="phone" id="quick-phone" maxlength="32" required autocomplete="tel"><small class="field-error" id="quick-phone-error" hidden></small></label>
+    <label>{{ t('Địa chỉ') }}<textarea name="address" id="quick-address" maxlength="255" rows="2" autocomplete="street-address"></textarea><small class="field-error" id="quick-address-error" hidden></small></label>
+    <div class="form-actions"><button type="button" class="button button-light" data-quick-customer-close>{{ t('Hủy') }}</button><button type="submit" class="button button-primary">{{ t('Tạo khách hàng') }}</button></div>
+  </form>
+</dialog>
 {% endblock %}
-{% block scripts %}<script src="{{ url_for('static', filename='js/invoice.js') }}" defer></script>{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/invoice.js') }}" defer></script><script src="{{ url_for('static', filename='js/pos.js') }}" defer></script>{% endblock %}

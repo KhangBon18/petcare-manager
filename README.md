@@ -61,7 +61,7 @@ Tại thư mục gốc repo:
 
    python -m petcare.services.mail_worker
 
-7. Mở http://127.0.0.1:5000.
+7. Mở http://127.0.0.1:5055.
 
    Health checks: `/healthz` xác nhận process web còn hoạt động, `/readyz` kiểm tra web + MySQL/schema; `/workersz` chỉ trả `ready` khi cả email worker và export worker ghi heartbeat thành công trong 90 giây gần nhất. Bản ghi tiến trình quá 30 ngày được email worker dọn theo lịch. Nếu chỉ chạy web mà không chạy đủ hai worker, các trang web vẫn phục vụ nhưng `/workersz` báo `unavailable`.
 
@@ -85,7 +85,7 @@ Tại thư mục gốc repo:
 
    Để bật xử lý export nền, chạy `python -m petcare.services.tenant_export_worker_cli` trong terminal khác; nếu cấu hình SMTP thì chạy `python -m petcare.services.mail_worker` thêm một terminal nữa.
 
-5. Mở http://127.0.0.1:5000.
+5. Mở http://127.0.0.1:5055.
 
 ## MySQL bằng Docker Desktop (tùy chọn)
 
@@ -141,6 +141,22 @@ Xem [hướng dẫn cấu hình, IAM và chuyển ảnh sang S3](docs/media_stor
 
 GitHub Actions được cấu hình tại `.github/workflows/ci.yml`: chạy unit/web/MySQL integration trên MySQL 8.4 với Python 3.11–3.13, audit dependency Python bằng `pip-audit`, quét Python source bằng Bandit, quét secret cả source tree và production container bằng Trivy, đồng thời build và quét image. Hosted run cần xanh trước mỗi release.
 
+## Chuẩn bị nhanh trước khi bảo vệ
+
+Sau khi đã initialize/seed đầy đủ, giữ `python run.py` chạy ở terminal thứ nhất. Tại terminal thứ hai cùng venv và `.env`, chạy:
+
+```sh
+python run.py prepare-demo
+# Hoặc JSON + exit code cho automation:
+python run.py prepare-demo --json
+```
+
+Lệnh kiểm MySQL/schema, quyền demo, tồn/ảnh local và `/readyz` của đúng server/database; chỉ làm mới ngày của các hóa đơn seed đã thanh toán và stock movement tương ứng. Không thanh toán lại, đổi kho/trạng thái thú cưng hay mật khẩu. Chỉ dùng local `_dev`/`_test`, `SECRET_KEY` cố định; không dùng production. Ngân sách 4,7 giây; lỗi/quá hạn trả exit 1, chỉ exit 0 mới sẵn sàng. Nạp dữ liệu/ảnh ban đầu không thuộc lệnh nhanh này. Kết quả đo Phase 4: 0,76 / 0,67 giây tính cả khởi động Python.
+
+Kịch bản trình bày 8 phút: [DEMO_SCRIPT.md](DEMO_SCRIPT.md). Ma trận nghiệm thu: [Phase 4](docs/phase4_acceptance.md).
+
+Chuẩn bị vấn đáp: [DEFENSE_QA_GUIDE.md](DEFENSE_QA_GUIDE.md). Các lệnh commit/tag để nhóm tự chạy: [CODE_FREEZE_GIT_GUIDE.md](CODE_FREEZE_GIT_GUIDE.md). Bộ báo cáo/Excel/PDF/ảnh QA lịch sử được gom tại [docs/qa_reports/](docs/qa_reports/README.md).
+
 ## Tài khoản và dữ liệu demo
 
 Seed idempotent tạo dữ liệu hoàn toàn tổng hợp trong store `main`, có nhãn demo:
@@ -154,7 +170,9 @@ Seed idempotent tạo dữ liệu hoàn toàn tổng hợp trong store `main`, c
 - Ảnh và hồ sơ là dữ liệu hư cấu phục vụ học tập/demo, không đại diện cho thú cưng hoặc hàng tồn tại cửa hàng thật.
 - 7 hóa đơn demo đã thanh toán để báo cáo có dữ liệu lịch sử; tồn kho được cập nhật qua luồng bán thật.
 
-Chỉ chạy `python -m petcare.database.seed` trên database tên kết thúc bằng `_dev` hoặc `_test` để nạp danh mục mới vào MySQL. Dữ liệu demo được chèn lặp an toàn, không ghi đè sản phẩm, khách hàng, mật khẩu hoặc hồ sơ đã có. Những dữ liệu seed trong database hiện tại được giữ nguyên; vì thế các hàng cũ có thể khác dữ liệu mẫu mới.
+Chỉ chạy `python -m petcare.database.seed` trên database tên kết thúc bằng `_dev` hoặc `_test`. Khi chuẩn bị dữ liệu trước buổi demo, chạy lại seed để đưa đúng 7 hóa đơn có marker demo về mốc ngày tương đối (hôm nay và các ngày trước); ngày của stock movement đi cùng được cập nhật trong cùng transaction. Hóa đơn demo đã thanh toán không bị thanh toán lại/trừ kho lần nữa; hóa đơn demo đã hủy được giữ nguyên. Seed bổ sung ảnh mẫu khi hồ sơ tương ứng thiếu ảnh hoặc file ảnh đã mất, giữ ảnh hợp lệ và các trường hồ sơ đã chỉnh sửa. Sản phẩm, khách hàng và mật khẩu hiện có không bị ghi đè; tổng số bản ghi có thể lớn hơn bộ seed chuẩn do giữ dữ liệu cũ.
+
+Schema hiện có **20 bảng**. Sau nghiệm thu Phase 2 ngày 2026-10-25, database local `petcare_shop_dev` có 14 khách hàng (gồm dữ liệu giữ lại), 22 sản phẩm, 74 thú cưng, 68 ảnh thú cưng và 7 hóa đơn demo đã thanh toán. Bộ seed chuẩn trên database mới có 12 khách mẫu. Dashboard hiển thị doanh thu hôm nay và 7 ngày qua; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
 
 Để dùng database mới với dữ liệu thật: tạo database riêng, cấu hình `.env`, chạy `python -m petcare.database.initialize`, rồi chạy `python -m petcare.database.create_admin`. Lệnh tạo admin yêu cầu xác nhận đúng tên database, nhập mật khẩu qua prompt ẩn và chỉ hoạt động khi database chưa có tài khoản. Sau đó đăng nhập, tạo nhân viên trong **Tài khoản**, rồi nhập danh mục và khách hàng thật. Không chạy seed demo trên database thật. Mật khẩu được băm PBKDF2-HMAC-SHA256; ứng dụng không lưu mật khẩu rõ.
 
@@ -188,11 +206,11 @@ Form hóa đơn tìm khách hàng/mặt hàng trực tiếp trên máy chủ, t�
 
   ```env
   LAN_ACCESS_ENABLED=1
-  APP_PORT=5001
-  LAN_ACCESS_BASE_URL=http://192.168.1.25:5001
+  APP_PORT=5055
+  LAN_ACCESS_BASE_URL=http://192.168.1.25:5055
   ```
 
-  Thay IP ví dụ bằng IP thật rồi khởi động lại `python run.py`. Dùng cổng trống; macOS có thể đã dành cổng 5000 cho AirPlay Receiver, nên ví dụ dùng 5001. Hai thiết bị cần cùng Wi‑Fi; nếu tường lửa hỏi, chỉ cho phép kết nối trên mạng riêng. Quét QR ở trang tìm bằng ảnh, đăng nhập trên điện thoại, rồi chụp/chọn ảnh. Kết quả hiện trên điện thoại. Khi không cần nữa, đặt `LAN_ACCESS_ENABLED=0` và khởi động lại.
+  Thay IP ví dụ bằng IP thật rồi khởi động lại `python run.py`. Dùng cổng trống; macOS có thể đã dành cổng 5000 cho AirPlay Receiver, nên mặc định và ví dụ dùng 5055. Hai thiết bị cần cùng Wi‑Fi; nếu tường lửa hỏi, chỉ cho phép kết nối trên mạng riêng. Quét QR ở trang tìm bằng ảnh, đăng nhập trên điện thoại, rồi chụp/chọn ảnh. Kết quả hiện trên điện thoại. Khi không cần nữa, đặt `LAN_ACCESS_ENABLED=0` và khởi động lại.
 - Cấu hình LAN mặc định tắt; nếu thiếu URL hợp lệ, máy chủ tiếp tục chỉ nghe trên localhost. Chỉ dùng trên mạng tin cậy vì HTTP LAN không mã hóa. Camera trực tiếp qua `getUserMedia` cần localhost hoặc HTTPS; trên điện thoại LAN dùng camera gốc qua trình chọn ảnh vì trình duyệt thường chặn camera trực tiếp trên HTTP.
 - Production không chấp nhận QR LAN dùng HTTP. Nếu cần stream camera trực tiếp trên điện thoại, dùng một origin HTTPS đáng tin; camera gốc qua trình chọn ảnh vẫn hoạt động trên mạng LAN HTTP riêng.
 - Tính năng chụp một khung hình để tìm, không truyền video liên tục. Tìm cục bộ vẫn xếp hạng theo màu và bố cục ảnh hồ sơ, không phát hiện giống hay loài như Google Lens; bật endpoint AI Vision riêng nếu cần phân tích ngữ nghĩa.
@@ -211,6 +229,11 @@ Form hóa đơn tìm khách hàng/mặt hàng trực tiếp trên máy chủ, t�
 - Biên dịch cú pháp: python -m compileall -q run.py main.py petcare tests
 - Unit và web tests: python -m unittest discover -s tests -v
 - Test MySQL tích hợp: cấu hình DB_HOST/DB_PORT/DB_USER/DB_PASSWORD và PETCARE_TEST_DB_NAME trỏ tới database test riêng có hậu tố _test. Không chạy fixture test trên DB làm việc.
+- Regression JavaScript cho form/focus/lookup: `node --test tests/js/*.test.cjs` (Node.js 18+ chỉ phục vụ kiểm thử; ứng dụng không cần build frontend).
+
+Mặc định local là `http://127.0.0.1:5055`; Compose cũng mở host port 5055 (container vẫn dùng 8000). Không chạy đồng thời hai bản trên cùng cổng. `/readyz` phải trả HTTP 200 trước khi demo; nếu báo thiếu schema, sao lưu rồi chạy `python -m petcare.database.initialize` để migration cộng thêm.
+
+Khai báo Pillow chấp nhận `>=12.0,<14.0` để tương thích môi trường demo cũ; ưu tiên cài `Pillow>=13.0,<14.0` vì bản 12.3.0 có advisory bảo mật. Phase 1 đã kiểm thử cả 12.3.0 và bản 13.x. Trợ lý hiểu “dưới/trên” là so sánh nghiêm ngặt, “tối đa/tối thiểu/từ…đến…” bao gồm biên; “khoảng N” dùng khoảng ±10%.
 
 Phần test nào cần MySQL thật sẽ không được tính là đã nghiệm thu nếu không có server MySQL test hoạt động.
 
@@ -221,3 +244,12 @@ Phần test nào cần MySQL thật sẽ không được tính là đã nghiệm
 - Unknown database: tạo petcare_shop_dev trước khi initialize.
 - Port 3306 đang dùng: chọn cổng khác và cập nhật DB_PORT.
 - Lỗi schema/check constraint: xác nhận MySQL 8.0.16+; không chạy schema này trên SQLite.
+
+
+## AI và Automation — Phase 3
+
+Trợ lý trả card có ảnh/giá/trạng thái và mở hồ sơ từ truy vấn SQL trên toàn danh mục đang bán; số đếm không bị giới hạn bởi preview. Gợi ý nhập hàng trên Dashboard/Sản phẩm giải thích tốc độ bán paid 14/30 ngày, ngày tồn và lượng cần nhập; mặt hàng chưa bán dùng ngưỡng nhập lại.
+
+Báo cáo có kỳ nhanh, biểu đồ theo ngày, so sánh kỳ trước và bản tin Python. **Xuất Excel** lấy đúng snapshot đang xem (hiệu lực 15 phút, có CSRF và chữ ký); **In / Lưu PDF** dùng trình duyệt. Giới hạn 366 ngày/5.000 dòng mỗi kỳ để xuất đủ chi tiết; tồn kho là thời điểm chốt. Cài lại requirements để có XlsxWriter.
+
+Tìm ảnh có bộ lọc loài/trạng thái và giải thích điểm; chọn ảnh trên form pet sẽ gợi ý thuộc tính để người dùng duyệt, chỉ điền trường trống. Local vẫn chạy khi không có API; provider lỗi sẽ fallback. Xem [thiết kế và công thức Phase 3](docs/phase3_ai_automation.md).

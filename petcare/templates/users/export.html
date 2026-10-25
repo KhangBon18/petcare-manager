@@ -17,7 +17,7 @@
       <p>{{ t('Gói xuất chứa hồ sơ khách hàng, catalog, hóa đơn, lịch sử tồn, nhật ký và ảnh thuộc cửa hàng này. Password hashes và token lời mời không được xuất.') }}</p>
     </div>
   </div>
-  <form method="post" class="form-stack">
+  <form method="post" class="form-stack" data-submit-lock data-submit-label="{{ 'Đang gửi yêu cầu…' if locale == 'vi' else 'Submitting request…' }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>{{ t('Mật khẩu hiện tại') }}
       <input type="password" name="current_password" autocomplete="current-password" required maxlength="1024">

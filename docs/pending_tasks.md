@@ -12,7 +12,7 @@
 - Email toàn nền tảng có luồng xác minh/khôi phục, token hash một lần, throttle DB, response chống dò địa chỉ và thu hồi phiên cũ khi reset. Outbox MySQL mã hóa payload, worker claim bằng lease và retry lỗi tạm thời; production đòi SMTP STARTTLS cùng key mã hóa ổn định.
 - Danh tính tài khoản toàn nền tảng được tách khỏi membership theo tenant; store admin không sửa tên/mật khẩu khi user có nhiều membership, còn chủ tài khoản tự đổi tên sau xác thực lại.
 - Public signup route đã có nhưng mặc định tắt; email xác minh mới kích hoạt quyền owner, worker dọn đăng ký chưa xác minh sau 7 ngày.
-- Lần kiểm đầy đủ mới nhất đạt 197/197 unit/web/MySQL integration tests trên MySQL test database tạm, độc lập và được xóa sau lượt chạy (2026-10-19). Bộ kiểm bao gồm locale browser/session và lưu theo tài khoản, open-redirect defense, dashboard English/currency format, trợ lý local/AI tiếng Anh và giới hạn context, tenant isolation, media, quotas, timezone/DST, workers, export, inventory concurrency, audit label, dynamic validation, authenticated no-store headers và image backpressure; chi tiết trong [test results](test_results.md). Dependency audit gần nhất không tìm thấy CVE đã biết; S3 provider thật vẫn cần nghiệm thu.
+- Lần kiểm đầy đủ mới nhất đạt 283/283 Python (171 unit, 55 web, 57 MySQL integration) và 19/19 JavaScript tests trên MySQL test database tạm, độc lập và được xóa sau lượt chạy (2026-10-25). Bộ kiểm bao gồm locale browser/session và lưu theo tài khoản, open-redirect defense, dashboard English/currency format, trợ lý local/AI tiếng Anh và giới hạn context, tenant isolation, media, quotas, timezone/DST, workers, export, inventory concurrency, audit label, dynamic validation, authenticated no-store headers và image backpressure; chi tiết trong [test results](test_results.md). Dependency audit gần nhất không tìm thấy CVE đã biết; S3 provider thật vẫn cần nghiệm thu.
 - CI đã cấu hình SHA-pinned GitHub Actions, Bandit baseline, Trivy source-tree secret scan, và Trivy HIGH/CRITICAL + secret scan trên image; các local scan đạt ngày 2026-10-18. Cần xác nhận hosted workflow xanh và yêu cầu independent review security trước release; baseline 38 finding cùng bốn suppression SBOM có hạn vẫn phải được review định kỳ.
 
 ## Trước public pilot / global launch
@@ -29,4 +29,8 @@
 
 ## Ranh giới hiện tại
 
-Local app ở `http://127.0.0.1:5000` là development server, không phải production deployment. Không nhận dữ liệu khách hàng thật hoặc tuyên bố global-launch-ready cho tới khi các gate trong [launch readiness](launch_readiness.md) được xử lý.
+Local app ở `http://127.0.0.1:5055` là development server, không phải production deployment. Không nhận dữ liệu khách hàng thật hoặc tuyên bố global-launch-ready cho tới khi các gate trong [launch readiness](launch_readiness.md) được xử lý.
+
+## Phạm vi đồ án — Phase 4 đã hoàn tất
+
+Đã có tổng duyệt 283 Python + 19 JavaScript tests, preflight dưới 5 giây trên máy nghiệm thu và [kịch bản bảo vệ](../DEMO_SCRIPT.md). Xem [ma trận Phase 4](phase4_acceptance.md). Các mục production/cloud phía trên là phạm vi tương lai, không chặn demo MVP local.

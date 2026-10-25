@@ -3,7 +3,7 @@ from io import BytesIO
 from flask import Blueprint, abort, current_app, flash, g, redirect, render_template, request, send_file, url_for
 
 from petcare.auth import admin_required, login_required
-from petcare.services import product_service
+from petcare.services import product_service, restock_service
 from petcare.services.exceptions import ServiceError
 from petcare.vision.media_storage import get_media_storage
 
@@ -23,7 +23,21 @@ def index():
         pagination=listing["pagination"],
         search=request.args.get("q", ""),
         include_inactive=request.args.get("all") == "1",
+        restock=restock_service.recommendations(g.user["id"]),
     )
+
+
+@bp.get("/<int:product_id>")
+@login_required
+def detail(product_id):
+    try:
+        product = product_service.get_product(g.user["id"], product_id)
+    except ServiceError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("products.index"))
+    suggestions = restock_service.recommendations(g.user["id"])
+    return render_template("products/detail.html", product=product,
+                           suggestion=next((row for row in suggestions if row["id"] == product_id), None))
 
 
 @bp.route("/new", methods=["GET", "POST"])

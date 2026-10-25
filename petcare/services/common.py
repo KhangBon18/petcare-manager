@@ -56,6 +56,8 @@ def require_actor(connection, actor_id, admin=False):
 
 
 def text_value(value, label, maximum, required=True):
+    if value is not None and not isinstance(value, str):
+        raise ValidationError(f"{label} không hợp lệ.")
     value = (value or "").strip()
     if required and not value:
         raise ValidationError(f"{label} không được để trống.")

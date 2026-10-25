@@ -1,6 +1,6 @@
 # Hướng dẫn sử dụng PetCare Manager
 
-Ứng dụng dành cho quản trị và nhân viên cửa hàng thú cưng. Cần khởi động MySQL trước rồi chạy Flask theo [README](../README.md). Mở `http://127.0.0.1:<APP_PORT>` trong trình duyệt (mặc định port 5000). Không dùng python main.py để mở cửa sổ desktop.
+Ứng dụng dành cho quản trị và nhân viên cửa hàng thú cưng. Cần khởi động MySQL trước rồi chạy Flask theo [README](../README.md). Mở `http://127.0.0.1:<APP_PORT>` trong trình duyệt (mặc định port 5055). Không dùng python main.py để mở cửa sổ desktop.
 
 Khi đăng nhập, nhập **mã cửa hàng** cùng username/password. Tài khoản chỉ thấy dữ liệu và quyền của store đang chọn. Nếu được mời vào nhiều cửa hàng, dùng menu **Chuyển cửa hàng** ở sidebar; role có thể khác nhau giữa các store. Database cũ sau migration giữ dữ liệu trong mã cửa hàng `main`.
 
@@ -30,11 +30,13 @@ Vào **Sản phẩm** để tìm mặt hàng, giá bán, tồn kho, mức cảnh
 
 Vào **Thú cưng** để quản lý từng cá thể đang bán. Mỗi cá thể có mã riêng, thông tin loài/giống, giá, màu lông, màu mắt, đặc điểm ngoại hình và ảnh hồ sơ. Ảnh hồ sơ tối đa 5 MB, định dạng JPEG/PNG/WebP; hệ thống chuẩn hóa ảnh và lưu riêng tư theo backend đã cấu hình. Chỉ hóa đơn đã thanh toán mới đánh dấu đã bán và gắn khách mua; cá thể đã bán không được bán lần nữa hoặc sửa lịch sử bán.
 
+Khi chọn ảnh ở form thêm/sửa thú cưng, gợi ý thuộc tính hiện tự động. Bấm **Điền vào trường đang trống** để áp dụng; dữ liệu đã nhập được giữ nguyên. Local chỉ gợi ý tông màu, có thể gồm nền ảnh; Vision khi được cấu hình mới gợi ý loài/mắt/ngoại hình. Gợi ý cần được kiểm tra trước khi lưu.
+
 ### Tìm thú cưng tương tự bằng ảnh
 
 1. Admin thêm ảnh hồ sơ và mô tả màu lông/mắt/đặc điểm cho những cá thể đang bán.
 2. Chọn **Tìm bằng ảnh**. Có thể tải ảnh lên, nhấn **Bật camera máy tính** để xem trực tiếp rồi **Chụp ảnh & tìm**, hoặc dùng camera sau điện thoại qua trình chọn ảnh.
-3. Chế độ cục bộ so sánh màu vùng trung tâm, màu toàn ảnh và bố cục ảnh đã lưu, đồng thời dùng thuộc tính hồ sơ khi có. Điểm là thứ tự gợi ý, không phải xác suất nhận dạng; ảnh hồ sơ tạo kết quả hữu ích hơn. Bộ seed demo mới có 68 ảnh tổng hợp (32 chó, 32 mèo và 4 ảnh mẫu cũ).
+3. Có thể lọc loài và trạng thái (đang bán/đã bán/ngừng bán/tất cả). Kết quả có điểm màu, cấu trúc, thuộc tính và lý do tương đồng; mở hồ sơ để đối chiếu. Chế độ cục bộ so sánh màu vùng trung tâm, màu toàn ảnh và bố cục ảnh đã lưu, đồng thời dùng thuộc tính hồ sơ khi có. Điểm là thứ tự gợi ý, không phải xác suất nhận dạng; ảnh hồ sơ tạo kết quả hữu ích hơn. Bộ seed demo mới có 68 ảnh tổng hợp (32 chó, 32 mèo và 4 ảnh mẫu cũ).
 4. Khi AI Vision tắt, ảnh truy vấn vẫn được gửi tới máy chủ ứng dụng để xử lý nhưng không gửi tới endpoint AI và không lưu thành hồ sơ. Nếu cần AI Vision, cấu hình endpoint tương thích OpenAI có hỗ trợ ảnh, rồi đặt `AI_VISION_ENABLED=1` trong `.env`; ảnh truy vấn khi đó được gửi tới endpoint để phân tích loài, màu lông, hoa văn, màu mắt và dáng.
 
 Descriptor từ ảnh đã lưu trước bản nâng cấp vẫn dùng được. Operator có thể kiểm tra trước số ảnh cần cập nhật bằng `.venv/bin/python -m petcare.vision.reindex_pet_descriptors`; thêm `--apply` để ghi lại theo batch. Lệnh hỗ trợ backend ảnh local và S3.
@@ -43,23 +45,29 @@ Descriptor từ ảnh đã lưu trước bản nâng cấp vẫn dùng được.
 
 ### Trợ lý cửa hàng
 
-Chọn **Hỏi trợ lý** ở góc màn hình. Có thể hỏi tổng quan, doanh thu hôm nay/tuần/tháng, sản phẩm tồn thấp, tìm sản phẩm, hoặc lọc thú cưng theo loài, giống, màu lông/mắt, giới tính, mức giá. Trợ lý cũng hướng dẫn lập hóa đơn và tìm ảnh. Ví dụ: “Có mèo lông trắng dưới 5 triệu không?”, “Tìm chó Golden Retriever”, “Tìm sản phẩm thức ăn cho mèo”. Khi trả lời, nhãn dưới câu trả lời cho biết đang dùng dữ liệu MySQL local hay endpoint AI. Bấm **Xóa cuộc trò chuyện** để xóa lịch sử trong trang hiện tại và dừng chờ kết quả trên trình duyệt. Khi không cấu hình AI, trợ lý tra cứu MySQL và không gọi nhà cung cấp AI; request từ trình duyệt SaaS vẫn tới máy chủ ứng dụng. Để bật trả lời tạo sinh, thêm `AI_API_BASE_URL`, `AI_MODEL` và tùy chọn `AI_API_KEY` vào `.env`; khi cấu hình, câu hỏi cùng dữ liệu cửa hàng liên quan được gửi tới endpoint đó. Thông tin cá nhân khách hàng không nằm trong ngữ cảnh gửi.
+Chọn **Hỏi trợ lý** ở góc màn hình. Có thể hỏi tổng quan, doanh thu hôm nay/tuần/tháng, sản phẩm tồn thấp, tìm sản phẩm, hoặc lọc thú cưng theo loài, giống, màu lông/mắt, giới tính, mức giá. Trợ lý cũng hướng dẫn lập hóa đơn và tìm ảnh. Ví dụ: “Có mèo lông trắng dưới 5 triệu không?”, “Tìm chó Golden Retriever”, “Tìm sản phẩm thức ăn cho mèo”. Kết quả tra cứu có card ảnh/giá/trạng thái và nút mở hồ sơ; số đếm tính trên toàn danh mục đang bán, tối đa 12 card mỗi câu trả lời. Khi trả lời, nhãn dưới câu trả lời cho biết đang dùng dữ liệu MySQL local hay endpoint AI. Bấm **Xóa cuộc trò chuyện** để xóa lịch sử trong trang hiện tại và dừng chờ kết quả trên trình duyệt. Khi không cấu hình AI, trợ lý tra cứu MySQL và không gọi nhà cung cấp AI; request từ trình duyệt SaaS vẫn tới máy chủ ứng dụng. Để bật trả lời tạo sinh, thêm `AI_API_BASE_URL`, `AI_MODEL` và tùy chọn `AI_API_KEY` vào `.env`; khi cấu hình, câu hỏi cùng dữ liệu cửa hàng liên quan được gửi tới endpoint đó. Thông tin cá nhân khách hàng không nằm trong ngữ cảnh gửi.
 
 Hồ sơ chó/mèo mới và ảnh trong seed được tạo tổng hợp bằng AI, là dữ liệu hư cấu dùng cho demo/báo cáo; chúng không thể hiện hàng tồn hoặc thú cưng thật. Trên database demo hiện có, chạy `python -m petcare.database.seed` để nạp bản ghi mới. Chỉ chạy lệnh trên database kết thúc bằng `_dev` hoặc `_test`.
 
 ## Lập và thanh toán hóa đơn
 
 1. Mở **Hóa đơn** → **Lập hóa đơn mới**.
-2. Chọn khách hàng; thêm một hay nhiều sản phẩm và số lượng, hoặc chọn cá thể thú cưng.
+2. Bên trái tìm mã/tên và bấm thẻ có ảnh, giá, tồn để thêm vào đơn. Bấm lại sản phẩm để tăng số lượng đến mức tồn; mỗi cá thể thú cưng chỉ được chọn một lần với số lượng 1. Bên phải xem giỏ hàng và chọn khách. Nếu khách chưa có, bấm **+ Thêm nhanh**, điền thông tin và lưu; khách được chọn ngay mà không mất mặt hàng. Esc đóng modal và trả focus.
 3. Kiểm tra tổng do máy chủ tính và tạo hóa đơn. Hóa đơn có trạng thái unpaid; việc tạo hóa đơn chưa trừ tồn.
 4. Khi nhận tiền tại quầy, mở hóa đơn và chọn **Thanh toán**. Trong cùng giao dịch, hệ thống kiểm tra lại tồn, trừ kho, lưu lịch sử xuất hàng và gắn người mua cho thú cưng.
 5. Hóa đơn chưa trả có thể hủy. Hóa đơn đã trả là bất biến; chưa hỗ trợ hoàn tiền hoặc trả hàng.
 
-Tìm khách hàng theo tên/số điện thoại và mặt hàng theo mã/tên ngay trên form. Kết quả được tìm ở máy chủ và tải theo trang để không cần nạp toàn bộ danh mục lớn vào trình duyệt.
+Mở **Tìm theo tên / số điện thoại** để tìm khách hàng; catalog bên trái có bộ lọc Sản phẩm/Thú cưng và nút **Hiển thị thêm**. Kết quả được tìm ở máy chủ, có trạng thái tải và bỏ qua phản hồi cũ khi đổi từ khóa. Giỏ hàng giữ nguyên qua tìm kiếm; tổng tạm tính chỉ là xem trước, server xác thực giá/tồn khi tạo và thanh toán.
+
+Khung trợ lý gửi bằng Enter, đóng bằng Esc và giữ focus hợp lý; chat, tìm ảnh và export có trạng thái đang xử lý và khóa gửi lặp. Toast thành công tự ẩn, lỗi có nút đóng.
 
 ## Báo cáo
 
-Mở **Báo cáo**, chọn khoảng ngày rồi xem doanh thu thực thu, số hóa đơn đã thanh toán, hàng bán và tồn hiện tại. Doanh thu được tính từ hóa đơn paid theo thời điểm thanh toán.
+Mở **Báo cáo**, chọn khoảng ngày rồi xem doanh thu thực thu, số hóa đơn đã thanh toán, hàng bán và tồn hiện tại. Doanh thu được tính từ hóa đơn paid theo thời điểm thanh toán. Dùng kỳ nhanh Hôm nay/7 ngày/30 ngày/Tháng này để xem biểu đồ, so sánh kỳ trước cùng số ngày và bản tin tự động. Mở bảng ngày/chi tiết để đối chiếu.
+
+Bấm **Xuất Excel** để tải bốn sheet tổng quan/doanh thu ngày/chi tiết/top sản phẩm, dùng đúng số liệu đang xem kể cả khi có giao dịch mới. Bản xuất có hiệu lực 15 phút; hết hạn thì tải lại báo cáo. Bấm **In / Lưu PDF** và chọn Save as PDF trong trình duyệt; bảng chi tiết tự mở khi in. Tối đa 366 ngày/5.000 dòng hàng mỗi kỳ, không cắt dữ liệu im lặng.
+
+Dashboard và Sản phẩm có **Gợi ý bổ sung tồn kho**. Công thức dùng lượng bán paid 14/30 ngày, cảnh báo dưới 7 ngày tồn hoặc chạm ngưỡng, lập kế hoạch đủ 14 ngày; mặt hàng chưa bán dùng ngưỡng nhập lại. Đây là gợi ý đọc, không tự thay đổi kho. Mở hồ sơ sản phẩm để xem tốc độ và công thức; tồn kho của báo cáo là tại lúc chốt, không phải tồn cuối kỳ.
 
 ## Tài khoản và quyền
 

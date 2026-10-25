@@ -89,3 +89,13 @@ def dashboard(connection, day_start_utc, day_end_utc):
             "ORDER BY i.created_at DESC, i.id DESC LIMIT 5",
         ),
     }
+
+
+def paid_lines(connection, start_at, end_at):
+    return fetch_all(connection,
+        "SELECT i.id invoice_id, i.paid_at, ii.item_type, ii.item_code_snapshot code, "
+        "ii.name_snapshot name, ii.quantity, ii.unit_price, ii.line_total "
+        "FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id "
+        "WHERE i.tenant_id = @petcare_tenant_id AND i.status = 'paid' "
+        "AND i.paid_at >= %s AND i.paid_at < %s ORDER BY i.paid_at, i.id, ii.id LIMIT 5001",
+        (start_at, end_at))

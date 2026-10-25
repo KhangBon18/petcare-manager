@@ -1,5 +1,37 @@
 # Nhật ký thay đổi
 
+## Phase 4 — tổng duyệt và kịch bản demo — 2026-10-25
+
+- Thêm `python run.py prepare-demo [--json]`: kiểm MySQL/schema/quyền/tồn/ảnh và đúng web/database, cập nhật timestamp marker demo paid trong một transaction, giới hạn thời gian và exit code rõ ràng.
+- Giữ contract JSON `/readyz`; thêm chữ ký database cho probe local non-production để tránh xác nhận nhầm server.
+- Sửa lỗi thông báo validation POS bị bó trong ô số lượng, bổ sung regression cho cả lỗi mặt hàng/số lượng.
+- Nghiệm thu 283 Python tests, 19 JavaScript tests và ma trận browser/MySQL; Excel sau đơn kết hợp khớp số liệu màn hình. Thêm `DEMO_SCRIPT.md` và `docs/phase4_acceptance.md`.
+
+## Phase 3 — AI và Automation — 2026-10-25
+
+- Trợ lý biên dịch bộ lọc thành SQL tham số hóa trên toàn danh mục, trả card hồ sơ/ảnh/giá/trạng thái; giữ card khi LLM lỗi hoặc không cấu hình.
+- Gợi ý nhập kho có giải thích từ số bán paid 14/30 ngày, ước tính ngày tồn, kế hoạch 14 ngày và fallback ngưỡng; phép ceil số nguyên tránh nhập dư do sai số Decimal.
+- Dashboard/Báo cáo có biểu đồ ngày, kỳ nhanh, tăng trưởng kỳ trước và bản tin Python. Xuất Excel bốn sheet từ snapshot đã ký, chống formula injection; in/PDF có bảng chi tiết và phục hồi trạng thái sau in.
+- Tìm ảnh có bộ lọc loài/trạng thái, điểm và lý do; form pet tự gợi ý thuộc tính để duyệt, giữ dữ liệu nhập tay và fallback local khi Vision lỗi.
+- Không đổi schema 20 bảng hoặc module i18n đang làm dở; không thêm hạ tầng. Thêm dependency XlsxWriter cho xuất báo cáo.
+
+## Phase 2 — UI/UX và dữ liệu demo — 2026-10-25
+
+- Hợp nhất CSS/breakpoint, system font, màu chủ đạo, toast/badge/empty state và responsive.
+- POS catalog trực tiếp có ảnh/giá/tồn, giỏ hàng, tìm kiếm/phân trang và modal thêm nhanh khách hàng giữ đơn hiện tại.
+- Loading, chống gửi lặp, Esc/focus cho các luồng lookup/chat/ảnh/export; chờ pool MySQL có giới hạn cho burst ảnh.
+- Seed cập nhật ngày của đúng hóa đơn mẫu, sửa ảnh thiếu, giữ tồn khi chạy lại; Dashboard có doanh thu 7 ngày qua, tài liệu thống nhất 20 bảng.
+- 236 Python tests và 15 JavaScript tests đạt; kiểm tra Chrome desktop/tablet/mobile.
+
+## Phase 1 — ổn định môi trường và nghiệp vụ — 2026-10-24
+
+- Đổi cổng local/Compose host sang 5055, đồng bộ URL và tài liệu; giữ container Gunicorn ở 8000.
+- Form khách hàng và hóa đơn giữ dữ liệu khi validation thất bại, có lỗi theo trường và focus lỗi đầu tiên; khôi phục lựa chọn ngoài trang lookup đầu qua service có tenant scope.
+- Tách intent, kỳ doanh thu và bộ lọc giá của trợ lý; hỗ trợ biên dưới/trên, tối đa/tối thiểu, khoảng giá dùng chung đơn vị; JSON sai kiểu trả 400.
+- Dùng progress tương thích CSP cho điểm ảnh. Lookup hóa đơn tính lại tổng, hủy request ngay khi gõ, chặn response cũ và loại lựa chọn trùng khi phân trang.
+- Khai báo Pillow >=12.0,<14.0 để tương thích demo cũ. Kiểm thử đạt trên 12.3.0; môi trường hiện nâng lên 13.0.0 vì advisory của 12.3.0. Không thay đổi nội dung i18n đang làm dở.
+- 225 Python tests (137 unit, 38 web, 50 MySQL integration) và 9 JavaScript tests đạt. MySQL chạy trên database test riêng; schema dev được sao lưu mã hóa trước migration cộng thêm, /readyz trả 200.
+
 ## Khắc phục CI dependency và tương thích Python — 2026-10-21
 
 - Nâng Pillow tối thiểu lên 13.0.0 để loại bỏ các advisory mới được `pip-audit` và Trivy phát hiện trên bản 12.3.0; chuẩn Python tối thiểu đổi từ 3.10 lên 3.11 theo hỗ trợ của Pillow 13.

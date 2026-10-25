@@ -8,6 +8,7 @@ import csv
 import stat
 import tempfile
 from threading import Event, Thread, current_thread
+from concurrent.futures import ThreadPoolExecutor
 import zipfile
 from pathlib import Path
 from io import BytesIO, StringIO
@@ -125,6 +126,129 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), self.app.config["PUBLIC_BASE_URL"])
         return match.group(2)
+
+    def test_phase_two_private_photo_burst_works_with_a_small_connection_pool(self):
+        client = self._login("admin", "Admin@123")
+        with get_connection() as connection:
+            photos = fetch_all(connection, "SELECT photo_filename FROM pets WHERE tenant_id=(SELECT id FROM tenants WHERE slug='main') AND photo_filename IS NOT NULL LIMIT 12")
+        cookie = client.get_cookie(self.app.config["SESSION_COOKIE_NAME"])
+        start = Event()
+
+        def read_photo(photo):
+            reader = self.app.test_client()
+            reader.set_cookie(cookie.key, cookie.value)
+            start.wait(5)
+            response = reader.get(f"/pets/photo/{photo['photo_filename']}")
+            return response.status_code, response.mimetype
+
+        with patch.object(Config, "DB_POOL_SIZE", 2), ThreadPoolExecutor(max_workers=12) as executor:
+            futures = [executor.submit(read_photo, photo) for photo in photos]
+            start.set()
+            results = [future.result(timeout=15) for future in futures]
+        self.assertEqual(results, [(200, "image/jpeg")] * len(photos))
+
+    def test_phase_two_quick_customer_uses_real_mysql_and_csrf(self):
+        client = self._login("staff1", "Staff@123")
+        token = self._csrf_token(client, "/invoices/new")
+        phone = "09" + f"{uuid4().int % 100_000_000:08d}"
+        response = client.post("/invoices/customers/quick", json={
+            "full_name": "POS quick customer", "phone": phone, "address": "Demo only",
+        }, headers={"X-CSRFToken": token})
+        self.assertEqual(response.status_code, 201)
+        customer = response.get_json()["customer"]
+        try:
+            response = client.get("/invoices/lookups/customers", query_string={"q": phone})
+            self.assertIn(customer["id"], [row["id"] for row in response.get_json()["items"]])
+            missing_csrf = client.post("/invoices/customers/quick", json={"full_name": "No token", "phone": phone})
+            self.assertEqual(missing_csrf.status_code, 400)
+        finally:
+            with get_connection() as connection:
+                cursor = connection.cursor()
+                cursor.execute("DELETE FROM audit_events WHERE entity_type = 'customer' AND entity_id = %s", (customer["id"],))
+                cursor.execute("DELETE FROM customers WHERE id = %s", (customer["id"],))
+                connection.commit(); cursor.close()
+
+    def test_phase_two_seed_refreshes_only_demo_dates_and_repairs_missing_photos(self):
+        seed_database()
+        with get_connection() as connection:
+            tenant = fetch_one(connection, "SELECT id FROM tenants WHERE slug = 'main'")
+            before_stock = fetch_one(connection, "SELECT SUM(stock_qty) total FROM products WHERE tenant_id=%s", (tenant["id"],))["total"]
+            before_movements = fetch_one(connection, "SELECT COUNT(*) total FROM stock_movements WHERE tenant_id=%s", (tenant["id"],))["total"]
+            invoice = fetch_one(connection, "SELECT id FROM invoices WHERE note LIKE '[DEMO] DEMO-SALE-01%'")
+            pet = fetch_one(connection, "SELECT id, photo_filename FROM pets WHERE tenant_id=%s AND code='PET-001'", (tenant["id"],))
+            other = fetch_one(connection, "SELECT photo_filename FROM pets WHERE tenant_id=%s AND code='PET-002'", (tenant["id"],))
+            cursor = connection.cursor()
+            cursor.execute("UPDATE invoices SET paid_at=DATE_SUB(NOW(), INTERVAL 100 DAY), created_at=DATE_SUB(NOW(), INTERVAL 100 DAY) WHERE id=%s", (invoice["id"],))
+            cursor.execute("UPDATE pets SET photo_filename=NULL, photo_descriptor=NULL WHERE id=%s", (pet["id"],))
+            connection.commit(); cursor.close()
+        seed_database()
+        with get_connection() as connection:
+            refreshed = fetch_one(connection, "SELECT TIMESTAMPDIFF(SECOND, paid_at, UTC_TIMESTAMP()) age FROM invoices WHERE id=%s", (invoice["id"],))
+            repaired = fetch_one(connection, "SELECT photo_filename, photo_descriptor FROM pets WHERE id=%s", (pet["id"],))
+            retained = fetch_one(connection, "SELECT photo_filename FROM pets WHERE tenant_id=%s AND code='PET-002'", (tenant["id"],))
+            after_stock = fetch_one(connection, "SELECT SUM(stock_qty) total FROM products WHERE tenant_id=%s", (tenant["id"],))["total"]
+            after_movements = fetch_one(connection, "SELECT COUNT(*) total FROM stock_movements WHERE tenant_id=%s", (tenant["id"],))["total"]
+            self.assertLess(abs(refreshed["age"]), 60)
+            self.assertTrue(repaired["photo_filename"])
+            self.assertTrue(repaired["photo_descriptor"])
+            self.assertEqual(retained["photo_filename"], other["photo_filename"])
+            self.assertEqual(after_stock, before_stock)
+            self.assertEqual(after_movements, before_movements)
+        # A filename can survive while the media itself is missing; seed repairs it too.
+        from petcare.vision.media_storage import get_media_storage
+        storage = get_media_storage(Config, "pets")
+        storage.delete(repaired["photo_filename"])
+        seed_database()
+        with get_connection() as connection:
+            repaired_again = fetch_one(connection, "SELECT photo_filename FROM pets WHERE id=%s", (pet["id"],))
+        self.assertNotEqual(repaired_again["photo_filename"], repaired["photo_filename"])
+        self.assertTrue(storage.read(repaired_again["photo_filename"]))
+        storage.delete(pet["photo_filename"])
+
+    def test_phase_one_validation_preserves_real_mysql_selections(self):
+        client = self._login("admin", "Admin@123")
+        token = self._csrf_token(client, "/customers/new")
+        response = client.post("/customers/new", data={
+            "csrf_token": token, "full_name": "Khách chưa lưu", "phone": "invalid",
+            "address": "Địa chỉ cần giữ",
+        })
+        html = response.get_data(as_text=True)
+        self.assertIn('value="Khách chưa lưu"', html)
+        self.assertIn("Địa chỉ cần giữ</textarea>", html)
+        self.assertIn('id="phone-error"', html)
+        with get_connection() as connection:
+            customer = fetch_one(connection, "SELECT id FROM customers ORDER BY id LIMIT 1")
+            product = fetch_one(connection, "SELECT id FROM products WHERE active = 1 ORDER BY id LIMIT 1")
+            pet = fetch_one(connection, "SELECT id FROM pets WHERE sale_status = 'available' ORDER BY id DESC LIMIT 1")
+        token = self._csrf_token(client, "/invoices/new")
+        response = client.post("/invoices/new", data={
+            "csrf_token": token, "customer_id": str(customer["id"]),
+            "item_selection": [f"product:{product['id']}", f"pet:{pet['id']}"],
+            "quantity": ["0", "3"], "note": "Giữ nguyên ghi chú hóa đơn",
+        })
+        html = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertRegex(html, rf'value="product:{product["id"]}"[^>]*selected')
+        self.assertRegex(html, rf'value="pet:{pet["id"]}"[^>]*selected')
+        self.assertIn('id="quantity_0-error"', html)
+        self.assertIn('id="quantity_1-error"', html)
+        self.assertIn("Giữ nguyên ghi chú hóa đơn</textarea>", html)
+
+    def test_phase_one_assistant_filters_and_json_validation_with_mysql(self):
+        client = self._login("admin", "Admin@123")
+        token = self._csrf_token(client, "/invoices/new")
+        for message in [42, [], {}]:
+            response = client.post("/assistant/chat", json={"message": message},
+                                   headers={"X-CSRFToken": token})
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.get_json()["field"], "message")
+        for question in ["Hôm nay còn mèo nào?", "Tìm mèo lông trắng dưới 3 triệu"]:
+            response = client.post("/assistant/chat", json={"message": question},
+                                   headers={"X-CSRFToken": token})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["mode"], "local")
+            self.assertNotIn("Doanh thu", response.get_json()["reply"])
+            self.assertNotIn("Chưa có thú cưng", response.get_json()["reply"])
 
     def test_admin_and_staff_access_real_routes(self):
         admin = self._login("admin", "Admin@123")
@@ -3070,7 +3194,9 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["mode"], "local")
-        self.assertIn("Thức ăn cho mèo 1kg", payload["reply"])
+        self.assertIn("toàn danh mục", payload["reply"])
+        self.assertEqual(payload["catalog"]["total"], 22)
+        self.assertLessEqual(len(payload["catalog"]["items"]), 12)
 
     def test_role_change_is_applied_to_an_existing_session(self):
         client = self._login("admin", "Admin@123")
@@ -3356,6 +3482,333 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     connection.commit()
                 finally:
                     cursor.close()
+
+    def test_phase_three_assistant_searches_beyond_preview_and_keeps_cards_on_api_failure(
+        self,
+    ):
+        from petcare.ai.client import AIProviderError
+
+        client = self._login("admin", "Admin@123")
+        token = self._csrf_token(client, "/invoices/new")
+        prefix = "P3-" + uuid4().hex[:8]
+        other_tenant = None
+        try:
+            with get_connection() as connection:
+                cursor = connection.cursor()
+                tenant = fetch_one(
+                    connection, "SELECT id FROM tenants WHERE slug='main'"
+                )["id"]
+                cursor.executemany(
+                    "INSERT INTO pets (tenant_id,code,name,species,coat_color,sale_price) VALUES (%s,%s,%s,'Mèo','trắng',2000000)",
+                    [
+                        (
+                            tenant,
+                            f"{prefix}-{i}",
+                            f"ZZZ {i:03d} " + ("Zenith" if i == 250 else "Placeholder"),
+                        )
+                        for i in range(251)
+                    ],
+                )
+                cursor.executemany(
+                    "INSERT INTO products (tenant_id,code,name,category,unit_price,stock_qty) VALUES (%s,%s,%s,'Demo',50000,5)",
+                    [
+                        (
+                            tenant,
+                            f"{prefix}-{i}",
+                            f"ZZZ {i:03d} " + ("Zircon" if i == 100 else "Placeholder"),
+                        )
+                        for i in range(101)
+                    ],
+                )
+                cursor.execute(
+                    "INSERT INTO tenants (slug,name) VALUES (%s,'Other test store')",
+                    ("phase3-" + uuid4().hex[:10],),
+                )
+                other_tenant = cursor.lastrowid
+                cursor.execute(
+                    "INSERT INTO pets (tenant_id,code,name,species,coat_color,sale_price) VALUES (%s,%s,'Zenith','Mèo','trắng',2000000)",
+                    (other_tenant, prefix),
+                )
+                connection.commit()
+                cursor.close()
+            for question, kind in [
+                ("Tìm mèo lông trắng Zenith dưới 3 triệu", "pet"),
+                ("Tìm sản phẩm Zircon", "product"),
+            ]:
+                response = client.post(
+                    "/assistant/chat",
+                    json={"message": question},
+                    headers={"X-CSRFToken": token},
+                )
+                self.assertEqual(response.status_code, 200)
+                result = response.get_json()
+                self.assertEqual(result["mode"], "local")
+                self.assertEqual(result["catalog"]["total"], 1)
+                self.assertEqual(result["catalog"]["items"][0]["kind"], kind)
+                local_cards = result["catalog"]
+                with patch.dict(
+                    self.app.config,
+                    {
+                        "AI_API_BASE_URL": "https://example.test",
+                        "AI_MODEL": "test-only",
+                    },
+                ), patch(
+                    "petcare.ai.client.complete", side_effect=AIProviderError("offline")
+                ):
+                    fallback = client.post(
+                        "/assistant/chat",
+                        json={"message": question},
+                        headers={"X-CSRFToken": token},
+                    ).get_json()
+                self.assertEqual(fallback["mode"], "local")
+                self.assertEqual(fallback["catalog"], local_cards)
+                with patch.dict(
+                    self.app.config,
+                    {
+                        "AI_API_BASE_URL": "https://example.test",
+                        "AI_MODEL": "test-only",
+                    },
+                ), patch(
+                    "petcare.ai.client.complete", return_value="Đã kiểm tra dữ liệu."
+                ):
+                    ai = client.post(
+                        "/assistant/chat",
+                        json={"message": question},
+                        headers={"X-CSRFToken": token},
+                    ).get_json()
+                self.assertEqual(ai["mode"], "ai")
+                self.assertEqual(ai["catalog"], local_cards)
+        finally:
+            with get_connection() as connection:
+                cursor = connection.cursor()
+                cursor.execute("DELETE FROM pets WHERE code LIKE %s", (prefix + "%",))
+                cursor.execute(
+                    "DELETE FROM products WHERE code LIKE %s", (prefix + "%",)
+                )
+                if other_tenant:
+                    cursor.execute("DELETE FROM tenants WHERE id=%s", (other_tenant,))
+                connection.commit()
+                cursor.close()
+
+    def test_phase_three_paid_restock_and_frozen_report_export_reconcile(self):
+        from datetime import timedelta
+        from decimal import Decimal
+        from xml.etree import ElementTree as ET
+        from petcare.services import restock_service, report_export_service
+
+        client = self._login("admin", "Admin@123")
+        prefix = "P3-" + uuid4().hex[:8]
+        with get_connection() as connection:
+            actor = fetch_one(
+                connection, "SELECT id FROM users WHERE username='admin'"
+            )["id"]
+            customer = fetch_one(
+                connection,
+                "SELECT id FROM customers WHERE active=1 ORDER BY id LIMIT 1",
+            )["id"]
+        product_id = product_service.create_product(
+            actor,
+            {
+                "code": prefix,
+                "name": "Restock test",
+                "category": "Demo",
+                "description": "",
+                "unit_price": "100",
+                "stock_qty": "35",
+                "reorder_level": "2",
+            },
+        )
+        ids = []
+        try:
+            for qty, days, paid in [(14, 1, True), (16, 20, True), (3, 0, False)]:
+                invoice = invoice_service.create_invoice(
+                    actor,
+                    {"customer_id": str(customer), "note": prefix},
+                    [
+                        {
+                            "item_type": "product",
+                            "item_id": str(product_id),
+                            "quantity": str(qty),
+                        }
+                    ],
+                )
+                ids.append(invoice)
+                if paid:
+                    invoice_service.pay_invoice(actor, invoice)
+                    with get_connection() as connection:
+                        cursor = connection.cursor()
+                        cursor.execute(
+                            "UPDATE invoices SET paid_at=UTC_TIMESTAMP()-INTERVAL %s DAY WHERE id=%s",
+                            (days, invoice),
+                        )
+                        connection.commit()
+                        cursor.close()
+            suggestion = next(
+                row
+                for row in restock_service.recommendations(actor)
+                if row["id"] == product_id
+            )
+            self.assertEqual(suggestion["sold_14"], 14)
+            self.assertEqual(suggestion["sold_30"], 30)
+            self.assertEqual(suggestion["stock_qty"], 5)
+            self.assertEqual(suggestion["days_left"], 5)
+            self.assertEqual(suggestion["suggested_qty"], 9)
+            self.assertEqual(client.get(f"/products/{product_id}").status_code, 200)
+            page = client.get("/reports/?period=30d")
+            self.assertEqual(page.status_code, 200)
+            import html
+
+            token = html.unescape(
+                re.search(
+                    r'name="snapshot" value="([^"]+)"', page.get_data(as_text=True)
+                ).group(1)
+            )
+            with self.app.app_context():
+                snapshot = report_export_service.read_snapshot(token, actor, 1)
+            expected = Decimal(snapshot["summary"]["revenue"])
+            self.assertEqual(
+                sum(Decimal(row["line_total"]) for row in snapshot["details"]), expected
+            )
+            self.assertEqual(
+                sum(Decimal(row["revenue"]) for row in snapshot["daily"]), expected
+            )
+            with get_connection() as connection:
+                cursor = connection.cursor()
+                cursor.execute(
+                    "UPDATE invoices SET paid_at=UTC_TIMESTAMP()-INTERVAL 90 DAY WHERE id=%s",
+                    (ids[0],),
+                )
+                connection.commit()
+                cursor.close()
+            csrf = self._csrf_token(client, "/customers/new")
+            exported = client.post(
+                "/reports/export.xlsx",
+                json={"snapshot": token},
+                headers={"X-CSRFToken": csrf},
+            )
+            self.assertEqual(exported.status_code, 200)
+            with zipfile.ZipFile(BytesIO(exported.data)) as book:
+                root = ET.fromstring(book.read("xl/worksheets/sheet1.xml"))
+                ns = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
+                value = root.find(".//m:c[@r='B6']/m:v", ns).text
+            self.assertEqual(Decimal(value), expected)
+        finally:
+            with get_connection() as connection:
+                cursor = connection.cursor()
+                for invoice in ids:
+                    cursor.execute(
+                        "DELETE FROM audit_events WHERE entity_type='invoice' AND entity_id=%s",
+                        (invoice,),
+                    )
+                    cursor.execute(
+                        "DELETE FROM stock_movements WHERE invoice_id=%s", (invoice,)
+                    )
+                    cursor.execute(
+                        "DELETE FROM invoice_items WHERE invoice_id=%s", (invoice,)
+                    )
+                    cursor.execute("DELETE FROM invoices WHERE id=%s", (invoice,))
+                cursor.execute(
+                    "DELETE FROM audit_events WHERE entity_type='product' AND entity_id=%s",
+                    (product_id,),
+                )
+                cursor.execute(
+                    "DELETE FROM stock_movements WHERE product_id=%s", (product_id,)
+                )
+                cursor.execute("DELETE FROM products WHERE id=%s", (product_id,))
+                connection.commit()
+                cursor.close()
+
+    def test_phase_three_image_filters_explanations_and_upload_suggestions_without_api(
+        self,
+    ):
+        from petcare.services import pet_image_service
+
+        client = self._login("admin", "Admin@123")
+        with get_connection() as connection:
+            actor = fetch_one(
+                connection, "SELECT id FROM users WHERE username='admin'"
+            )["id"]
+        prefix = "P3-" + uuid4().hex[:8]
+        species = "Phase3 species " + uuid4().hex[:8]
+        stream = BytesIO()
+        Image.new("RGB", (40, 40), "white").save(stream, format="PNG")
+        image = stream.getvalue()
+        ids = []
+        filenames = []
+        try:
+            for index in range(2):
+                with self.app.app_context():
+                    pet_id = pet_service.create_pet(
+                        actor,
+                        {
+                            "code": prefix + str(index),
+                            "name": "White test",
+                            "species": species,
+                            "breed": "",
+                            "sex": "unknown",
+                            "coat_color": "trắng",
+                            "sale_price": "100",
+                        },
+                        FileStorage(stream=BytesIO(image), filename="white.png"),
+                    )
+                ids.append(pet_id)
+            pet_service.set_inactive(actor, ids[1], True)
+            with get_connection() as connection:
+                for pet_id in ids:
+                    filenames.append(
+                        fetch_one(
+                            connection,
+                            "SELECT photo_filename FROM pets WHERE id=%s",
+                            (pet_id,),
+                        )["photo_filename"]
+                    )
+            with self.app.test_request_context():
+                from flask import g
+
+                g.locale = "vi"
+                active = pet_image_service.search_similar(
+                    actor, image, species=species, status="available"
+                )
+                inactive = pet_image_service.search_similar(
+                    actor, image, species=species, status="inactive"
+                )
+            self.assertEqual([row["pet"]["id"] for row in active["results"]], [ids[0]])
+            self.assertEqual(
+                [row["pet"]["id"] for row in inactive["results"]], [ids[1]]
+            )
+            self.assertEqual(active["results"][0]["components"]["color"], 100)
+            self.assertEqual(active["results"][0]["components"]["structure"], 100)
+            token = self._csrf_token(client, "/pets/new")
+            response = client.post(
+                "/pets/suggest-attributes",
+                data={"photo": (BytesIO(image), "white.png")},
+                headers={"X-CSRFToken": token},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.get_json()["mode"], "local")
+            self.assertEqual(set(response.get_json()["suggestions"]), {"coat_color"})
+        finally:
+            with get_connection() as connection:
+                cursor = connection.cursor()
+                for pet_id in ids:
+                    cursor.execute(
+                        "DELETE FROM pet_photo_lsh WHERE pet_id=%s", (pet_id,)
+                    )
+                    cursor.execute(
+                        "DELETE FROM audit_events WHERE entity_type='pet' AND entity_id=%s",
+                        (pet_id,),
+                    )
+                    cursor.execute("DELETE FROM pets WHERE id=%s", (pet_id,))
+                connection.commit()
+                cursor.close()
+            with self.app.app_context():
+                from petcare.vision.photo_storage import remove_pet_photo
+                from petcare.vision.media_storage import get_media_storage
+
+                for filename in filenames:
+                    remove_pet_photo(
+                        filename, get_media_storage(self.app.config, "pets")
+                    )
 
 
 if __name__ == "__main__":
