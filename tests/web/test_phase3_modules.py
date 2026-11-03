@@ -6,6 +6,8 @@ import html
 import re
 from unittest import TestCase
 from unittest.mock import patch
+from xml.etree import ElementTree as ET
+from zipfile import ZipFile
 
 from petcare import create_app
 from petcare.services import report_export_service
@@ -37,6 +39,7 @@ def report_data():
             {
                 "invoice_id": 1,
                 "paid_at": "2026-10-25T09:00:00+07:00",
+                "entry_type": "sale",
                 "item_type": "product",
                 "code": "P1",
                 "name": "Food",
@@ -141,6 +144,68 @@ class PhaseThreeWebTests(TestCase):
         self.assertTrue(result.data.startswith(b"PK"))
         self.assertIn("attachment", result.headers["Content-Disposition"])
         self.assertNotIn('style="', page)
+
+    def test_english_report_export_uses_the_current_ui_locale(self):
+        self.patch(
+            "petcare.routes.report_routes.report_service.report",
+            return_value=report_data(),
+        )
+        self.user["preferred_locale"] = "en"
+        with self.client.session_transaction() as session:
+            session["locale"] = "en"
+        page = self.client.get("/reports/?period=7d")
+        self.assertEqual(page.status_code, 200)
+        page_html = page.get_data(as_text=True)
+        self.assertIn("BUSINESS BRIEF", page_html)
+        self.assertIn("Snapshot at Oct 25, 2026 10:00 AM", page_html)
+        self.assertIn("Oct 25, 2026 9:00 AM", page_html)
+        self.assertIn("Oct 25, 2026", page_html)
+        token = html.unescape(
+            re.search(r'name="snapshot" value="([^"]+)"', page.get_data(as_text=True)).group(1)
+        )
+        result = self.client.post("/reports/export.xlsx", json={"snapshot": token})
+        self.assertEqual(result.status_code, 200)
+        with ZipFile(BytesIO(result.data)) as workbook:
+            strings = workbook.read("xl/sharedStrings.xml").decode()
+            root = ET.fromstring(workbook.read("xl/workbook.xml"))
+        self.assertIn("Paid revenue", strings)
+        self.assertIn("SALES AND REFUNDS", strings)
+        names = [
+            sheet.attrib["name"]
+            for sheet in root.findall(
+                ".//m:sheet",
+                {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"},
+            )
+        ]
+        self.assertEqual(names, ["Overview", "Daily revenue", "Details", "Top products"])
+
+    def test_english_report_validation_error_is_translated(self):
+        from petcare.services.exceptions import ValidationError
+
+        self.user["preferred_locale"] = "en"
+        self.patch(
+            "petcare.routes.report_routes.report_service.report",
+            side_effect=ValidationError("Ngày bắt đầu không được sau ngày kết thúc."),
+        )
+        response = self.client.get("/reports/?start=2026-10-25&end=2026-10-24")
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("The start date cannot be after the end date.", page)
+        self.assertNotIn("Ngày bắt đầu không được sau ngày kết thúc.", page)
+
+    def test_english_assistant_api_error_is_translated(self):
+        from petcare.services.exceptions import ValidationError
+
+        self.user["preferred_locale"] = "en"
+        self.patch(
+            "petcare.routes.assistant_routes.assistant_service.answer",
+            side_effect=ValidationError("Nội dung gửi lên chưa hợp lệ."),
+        )
+        response = self.client.post("/assistant/chat", json={"message": "hello"})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json()["error"], "The submitted message is invalid."
+        )
 
     def test_export_rejects_wrong_user_or_tenant_bad_signature_and_payloads(self):
         with self.app.app_context():

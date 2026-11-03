@@ -47,6 +47,56 @@ def get_customer(connection, customer_id):
     )
 
 
+def count_customer_invoices(connection, customer_id):
+    return fetch_one(
+        connection,
+        "SELECT COUNT(*) total FROM invoices "
+        "WHERE tenant_id = @petcare_tenant_id AND customer_id = %s",
+        (customer_id,),
+    )["total"]
+
+
+def summarize_customer_invoices(connection, customer_id):
+    return fetch_all(
+        connection,
+        "SELECT i.currency_code, COUNT(*) invoice_count, "
+        "SUM(i.status = 'paid') paid_invoice_count, "
+        "SUM(i.status = 'unpaid') unpaid_invoice_count, "
+        "COALESCE(SUM(CASE WHEN i.status = 'paid' THEN "
+        "totals.invoice_total - COALESCE(refunds.refund_total, 0) ELSE 0 END), 0) paid_total, "
+        "COALESCE(SUM(CASE WHEN i.status = 'unpaid' THEN totals.invoice_total ELSE 0 END), 0) unpaid_total "
+        "FROM invoices i LEFT JOIN ("
+        "SELECT ii.tenant_id, ii.invoice_id, SUM(ii.line_total) invoice_total "
+        "FROM invoice_items ii JOIN invoices scoped_i "
+        "ON scoped_i.id = ii.invoice_id AND scoped_i.tenant_id = ii.tenant_id "
+        "WHERE ii.tenant_id = @petcare_tenant_id AND scoped_i.customer_id = %s "
+        "GROUP BY ii.tenant_id, ii.invoice_id"
+        ") totals ON totals.invoice_id = i.id AND totals.tenant_id = i.tenant_id "
+        "LEFT JOIN (SELECT tenant_id, invoice_id, SUM(refund_total) refund_total "
+        "FROM invoice_refunds WHERE tenant_id = @petcare_tenant_id GROUP BY tenant_id, invoice_id) refunds "
+        "ON refunds.invoice_id = i.id AND refunds.tenant_id = i.tenant_id "
+        "WHERE i.tenant_id = @petcare_tenant_id AND i.customer_id = %s "
+        "GROUP BY i.currency_code ORDER BY i.currency_code",
+        (customer_id, customer_id),
+    )
+
+
+def list_customer_invoices_page(connection, customer_id, limit=25, offset=0):
+    return fetch_all(
+        connection,
+        "SELECT i.id, i.created_at, i.status, i.currency_code, i.paid_at, "
+        "COALESCE((SELECT SUM(ii.line_total) FROM invoice_items ii "
+        "WHERE ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id), 0) total_amount, "
+        "COALESCE((SELECT SUM(ir.refund_total) FROM invoice_refunds ir "
+        "WHERE ir.invoice_id = i.id AND ir.tenant_id = i.tenant_id), 0) refunded_amount, "
+        "(SELECT COUNT(*) FROM invoice_items ii "
+        "WHERE ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id) item_count "
+        "FROM invoices i WHERE i.tenant_id = @petcare_tenant_id AND i.customer_id = %s "
+        "ORDER BY i.created_at DESC, i.id DESC LIMIT %s OFFSET %s",
+        (customer_id, limit, offset),
+    )
+
+
 def create_customer(connection, full_name, phone, address):
     return execute(
         connection,

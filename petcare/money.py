@@ -86,3 +86,15 @@ def format_money(amount, code, locale="vi_VN"):
     number_format = "#,##0" + ("." + ("0" * precision) if precision else "")
     number = format_decimal(value, format=number_format, locale=locale)
     return f"{number}\u00a0{code}"
+
+
+def format_number(value, locale="vi_VN", pattern=None):
+    """Format a display number with locale separators and without float coercion."""
+    if value is None:
+        value = 0
+    return format_decimal(
+        value,
+        format=pattern,
+        locale=locale,
+        decimal_quantization=pattern is not None,
+    )

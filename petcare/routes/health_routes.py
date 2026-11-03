@@ -89,9 +89,31 @@ REQUIRED_COLUMNS = {
         "id", "tenant_id", "invoice_id", "item_type", "product_id", "pet_id",
         "item_code_snapshot", "name_snapshot", "unit_price", "quantity", "line_total",
     },
+    "invoice_refunds": {
+        "id", "tenant_id", "invoice_id", "created_by", "request_key", "created_at",
+        "method", "note", "currency_code", "refund_total",
+    },
+    "invoice_refund_items": {
+        "id", "tenant_id", "invoice_id", "refund_id", "invoice_item_id",
+        "item_type_snapshot", "item_code_snapshot", "item_name_snapshot", "quantity",
+        "unit_price", "refund_amount", "disposition",
+    },
     "stock_movements": {
         "id", "tenant_id", "product_id", "quantity_delta", "reason", "created_by",
-        "invoice_id", "created_at",
+        "invoice_id", "purchase_order_id", "purchase_order_item_id", "refund_id",
+        "refund_item_id", "created_at",
+    },
+    "suppliers": {
+        "id", "tenant_id", "name", "contact_name", "phone", "email", "address",
+        "active", "created_at", "updated_at",
+    },
+    "purchase_orders": {
+        "id", "tenant_id", "supplier_id", "supplier_name_snapshot", "created_by",
+        "created_at", "status", "currency_code", "total_amount", "note",
+    },
+    "purchase_order_items": {
+        "id", "tenant_id", "purchase_order_id", "product_id", "product_code_snapshot",
+        "product_name_snapshot", "unit_cost", "quantity_ordered", "quantity_received", "line_total",
     },
 }
 
@@ -113,10 +135,26 @@ REQUIRED_TENANT_FOREIGN_KEYS = {
     ("invoice_items", "fk_items_tenant_invoice"),
     ("invoice_items", "fk_items_tenant_product"),
     ("invoice_items", "fk_items_tenant_pet"),
+    ("invoice_refunds", "fk_invoice_refunds_tenant"),
+    ("invoice_refunds", "fk_invoice_refunds_invoice"),
+    ("invoice_refunds", "fk_invoice_refunds_creator"),
+    ("invoice_refund_items", "fk_invoice_refund_items_tenant"),
+    ("invoice_refund_items", "fk_invoice_refund_items_refund"),
+    ("invoice_refund_items", "fk_invoice_refund_items_invoice"),
+    ("invoice_refund_items", "fk_invoice_refund_items_invoice_line"),
     ("stock_movements", "fk_stock_tenant"),
     ("stock_movements", "fk_stock_tenant_product"),
     ("stock_movements", "fk_stock_tenant_user"),
     ("stock_movements", "fk_stock_tenant_invoice"),
+    ("stock_movements", "fk_stock_tenant_purchase_order"),
+    ("stock_movements", "fk_stock_tenant_purchase_order_item"),
+    ("suppliers", "fk_suppliers_tenant"),
+    ("purchase_orders", "fk_purchase_orders_tenant"),
+    ("purchase_orders", "fk_purchase_orders_supplier"),
+    ("purchase_orders", "fk_purchase_orders_creator"),
+    ("purchase_order_items", "fk_purchase_order_items_tenant"),
+    ("purchase_order_items", "fk_purchase_order_items_order"),
+    ("purchase_order_items", "fk_purchase_order_items_product"),
 }
 REQUIRED_GLOBAL_FOREIGN_KEYS = {
     ("account_tokens", "fk_account_tokens_user"),
@@ -163,10 +201,12 @@ def schema_contract_is_ready(cursor):
         return False
 
     cursor.execute(
-        "SELECT 1 FROM schema_migrations WHERE version = %s",
-        ("datetime_storage_utc_v1",),
+        "SELECT COUNT(DISTINCT version) FROM schema_migrations "
+        "WHERE version IN (%s, %s, %s)",
+        ("datetime_storage_utc_v1", "purchasing_orders_v1", "invoice_refunds_v1"),
     )
-    return cursor.fetchone() is not None
+    marker_count = cursor.fetchone()
+    return marker_count is not None and marker_count[0] == 3
 
 
 @bp.get("/healthz")

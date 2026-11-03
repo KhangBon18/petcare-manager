@@ -45,6 +45,35 @@ def get_product(connection, product_id, lock=False):
     )
 
 
+def get_products_by_ids(connection, product_ids, lock=False, active_only=False):
+    """Fetch a small, validated ID set in stable lock order for stock workflows."""
+    product_ids = sorted(set(product_ids))
+    if not product_ids:
+        return []
+    placeholders = ", ".join(["%s"] * len(product_ids))
+    active_sql = "AND active = 1" if active_only else ""
+    suffix = " FOR UPDATE" if lock else ""
+    return fetch_all(
+        connection,
+        "SELECT * FROM products WHERE tenant_id = @petcare_tenant_id "
+        f"AND id IN ({placeholders}) {active_sql} ORDER BY id{suffix}",
+        tuple(product_ids),
+    )
+
+
+def search_active_products_for_purchase(connection, search, limit=20):
+    """Prefix search keeps the purchase-order chooser bounded and tenant scoped."""
+    escaped = (search or "").replace("=", "==").replace("%", "=%").replace("_", "=_")
+    pattern = f"{escaped}%"
+    return fetch_all(
+        connection,
+        "SELECT id, code, name FROM products WHERE tenant_id = @petcare_tenant_id "
+        "AND active = 1 AND (code LIKE %s ESCAPE '=' OR name LIKE %s ESCAPE '=') "
+        "ORDER BY name, id LIMIT %s",
+        (pattern, pattern, limit),
+    )
+
+
 def has_photo(connection, filename):
     return fetch_one(
         connection,
@@ -102,22 +131,34 @@ def adjust_stock(connection, product_id, delta):
     )[1]
 
 
-def add_stock_movement(connection, product_id, delta, reason, actor_id, invoice_id=None):
+def add_stock_movement(
+    connection, product_id, delta, reason, actor_id, invoice_id=None,
+    purchase_order_id=None, purchase_order_item_id=None,
+    refund_id=None, refund_item_id=None,
+):
     execute(
         connection,
         "INSERT INTO stock_movements "
-        "(tenant_id, product_id, quantity_delta, reason, created_by, invoice_id) "
-        "VALUES (@petcare_tenant_id, %s, %s, %s, %s, %s)",
-        (product_id, delta, reason, actor_id, invoice_id),
+        "(tenant_id, product_id, quantity_delta, reason, created_by, invoice_id, "
+        "purchase_order_id, purchase_order_item_id, refund_id, refund_item_id) "
+        "VALUES (@petcare_tenant_id, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        (
+            product_id, delta, reason, actor_id, invoice_id,
+            purchase_order_id, purchase_order_item_id, refund_id, refund_item_id,
+        ),
     )
 
 
 def stock_history(connection, product_id):
     return fetch_all(
         connection,
-        "SELECT sm.*, u.full_name actor_name, i.id invoice_number "
+        "SELECT sm.*, u.full_name actor_name, i.id invoice_number, "
+        "po.id purchase_order_number, po.supplier_name_snapshot purchase_order_supplier_name, "
+        "ir.id refund_number "
         "FROM stock_movements sm JOIN users u ON u.id = sm.created_by "
         "LEFT JOIN invoices i ON i.id = sm.invoice_id AND i.tenant_id = sm.tenant_id "
+        "LEFT JOIN purchase_orders po ON po.id = sm.purchase_order_id AND po.tenant_id = sm.tenant_id "
+        "LEFT JOIN invoice_refunds ir ON ir.id = sm.refund_id AND ir.tenant_id = sm.tenant_id "
         "WHERE sm.product_id = %s AND sm.tenant_id = @petcare_tenant_id "
         "ORDER BY sm.created_at DESC, sm.id DESC LIMIT 100",
         (product_id,),

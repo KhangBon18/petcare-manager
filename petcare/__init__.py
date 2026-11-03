@@ -15,9 +15,10 @@ from petcare.money import (
     currency_precision,
     currency_step,
     format_money as render_money,
+    format_number as render_number,
     money_input_value,
 )
-from petcare.timezones import DEFAULT_TIMEZONE, format_tenant_datetime
+from petcare.timezones import DEFAULT_TIMEZONE, format_tenant_date, format_tenant_datetime
 from petcare.i18n import (
     LOCALE_LABELS,
     SUPPORTED_LOCALES,
@@ -243,13 +244,14 @@ def create_app(test_config=None):
     from petcare.routes.metrics_routes import bp as metrics_bp
     from petcare.routes.pet_routes import bp as pet_bp
     from petcare.routes.product_routes import bp as product_bp
+    from petcare.routes.purchasing_routes import bp as purchasing_bp
     from petcare.routes.report_routes import bp as report_bp
     from petcare.routes.store_routes import bp as store_bp
     from petcare.routes.user_routes import bp as user_bp
 
     for blueprint in (
         health_bp, metrics_bp, auth_bp, assistant_bp, main_bp, customer_bp, pet_bp, product_bp,
-        invoice_bp, report_bp, user_bp, audit_bp, account_bp, store_bp,
+        invoice_bp, purchasing_bp, report_bp, user_bp, audit_bp, account_bp, store_bp,
     ):
         app.register_blueprint(blueprint)
 
@@ -290,16 +292,22 @@ def create_app(test_config=None):
             return render_money(amount, code, locale)
         def format_datetime(value, date_format=None):
             zone = (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE)
-            if date_format is None:
-                date_format = "%b %d, %Y %H:%M" if current_locale() == "en" else "%d/%m/%Y %H:%M"
-            return format_tenant_datetime(value, zone, date_format)
+            return format_tenant_datetime(value, zone, date_format, current_locale())
+        def format_date(value):
+            return format_tenant_date(value, current_locale())
+        def format_number(value, pattern=None):
+            locale = "en_US" if current_locale() == "en" else "vi_VN"
+            return render_number(value, locale, pattern)
         def page_url(page):
             values = request.args.to_dict(flat=True)
+            values.update(request.view_args or {})
             values["page"] = page
             return url_for(request.endpoint, **values)
         return {
             "format_money": format_money,
             "format_datetime": format_datetime,
+            "format_date": format_date,
+            "format_number": format_number,
             "currency_precision": currency_precision,
             "currency_step": currency_step,
             "money_input_value": money_input_value,

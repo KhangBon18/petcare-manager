@@ -277,6 +277,17 @@ def set_inactive(connection, pet_id, inactive):
     )[1]
 
 
+def return_sold_pet(connection, pet_id, customer_id, sale_status):
+    """Clear sold ownership after a returned pet is checked back into the store."""
+    return execute(
+        connection,
+        "UPDATE pets SET sale_status = %s, buyer_id = NULL, sold_at = NULL "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND sale_status = 'sold' AND buyer_id = %s",
+        (sale_status, pet_id, customer_id),
+    )[1]
+
+
 def iter_filtered_for_image_search(connection, species="", status="available", batch_size=250):
     aliases = {"mèo": ("Mèo", "cat", "feline"), "cat": ("Mèo", "cat", "feline"),
                "chó": ("Chó", "dog", "canine"), "dog": ("Chó", "dog", "canine"),

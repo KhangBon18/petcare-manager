@@ -20,8 +20,7 @@ class AssistantRepositoryTests(unittest.TestCase):
         }
         summary_rows = [
             {"total": 4}, {"total": 101}, {"total": 251}, {"total": 7},
-            {"total": 1_500},
-            {"revenue_week": 12_000, "revenue_month": 99_000},
+            {"total": 1_500}, {"total": 12_000},
         ]
 
         with patch("petcare.repositories.assistant_repo.fetch_one", side_effect=summary_rows) as fetch_one, patch(
@@ -34,9 +33,8 @@ class AssistantRepositoryTests(unittest.TestCase):
 
         period_query = fetch_one.call_args_list[-1].args[1]
         period_params = fetch_one.call_args_list[-1].args[2]
-        self.assertIn("AS revenue_week", period_query)
-        self.assertIn("AS revenue_month", period_query)
-        self.assertEqual(period_params, (week_start, week_end, day_start, day_end))
+        self.assertIn("invoice_refunds", period_query)
+        self.assertEqual(period_params, (week_start, week_end, week_start, week_end))
         self.assertEqual(context["summary"]["revenue_week"], 12_000)
         self.assertNotIn("revenue_month", context["summary"])
         self.assertEqual(

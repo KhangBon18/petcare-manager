@@ -33,6 +33,38 @@ def get_customer(actor_id, customer_id):
     return customer
 
 
+def get_customer_profile(actor_id, customer_id, page="1"):
+    customer_id = positive_id(customer_id, "Khách hàng")
+    with read_connection() as connection:
+        require_actor(connection, actor_id)
+        customer = customer_repo.get_customer(connection, customer_id)
+        if not customer:
+            raise NotFoundError("Không tìm thấy khách hàng.")
+        total = customer_repo.count_customer_invoices(connection, customer_id)
+        _current_page, offset, pagination = page_window(page, total)
+        currencies = customer_repo.summarize_customer_invoices(connection, customer_id)
+        invoices = customer_repo.list_customer_invoices_page(
+            connection, customer_id, pagination["page_size"], offset
+        )
+
+    summary = {
+        "invoice_count": sum(int(row["invoice_count"] or 0) for row in currencies),
+        "paid_invoice_count": sum(
+            int(row["paid_invoice_count"] or 0) for row in currencies
+        ),
+        "unpaid_invoice_count": sum(
+            int(row["unpaid_invoice_count"] or 0) for row in currencies
+        ),
+        "currencies": currencies,
+    }
+    return {
+        "customer": customer,
+        "summary": summary,
+        "invoices": invoices,
+        "pagination": pagination,
+    }
+
+
 def _customer_data(data):
     values, errors = {}, {}
     validators = {

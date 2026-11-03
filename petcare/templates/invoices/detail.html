@@ -2,11 +2,128 @@
 {% from "partials/icons.html" import icon %}
 {% block title %}{{ t('Hóa đơn') }} #{{ invoice.id }}{% endblock %}
 {% block content %}
-<div class="page-heading compact-heading"><div><a class="back-link" href="{{ url_for('invoices.index') }}">← {{ t('Hóa đơn') }}</a><span class="eyebrow">{{ t('CHI TIẾT GIAO DỊCH') }}</span><h1>{{ t('Hóa đơn') }} <span class="invoice-number">#{{ '%06d'|format(invoice.id) }}</span></h1><p>{{ t('Khách hàng') }}: <strong>{{ invoice.customer_name }}</strong> · {{ invoice.customer_phone }}</p></div><span class="status-pill large-status {{ {'unpaid':'status-pending','paid':'status-active','cancelled':'status-muted'}[invoice.status] }}">{{ t({'unpaid':'Chưa thanh toán','paid':'Đã thanh toán','cancelled':'Đã hủy'}[invoice.status]) }}</span></div>
-<div class="invoice-detail-layout"><section class="panel"><div class="panel-heading"><div><span class="eyebrow">{{ t('MẶT HÀNG') }}</span><h2>{{ t('Chi tiết hóa đơn') }}</h2></div><span class="soft-badge">{{ format_datetime(invoice.created_at) if invoice.created_at else '' }}</span></div><div class="table-scroll"><table><thead><tr><th>{{ t('MÃ / TÊN') }}</th><th>{{ t('LOẠI') }}</th><th>{{ t('ĐƠN GIÁ') }}</th><th>{{ t('SỐ LƯỢNG') }}</th><th>{{ t('THÀNH TIỀN') }}</th></tr></thead><tbody>{% for item in invoice['items'] %}<tr><td><div class="product-cell"><span class="product-symbol">{{ icon('pets' if item.item_type == 'pet' else 'products') }}</span><div><strong>{{ item.name_snapshot }}</strong><small>{{ item.item_code_snapshot }}</small></div></div></td><td>{{ t('PET') if item.item_type == 'pet' else t('PRODUCT') }}</td><td>{{ format_money(item.unit_price, invoice.currency_code) }}</td><td>{{ item.quantity }}</td><td class="money-cell">{{ format_money(item.line_total, invoice.currency_code) }}</td></tr>{% endfor %}</tbody><tfoot><tr><td colspan="4">{{ t('Tổng cộng') }}</td><td class="money-cell total-cell">{{ format_money(invoice.total_amount, invoice.currency_code) }}</td></tr></tfoot></table></div>
-{% if invoice.note %}<div class="invoice-note"><strong>{{ t('Ghi chú') }}</strong><p>{{ invoice.note }}</p></div>{% endif %}
-<div class="invoice-meta"><span>{{ t('Lập bởi') }} <strong>{{ invoice.created_by_name }}</strong></span>{% if invoice.paid_at %}<span>{{ t('Thanh toán lúc') }} <strong>{{ format_datetime(invoice.paid_at) }}</strong></span>{% endif %}</div></section>
-<aside class="panel invoice-action-card"><span class="eyebrow">{{ t('THANH TOÁN') }}</span><div class="action-total">{{ format_money(invoice.total_amount, invoice.currency_code) }}</div><p class="muted">{% if invoice.status == 'unpaid' %}{{ t('Tồn kho và thú cưng chỉ cập nhật khi xác nhận thu tiền.') }}{% elif invoice.status == 'paid' %}{{ t('Giao dịch đã hoàn tất và không thể chỉnh sửa.') }}{% else %}{{ t('Hóa đơn đã hủy; số lượng tồn không thay đổi.') }}{% endif %}</p>
-{% if invoice.status == 'unpaid' %}<form method="post" action="{{ url_for('invoices.pay', invoice_id=invoice.id) }}" data-confirm="{{ t('Xác nhận đã thu') }} {{ format_money(invoice.total_amount, invoice.currency_code) }} {{ t('từ khách hàng?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-primary button-wide">{{ t('Xác nhận thanh toán') }} <span>→</span></button></form><form method="post" action="{{ url_for('invoices.cancel', invoice_id=invoice.id) }}" data-confirm="{{ t('Hủy hóa đơn chưa thanh toán này?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-light button-wide">{{ t('Hủy hóa đơn') }}</button></form>{% endif %}
-<a class="text-link centered-link" href="{{ url_for('invoices.index') }}">{{ t('Quay lại danh sách') }}</a></aside></div>
+<div class="page-heading compact-heading">
+  <div>
+    <a class="back-link" href="{{ url_for('invoices.index') }}">← {{ t('Hóa đơn') }}</a>
+    <span class="eyebrow">{{ t('CHI TIẾT GIAO DỊCH') }}</span>
+    <h1>{{ t('Hóa đơn') }} <span class="invoice-number">#{{ '%06d'|format(invoice.id) }}</span></h1>
+    <p>{{ t('Khách hàng') }}: <a class="customer-record-link" href="{{ url_for('customers.detail', customer_id=invoice.customer_id) }}">{{ invoice.customer_name }}</a> · {{ invoice.customer_phone }}</p>
+  </div>
+  <span class="status-pill large-status {{ {'unpaid':'status-pending','paid':'status-active','cancelled':'status-muted'}[invoice.status] }}">
+    {{ t({'unpaid':'Chưa thanh toán','paid':'Đã thanh toán','cancelled':'Đã hủy'}[invoice.status]) }}
+  </span>
+</div>
+
+<div class="invoice-detail-layout">
+  <section class="panel invoice-lines-panel">
+    <div class="panel-heading">
+      <div><span class="eyebrow">{{ t('MẶT HÀNG') }}</span><h2>{{ t('Chi tiết hóa đơn') }}</h2></div>
+      <span class="soft-badge">{{ format_datetime(invoice.created_at) if invoice.created_at else '' }}</span>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>{{ t('MÃ / TÊN') }}</th><th>{{ t('LOẠI') }}</th><th>{{ t('ĐƠN GIÁ') }}</th><th>{{ t('SỐ LƯỢNG') }}</th><th>{{ t('ĐÃ HOÀN') }}</th><th>{{ t('THÀNH TIỀN') }}</th></tr></thead>
+        <tbody>
+          {% for item in invoice['items'] %}
+          <tr>
+            <td><div class="product-cell"><span class="product-symbol">{{ icon('pets' if item.item_type == 'pet' else 'products') }}</span><div><strong>{{ item.name_snapshot }}</strong><small>{{ item.item_code_snapshot }}</small></div></div></td>
+            <td>{{ t('PET') if item.item_type == 'pet' else t('PRODUCT') }}</td>
+            <td>{{ format_money(item.unit_price, invoice.currency_code) }}</td>
+            <td>{{ format_number(item.quantity) }}</td>
+            <td>{% if item.refunded_quantity %}<span class="refund-quantity">{{ format_number(item.refunded_quantity) }} / {{ format_number(item.quantity) }}</span>{% else %}—{% endif %}</td>
+            <td class="money-cell">{{ format_money(item.line_total, invoice.currency_code) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot><tr><td colspan="5">{{ t('Tổng cộng') }}</td><td class="money-cell total-cell">{{ format_money(invoice.total_amount, invoice.currency_code) }}</td></tr></tfoot>
+      </table>
+    </div>
+    {% if invoice.note %}<div class="invoice-note"><strong>{{ t('Ghi chú') }}</strong><p>{{ invoice.note }}</p></div>{% endif %}
+    <div class="invoice-meta"><span>{{ t('Lập bởi') }} <strong>{{ invoice.created_by_name }}</strong></span>{% if invoice.paid_at %}<span>{{ t('Thanh toán lúc') }} <strong>{{ format_datetime(invoice.paid_at) }}</strong></span>{% endif %}</div>
+  </section>
+
+  <aside class="panel invoice-action-card">
+    <span class="eyebrow">{{ t('THANH TOÁN') }}</span>
+    <div class="action-total">{{ format_money(invoice.total_amount, invoice.currency_code) }}</div>
+    <p class="muted">
+      {% if invoice.status == 'unpaid' %}{{ t('Tồn kho và thú cưng chỉ cập nhật khi xác nhận thu tiền.') }}
+      {% elif invoice.status == 'paid' %}{{ t('Giao dịch đã hoàn tất; hóa đơn gốc không thể chỉnh sửa. Khoản hoàn được ghi riêng.') }}
+      {% else %}{{ t('Hóa đơn đã hủy; số lượng tồn không thay đổi.') }}{% endif %}
+    </p>
+    {% if invoice.status != 'paid' or g.user.role != 'admin' or invoice.refund_complete %}<button class="button button-light button-small invoice-assistant-trigger" type="button" data-assistant-open aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button>{% endif %}
+    {% if invoice.status == 'unpaid' %}
+      <form method="post" action="{{ url_for('invoices.pay', invoice_id=invoice.id) }}" data-confirm="{{ t('Xác nhận đã thu') }} {{ format_money(invoice.total_amount, invoice.currency_code) }} {{ t('từ khách hàng?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-primary button-wide">{{ t('Xác nhận thanh toán') }}</button></form>
+      <form method="post" action="{{ url_for('invoices.cancel', invoice_id=invoice.id) }}" data-confirm="{{ t('Hủy hóa đơn chưa thanh toán này?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-light button-wide">{{ t('Hủy hóa đơn') }}</button></form>
+    {% elif invoice.status == 'paid' %}
+      <div class="refund-totals" aria-label="{{ t('Tóm tắt hoàn tiền') }}">
+        <div><span>{{ t('Đã hoàn') }}</span><strong>{{ format_money(invoice.total_refunded, invoice.currency_code) }}</strong></div>
+        <div><span>{{ t('Doanh thu thuần') }}</span><strong>{{ format_money(invoice.net_paid, invoice.currency_code) }}</strong></div>
+      </div>
+      {% if g.user.role == 'admin' and not invoice.refund_complete %}
+        <form method="post" action="{{ url_for('invoices.refund', invoice_id=invoice.id) }}" class="form-stack refund-form" data-confirm="{{ t('Xác nhận ghi nhận khoản hoàn tiền này? Nhân viên cần thực hiện chi tiền hoặc chuyển khoản riêng.') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="request_key" value="{{ refund_request_key }}">
+          <div class="refund-form-heading"><strong>{{ t('Trả hàng và hoàn tiền') }}</strong><small>{{ t('Hóa đơn gốc được giữ nguyên để lưu lịch sử.') }}</small><button class="button button-light button-small invoice-assistant-trigger" type="button" data-assistant-open aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button></div>
+          {% for item in invoice['items'] %}
+            {% if item.refundable_quantity > 0 %}
+            <fieldset class="refund-line">
+              <legend>{{ item.name_snapshot }} <span>{{ t('Còn có thể hoàn') }}: {{ format_number(item.refundable_quantity) }}</span></legend>
+              <label>{{ t('Số lượng hoàn') }}
+                <input type="number" name="quantity_{{ item.id }}" value="0" min="0" max="{{ format_number(item.refundable_quantity) }}" step="1" inputmode="numeric">
+              </label>
+              <input type="hidden" name="invoice_item_id" value="{{ item.id }}">
+              <label>{{ t('Tình trạng hàng nhận lại') }}
+                <select name="disposition_{{ item.id }}">
+                  <option value="resell">{{ t('Nhận lại · có thể bán') }}</option>
+                  <option value="quarantine">{{ t('Nhận lại · cách ly / không bán') }}</option>
+                  <option value="not_returned">{{ t('Khách chưa trả hàng') }}</option>
+                </select>
+              </label>
+            </fieldset>
+            {% endif %}
+          {% endfor %}
+          <label>{{ t('Phương thức hoàn tiền') }}
+            <select name="method" required>
+              <option value="cash">{{ t('Tiền mặt') }}</option>
+              <option value="bank_transfer">{{ t('Chuyển khoản') }}</option>
+              <option value="card">{{ t('Thẻ') }}</option>
+              <option value="other">{{ t('Khác') }}</option>
+            </select>
+          </label>
+          <label>{{ t('Ghi chú hoàn tiền') }}<textarea name="note" rows="2" maxlength="300"></textarea></label>
+          <p class="refund-disclaimer">{{ t('Hệ thống ghi nhận và đối soát khoản hoàn; tiền mặt hoặc chuyển khoản cần được thực hiện riêng.') }}</p>
+          <button class="button button-primary button-wide" type="submit">{{ t('Ghi nhận hoàn tiền') }}</button>
+        </form>
+      {% elif invoice.refund_complete %}
+        <p class="refund-complete-note">{{ t('Tất cả số lượng trên hóa đơn đã được hoàn.') }}</p>
+      {% else %}
+        <p class="refund-disclaimer">{{ t('Chỉ quản trị viên được ghi nhận hoàn tiền.') }}</p>
+      {% endif %}
+    {% endif %}
+    <a class="text-link centered-link" href="{{ url_for('invoices.index') }}">{{ t('Quay lại danh sách') }}</a>
+  </aside>
+</div>
+
+{% if invoice.refunds %}
+<section class="panel refund-history-panel" aria-labelledby="refund-history-title">
+  <div class="panel-heading">
+    <div><span class="eyebrow">{{ t('ĐIỀU CHỈNH SAU THANH TOÁN') }}</span><h2 id="refund-history-title">{{ t('Lịch sử trả hàng và hoàn tiền') }}</h2></div>
+    <span class="soft-badge">{{ format_number(invoice.refunds|length) }} {{ t('lần hoàn') }}</span>
+  </div>
+  {% for refund in invoice.refunds %}
+    <article class="refund-record" id="refund-{{ refund.id }}">
+      <div class="refund-record-heading">
+        <div><strong>{{ t('Hoàn tiền') }} #{{ '%06d'|format(refund.id) }}</strong><small>{{ format_datetime(refund.created_at) }} · {{ t({'cash':'Tiền mặt','bank_transfer':'Chuyển khoản','card':'Thẻ','other':'Khác'}[refund.method]) }} · {{ t('Thực hiện bởi') }} {{ refund.creator_name }}</small></div>
+        <strong class="money-cell">−{{ format_money(refund.refund_total, refund.currency_code) }}</strong>
+      </div>
+      {% if refund.note %}<p class="refund-record-note">{{ refund.note }}</p>{% endif %}
+      <ul class="refund-item-list">
+        {% for item in refund['items'] %}
+          <li><span>{{ item.item_name_snapshot }} × {{ format_number(item.quantity) }} · {{ t({'resell':'Nhận lại để bán','quarantine':'Nhận lại và cách ly','not_returned':'Khách chưa trả hàng'}[item.disposition]) }}</span><strong>{{ format_money(item.refund_amount, refund.currency_code) }}</strong></li>
+        {% endfor %}
+      </ul>
+    </article>
+  {% endfor %}
+</section>
+{% endif %}
 {% endblock %}

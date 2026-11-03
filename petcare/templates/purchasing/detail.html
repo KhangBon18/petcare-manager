@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Đơn nhập') }} #{{ order.id }}{% endblock %}
+{% block content %}
+<div class="page-heading purchasing-detail-heading">
+  <div><a class="back-link" href="{{ url_for('purchasing.index') }}">← {{ t('Đơn nhập hàng') }}</a><span class="eyebrow">{{ t('ĐƠN NHẬP') }} #{{ '%06d'|format(order.id) }}</span><h1>{{ order.supplier_name_snapshot }}</h1><p>{{ t('Tạo lúc') }} {{ format_datetime(order.created_at) }} · {{ t('Người lập') }} {{ order.creator_name }}</p></div>
+  <span class="status-pill large-status purchase-status-{{ order.status }}">{% if order.status == 'ordered' %}{{ t('Đã đặt') }}{% elif order.status == 'partially_received' %}{{ t('Đang nhận dở') }}{% elif order.status == 'received' %}{{ t('Đã nhận đủ') }}{% else %}{{ t('Đã đóng') }}{% endif %}</span>
+</div>
+{% if order.status == 'cancelled' and order.received_units %}<div class="callout purchase-closed-note"><strong>{{ t('Đơn đã đóng sau khi nhận một phần.') }}</strong><p>{{ t('Số hàng đã nhận vẫn được cộng vào tồn kho; phần còn lại sẽ không thể nhận tiếp.') }}</p></div>{% endif %}
+<div class="purchase-detail-grid">
+  <section class="panel purchase-list-panel purchase-detail-lines">
+    <div class="panel-heading"><div><span class="eyebrow">{{ t('CHI TIẾT ĐƠN') }}</span><h2>{{ t('Các mặt hàng') }}</h2></div><span class="soft-badge">{{ order.received_units }} / {{ order.ordered_units }} {{ t('đơn vị đã nhận') }}</span></div>
+    <div class="table-scroll" tabindex="0" aria-label="{{ t('Chi tiết các mặt hàng trong đơn nhập') }}"><table class="purchase-table"><thead><tr><th>{{ t('SẢN PHẨM') }}</th><th>{{ t('GIÁ NHẬP') }}</th><th>{{ t('SỐ LƯỢNG') }}</th><th>{{ t('THÀNH TIỀN') }}</th></tr></thead><tbody>
+      {% for item in order['items'] %}<tr><td><strong>{{ item.product_name_snapshot }}</strong><small class="cell-hint">{{ item.product_code_snapshot }}{% if not item.product_active %} · {{ t('Đã ngừng bán') }}{% endif %}</small></td><td>{{ format_money(item.unit_cost, order.currency_code) }}</td><td><strong>{{ format_number(item.quantity_received) }} / {{ format_number(item.quantity_ordered) }}</strong><small class="cell-hint">{{ t('Tồn hiện tại') }}: {{ format_number(item.current_stock) }}</small></td><td class="money-cell">{{ format_money(item.line_total, order.currency_code) }}</td></tr>
+      {% else %}<tr><td colspan="4" class="muted-cell">{{ t('Đơn nhập chưa có mặt hàng.') }}</td></tr>{% endfor %}
+    </tbody><tfoot><tr><td colspan="3">{{ t('Tổng giá trị đã đặt') }}</td><td class="money-cell">{{ format_money(order.total_amount, order.currency_code) }}</td></tr></tfoot></table></div>
+    {% if order.note %}<div class="invoice-note"><strong>{{ t('Ghi chú') }}</strong><p>{{ order.note }}</p></div>{% endif %}
+  </section>
+  <aside class="purchase-action-column">
+    <section class="panel purchase-summary-card"><span class="eyebrow">{{ t('TÌNH TRẠNG NHẬN HÀNG') }}</span><strong class="purchase-summary-progress">{{ order.received_units }} <small>/ {{ order.ordered_units }}</small></strong><p>{{ t('đơn vị đã được ghi nhận vào kho') }}</p><progress class="purchase-progress" aria-label="{{ t('Tiến độ nhận hàng') }}" max="{{ order.ordered_units or 1 }}" value="{{ order.received_units }}"></progress><div class="purchase-summary-total"><span>{{ t('Giá trị đặt') }}</span><strong>{{ format_money(order.total_amount, order.currency_code) }}</strong></div></section>
+    {% if order.status in ('ordered', 'partially_received') %}
+    <section class="panel purchase-receive-card"><span class="eyebrow">{{ t('NHẬN HÀNG') }}</span><h2>{{ t('Ghi số lượng thực nhận') }}</h2><p>{{ t('Nhập số lượng nhận thêm cho từng dòng. Có thể nhận nhiều lần; tồn kho chỉ tăng đúng số đã xác nhận.') }}</p>
+      <form method="post" action="{{ url_for('purchasing.receive', purchase_order_id=order.id) }}" class="form-stack purchase-receive-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {% for item in order['items'] %}<div class="receive-line"><label for="receive-{{ item.id }}"><strong>{{ item.product_name_snapshot }}</strong><small>{{ t('Còn thiếu') }} {{ format_number(item.quantity_ordered - item.quantity_received) }}</small></label><input type="hidden" name="item_id[]" value="{{ item.id }}"><input id="receive-{{ item.id }}" name="quantity[]" type="number" min="0" max="{{ item.quantity_ordered - item.quantity_received }}" step="1" value="0" aria-label="{{ t('Số lượng nhận thêm') }} · {{ item.product_name_snapshot }}" {% if item.quantity_received >= item.quantity_ordered %}disabled{% endif %}></div>{% endfor %}
+        <button class="button button-primary button-wide" type="submit">{{ icon('check') }} {{ t('Xác nhận nhận hàng') }}</button>
+      </form>
+      <form method="post" action="{{ url_for('purchasing.cancel', purchase_order_id=order.id) }}" data-confirm="{{ t('Đóng đơn nhập và hủy phần hàng chưa nhận? Số đã nhận sẽ vẫn nằm trong tồn kho.') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-light button-wide purchase-cancel-button" type="submit">{{ t('Đóng phần còn lại') }}</button></form>
+    </section>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

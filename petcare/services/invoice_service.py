@@ -2,7 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from petcare.database.connection import read_connection, transaction
-from petcare.repositories import audit_repo, customer_repo, invoice_repo
+from petcare.repositories import audit_repo, customer_repo, invoice_repo, refund_repo
 from petcare.repositories.base import fetch_all, fetch_one
 from petcare.repositories.product_repo import add_stock_movement
 from petcare.services.common import (
@@ -39,10 +39,27 @@ def get_invoice(actor_id, invoice_id):
         require_actor(connection, actor_id)
         invoice = invoice_repo.get_invoice(connection, invoice_id)
         items = invoice_repo.list_items(connection, invoice_id) if invoice else []
+        refunds = refund_repo.list_invoice_refunds(connection, invoice_id) if invoice and invoice["status"] == "paid" else []
+        refund_items = refund_repo.list_invoice_refund_items(connection, invoice_id) if refunds else []
+        refunded_quantities = refund_repo.refunded_quantities(connection, invoice_id) if invoice and invoice["status"] == "paid" else {}
     if not invoice:
         raise NotFoundError("Không tìm thấy hóa đơn.")
     invoice["items"] = items
     invoice["total_amount"] = sum((item["line_total"] for item in items), Decimal("0"))
+    for item in items:
+        item["refunded_quantity"] = refunded_quantities.get(item["id"], 0)
+        item["refundable_quantity"] = max(0, item["quantity"] - item["refunded_quantity"])
+    refund_items_by_refund = defaultdict(list)
+    for item in refund_items:
+        refund_items_by_refund[item["refund_id"]].append(item)
+    for refund in refunds:
+        refund["items"] = refund_items_by_refund[refund["id"]]
+    invoice["refunds"] = refunds
+    invoice["total_refunded"] = sum((refund["refund_total"] for refund in refunds), Decimal("0"))
+    invoice["net_paid"] = invoice["total_amount"] - invoice["total_refunded"]
+    invoice["refund_complete"] = bool(items) and all(
+        item["refundable_quantity"] == 0 for item in items
+    )
     return invoice
 
 

@@ -34,6 +34,8 @@ TABLE_EXPORTS = (
      "WHERE tu.tenant_id = %s ORDER BY u.username"),
     ("customers.csv", "SELECT id, full_name, phone, address, active, created_at, updated_at "
      "FROM customers WHERE tenant_id = %s ORDER BY id"),
+    ("suppliers.csv", "SELECT id, name, contact_name, phone, email, address, active, created_at, updated_at "
+     "FROM suppliers WHERE tenant_id = %s ORDER BY id"),
     ("products.csv", "SELECT id, code, name, category, description, unit_price, stock_qty, "
      "reorder_level, photo_filename, active, created_at, updated_at "
      "FROM products WHERE tenant_id = %s ORDER BY id"),
@@ -45,7 +47,18 @@ TABLE_EXPORTS = (
     ("invoice_items.csv", "SELECT id, invoice_id, item_type, product_id, pet_id, item_code_snapshot, "
      "name_snapshot, unit_price, quantity, line_total FROM invoice_items "
      "WHERE tenant_id = %s ORDER BY invoice_id, id"),
-    ("stock_movements.csv", "SELECT id, product_id, quantity_delta, reason, created_by, invoice_id, created_at "
+    ("invoice_refunds.csv", "SELECT id, invoice_id, created_by, request_key, created_at, method, note, "
+     "currency_code, refund_total FROM invoice_refunds WHERE tenant_id = %s ORDER BY id"),
+    ("invoice_refund_items.csv", "SELECT id, invoice_id, refund_id, invoice_item_id, item_type_snapshot, "
+     "item_code_snapshot, item_name_snapshot, quantity, unit_price, refund_amount, disposition "
+     "FROM invoice_refund_items WHERE tenant_id = %s ORDER BY refund_id, id"),
+    ("purchase_orders.csv", "SELECT id, supplier_id, supplier_name_snapshot, created_by, created_at, "
+     "status, currency_code, total_amount, note FROM purchase_orders WHERE tenant_id = %s ORDER BY id"),
+    ("purchase_order_items.csv", "SELECT id, purchase_order_id, product_id, product_code_snapshot, "
+     "product_name_snapshot, unit_cost, quantity_ordered, quantity_received, line_total "
+     "FROM purchase_order_items WHERE tenant_id = %s ORDER BY purchase_order_id, id"),
+    ("stock_movements.csv", "SELECT id, product_id, quantity_delta, reason, created_by, invoice_id, "
+     "purchase_order_id, purchase_order_item_id, refund_id, refund_item_id, created_at "
      "FROM stock_movements WHERE tenant_id = %s ORDER BY id"),
     ("audit_events.csv", "SELECT e.id, u.username actor_username, e.event_type, e.entity_type, "
      "e.entity_id, e.summary, e.details, e.created_at FROM audit_events e "

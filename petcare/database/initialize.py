@@ -7,7 +7,11 @@ from petcare.database.tenancy import migrate_tenancy
 
 
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
+PURCHASING_SCHEMA_PATH = Path(__file__).with_name("purchasing.sql")
+REFUNDS_SCHEMA_PATH = Path(__file__).with_name("refunds.sql")
 UTC_DATETIME_MIGRATION = "datetime_storage_utc_v1"
+PURCHASING_MIGRATION = "purchasing_orders_v1"
+REFUNDS_MIGRATION = "invoice_refunds_v1"
 
 
 def migrate_datetime_storage_to_utc(cursor):
@@ -42,6 +46,151 @@ def migrate_datetime_storage_to_utc(cursor):
         (UTC_DATETIME_MIGRATION,),
     )
     return True
+
+
+def _migrate_purchasing_stock_links(cursor):
+    """Add optional purchase-order references to the existing stock ledger."""
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = 'stock_movements'"
+    )
+    columns = {row[0] for row in cursor.fetchall()}
+    for column_name, definition in (
+        ("purchase_order_id", "BIGINT UNSIGNED NULL AFTER invoice_id"),
+        ("purchase_order_item_id", "BIGINT UNSIGNED NULL AFTER purchase_order_id"),
+    ):
+        if column_name not in columns:
+            cursor.execute(
+                f"ALTER TABLE stock_movements ADD COLUMN {column_name} {definition}"
+            )
+
+    cursor.execute(
+        "SELECT index_name FROM information_schema.statistics "
+        "WHERE table_schema = DATABASE() AND table_name = 'stock_movements'"
+    )
+    indexes = {row[0] for row in cursor.fetchall()}
+    if "idx_stock_purchase_order" not in indexes:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD INDEX idx_stock_purchase_order "
+            "(tenant_id, purchase_order_id, created_at, id)"
+        )
+    if "idx_stock_purchase_order_item" not in indexes:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD INDEX idx_stock_purchase_order_item "
+            "(tenant_id, purchase_order_id, purchase_order_item_id)"
+        )
+
+    cursor.execute(
+        "SELECT constraint_name FROM information_schema.table_constraints "
+        "WHERE constraint_schema = DATABASE() AND table_name = 'stock_movements' "
+        "AND constraint_type IN ('FOREIGN KEY', 'CHECK')"
+    )
+    constraints = {row[0] for row in cursor.fetchall()}
+    if "fk_stock_tenant_purchase_order" not in constraints:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD CONSTRAINT fk_stock_tenant_purchase_order "
+            "FOREIGN KEY (tenant_id, purchase_order_id) "
+            "REFERENCES purchase_orders(tenant_id, id) ON DELETE RESTRICT"
+        )
+    if "fk_stock_tenant_purchase_order_item" not in constraints:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD CONSTRAINT fk_stock_tenant_purchase_order_item "
+            "FOREIGN KEY (tenant_id, purchase_order_id, purchase_order_item_id) "
+            "REFERENCES purchase_order_items(tenant_id, purchase_order_id, id) ON DELETE RESTRICT"
+        )
+    if not {"chk_stock_source_exclusive", "chk_stock_source_exclusive_v2"} & constraints:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD CONSTRAINT chk_stock_source_exclusive "
+            "CHECK ((purchase_order_id IS NULL AND purchase_order_item_id IS NULL) "
+            "OR (purchase_order_id IS NOT NULL AND purchase_order_item_id IS NOT NULL "
+            "AND invoice_id IS NULL AND quantity_delta > 0))"
+        )
+    cursor.execute(
+        "INSERT INTO schema_migrations (version) VALUES (%s) "
+        "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+        (PURCHASING_MIGRATION,),
+    )
+
+
+def _migrate_invoice_refunds(cursor):
+    """Create the immutable refund ledger and add its optional stock links."""
+    cursor.execute(
+        "SELECT index_name FROM information_schema.statistics "
+        "WHERE table_schema = DATABASE() AND table_name = 'invoice_items'"
+    )
+    invoice_item_indexes = {row[0] for row in cursor.fetchall()}
+    if "uq_invoice_items_tenant_invoice_id" not in invoice_item_indexes:
+        cursor.execute(
+            "ALTER TABLE invoice_items ADD UNIQUE KEY "
+            "uq_invoice_items_tenant_invoice_id (tenant_id, invoice_id, id)"
+        )
+
+    refund_statements = [
+        statement.strip()
+        for statement in REFUNDS_SCHEMA_PATH.read_text(encoding="utf-8").split(";")
+        if statement.strip()
+    ]
+    for statement in refund_statements:
+        cursor.execute(statement)
+
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = 'stock_movements'"
+    )
+    stock_columns = {row[0] for row in cursor.fetchall()}
+    for column_name, definition in (
+        ("refund_id", "BIGINT UNSIGNED NULL AFTER purchase_order_item_id"),
+        ("refund_item_id", "BIGINT UNSIGNED NULL AFTER refund_id"),
+    ):
+        if column_name not in stock_columns:
+            cursor.execute(
+                f"ALTER TABLE stock_movements ADD COLUMN {column_name} {definition}"
+            )
+
+    cursor.execute(
+        "SELECT index_name FROM information_schema.statistics "
+        "WHERE table_schema = DATABASE() AND table_name = 'stock_movements'"
+    )
+    stock_indexes = {row[0] for row in cursor.fetchall()}
+    if "idx_stock_refund" not in stock_indexes:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD INDEX idx_stock_refund "
+            "(tenant_id, refund_id, created_at, id)"
+        )
+
+    cursor.execute(
+        "SELECT constraint_name FROM information_schema.table_constraints "
+        "WHERE constraint_schema = DATABASE() AND table_name = 'stock_movements' "
+        "AND constraint_type IN ('FOREIGN KEY', 'CHECK')"
+    )
+    constraints = {row[0] for row in cursor.fetchall()}
+    if "fk_stock_tenant_refund_item" not in constraints:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD CONSTRAINT fk_stock_tenant_refund_item "
+            "FOREIGN KEY (tenant_id, invoice_id, refund_id, refund_item_id) "
+            "REFERENCES invoice_refund_items(tenant_id, invoice_id, refund_id, id) "
+            "ON DELETE RESTRICT"
+        )
+    if "chk_stock_source_exclusive_v2" not in constraints:
+        cursor.execute(
+            "ALTER TABLE stock_movements ADD CONSTRAINT chk_stock_source_exclusive_v2 "
+            "CHECK ((refund_id IS NULL AND refund_item_id IS NULL AND "
+            "((purchase_order_id IS NULL AND purchase_order_item_id IS NULL) OR "
+            "(purchase_order_id IS NOT NULL AND purchase_order_item_id IS NOT NULL "
+            "AND invoice_id IS NULL AND quantity_delta > 0))) OR "
+            "(refund_id IS NOT NULL AND refund_item_id IS NOT NULL AND invoice_id IS NOT NULL "
+            "AND purchase_order_id IS NULL AND purchase_order_item_id IS NULL "
+            "AND quantity_delta > 0))"
+        )
+    if "chk_stock_source_exclusive" in constraints:
+        cursor.execute(
+            "ALTER TABLE stock_movements DROP CHECK chk_stock_source_exclusive"
+        )
+    cursor.execute(
+        "INSERT INTO schema_migrations (version) VALUES (%s) "
+        "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+        (REFUNDS_MIGRATION,),
+    )
 
 
 def initialize_database():
@@ -287,6 +436,15 @@ def initialize_database():
             )
             migrate_datetime_storage_to_utc(cursor)
             migrate_tenancy(cursor)
+            purchasing_statements = [
+                statement.strip()
+                for statement in PURCHASING_SCHEMA_PATH.read_text(encoding="utf-8").split(";")
+                if statement.strip()
+            ]
+            for statement in purchasing_statements:
+                cursor.execute(statement)
+            _migrate_purchasing_stock_links(cursor)
+            _migrate_invoice_refunds(cursor)
         finally:
             cursor.close()
 

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Lập đơn nhập') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading purchasing-heading"><div><a class="back-link" href="{{ url_for('purchasing.index') }}">← {{ t('Đơn nhập hàng') }}</a><span class="eyebrow">{{ t('ĐẶT HÀNG VỚI NHÀ CUNG CẤP') }}</span><h1>{{ t('Lập đơn nhập') }}</h1><p>{{ t('Đơn chỉ ghi tăng tồn kho sau khi bạn xác nhận hàng thực nhận.') }}</p></div><div class="heading-actions"><button class="button button-light" type="button" data-assistant-open aria-expanded="false">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button></div></div>
+{% if not suppliers %}
+<section class="panel empty-state purchase-empty-supplier"><span class="empty-icon">{{ icon('team') }}</span><h2>{{ t('Cần thêm nhà cung cấp') }}</h2><p>{{ t('Tạo hồ sơ nhà cung cấp trước khi lập đơn nhập hàng.') }}</p><a class="button button-primary" href="{{ url_for('purchasing.supplier_create') }}">{{ t('Thêm nhà cung cấp') }}</a></section>
+{% else %}
+<form method="post" class="purchase-order-form" data-purchase-form data-product-search-url="{{ url_for('purchasing.products') }}" data-currency="{{ currency_code }}" data-loading="{{ t('Đang tìm sản phẩm...') }}" data-no-results="{{ t('Không tìm thấy sản phẩm phù hợp.') }}" data-search-error="{{ t('Không thể tải sản phẩm. Kiểm tra kết nối rồi thử lại.') }}" data-add="{{ t('Thêm') }}" data-added="{{ t('Đã có trong đơn') }}" data-line-limit="{{ t('Đã đạt giới hạn 100 dòng.') }}" data-empty-submit="{{ t('Thêm ít nhất một sản phẩm trước khi tạo đơn nhập.') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <section class="panel purchase-order-section purchase-order-meta">
+    <div class="panel-heading"><div><span class="eyebrow">{{ t('THÔNG TIN ĐƠN') }}</span><h2>{{ t('Nhà cung cấp và ghi chú') }}</h2></div></div>
+    <div class="purchase-fields">
+      <label>{{ t('Nhà cung cấp') }}<select name="supplier_id" required><option value="">{{ t('Chọn nhà cung cấp') }}</option>{% for supplier in suppliers %}<option value="{{ supplier.id }}" {% if request.form.get('supplier_id') == supplier.id|string %}selected{% endif %}>{{ supplier.name }}</option>{% endfor %}</select></label>
+      <label>{{ t('Ghi chú') }}<textarea name="note" maxlength="500" rows="2" placeholder="{{ t('Ngày giao dự kiến, điều kiện nhận hàng...') }}">{{ request.form.get('note', '') }}</textarea></label>
+    </div>
+  </section>
+
+  <section class="panel purchase-order-section">
+    <div class="panel-heading"><div><span class="eyebrow">{{ t('CHỌN MẶT HÀNG') }}</span><h2>{{ t('Tìm sản phẩm để thêm') }}</h2></div><span class="soft-badge">{{ t('Tối đa 100 dòng') }}</span></div>
+    <div class="purchase-product-search">
+      <label for="purchase-product-query">{{ t('Tên hoặc mã sản phẩm') }}</label>
+      <div class="purchase-search-control">{{ icon('search') }}<input id="purchase-product-query" type="search" maxlength="80" autocomplete="off" placeholder="{{ t('Nhập từ khóa để tìm sản phẩm đang bán') }}" data-product-query aria-controls="purchase-product-results"></div>
+      <p class="purchase-help" data-product-status role="status">{{ t('Đang tìm sản phẩm...') }}</p>
+      <div class="purchase-product-results" id="purchase-product-results" data-product-results aria-label="{{ t('Kết quả tìm sản phẩm') }}"></div>
+      <noscript><p class="purchase-help">{{ t('Bật JavaScript để tìm và thêm sản phẩm vào đơn.') }}</p></noscript>
+    </div>
+  </section>
+
+  <section class="panel purchase-order-section purchase-lines-panel">
+    <div class="panel-heading"><div><span class="eyebrow">{{ t('DÒNG HÀNG') }}</span><h2>{{ t('Sản phẩm đặt nhập') }}</h2></div><span class="soft-badge" data-line-count>{{ lines|length }} {{ t('mặt hàng') }}</span></div>
+    <div class="table-scroll purchase-lines-scroll"><table class="purchase-lines-table"><thead><tr><th>{{ t('SẢN PHẨM') }}</th><th>{{ t('SỐ LƯỢNG ĐẶT') }}</th><th>{{ t('GIÁ NHẬP') }} ({{ currency_code }})</th><th><span class="visually-hidden">{{ t('Thao tác') }}</span></th></tr></thead>
+      <tbody data-order-lines>
+        {% for line in lines %}<tr data-order-line>
+          <td><strong data-line-name>{{ line.label or t('Sản phẩm đã chọn') }}</strong><small class="cell-hint" data-line-code></small><input type="hidden" name="product_id[]" value="{{ line.product_id }}"><input type="hidden" name="product_label[]" value="{{ line.label }}"></td>
+          <td><label class="visually-hidden" for="order-quantity-{{ loop.index }}">{{ t('Số lượng đặt') }}</label><input id="order-quantity-{{ loop.index }}" name="quantity[]" type="number" min="1" max="2147483647" step="1" value="{{ line.quantity }}" required></td>
+          <td><label class="visually-hidden" for="order-cost-{{ loop.index }}">{{ t('Giá nhập') }}</label><input id="order-cost-{{ loop.index }}" name="unit_cost[]" type="number" min="0" step="{{ currency_step(currency_code) }}" value="{{ line.unit_cost }}" required></td>
+          <td><button class="remove-purchase-line" type="button" data-remove-line aria-label="{{ t('Xóa dòng sản phẩm') }}">×</button></td>
+        </tr>{% endfor %}
+      </tbody>
+    </table></div>
+    <div class="purchase-lines-empty" data-lines-empty {% if lines %}hidden{% endif %}><span>{{ icon('products') }}</span><strong>{{ t('Chưa có sản phẩm trong đơn') }}</strong><small>{{ t('Tìm và thêm các mặt hàng cần đặt nhập.') }}</small></div>
+    <div class="purchase-order-total"><span>{{ t('Tạm tính theo giá nhập') }}</span><strong data-order-estimate>{{ format_money(0, currency_code) }}</strong><small>{{ t('Tổng chính thức được tính lại khi lưu đơn.') }}</small></div>
+  </section>
+  <div class="purchase-submit-row"><a class="button button-light" href="{{ url_for('purchasing.index') }}">{{ t('Hủy') }}</a><button class="button button-primary" type="submit" {% if not suppliers %}disabled{% endif %}>{{ icon('check') }} {{ t('Tạo đơn nhập') }}</button></div>
+</form>
+<template id="purchase-line-template"><tr data-order-line>
+  <td><strong data-line-name></strong><small class="cell-hint" data-line-code></small><input type="hidden" name="product_id[]"><input type="hidden" name="product_label[]"></td>
+  <td><label class="visually-hidden" data-quantity-label>{{ t('Số lượng đặt') }}</label><input name="quantity[]" type="number" min="1" max="2147483647" step="1" value="1" required></td>
+  <td><label class="visually-hidden" data-cost-label>{{ t('Giá nhập') }}</label><input name="unit_cost[]" type="number" min="0" step="{{ currency_step(currency_code) }}" value="0" required></td>
+  <td><button class="remove-purchase-line" type="button" data-remove-line aria-label="{{ t('Xóa dòng sản phẩm') }}">×</button></td>
+</tr></template>
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='js/purchasing.js') }}" defer></script>{% endblock %}

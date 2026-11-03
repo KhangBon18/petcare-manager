@@ -3,6 +3,20 @@
 from petcare.repositories.base import fetch_all, fetch_one
 
 
+def _net_revenue(connection, start_at, end_at):
+    return fetch_one(
+        connection,
+        "SELECT COALESCE(SUM(amount), 0) total FROM ("
+        "SELECT ii.line_total amount FROM invoices i JOIN invoice_items ii "
+        "ON ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id "
+        "WHERE i.tenant_id = @petcare_tenant_id AND i.status = 'paid' "
+        "AND i.paid_at >= %s AND i.paid_at < %s UNION ALL "
+        "SELECT -ir.refund_total amount FROM invoice_refunds ir "
+        "WHERE ir.tenant_id = @petcare_tenant_id AND ir.created_at >= %s AND ir.created_at < %s) activity",
+        (start_at, end_at, start_at, end_at),
+    )["total"]
+
+
 def shop_context(connection, day_start_utc, day_end_utc, period_windows=None):
     dashboard = {
         "active_customers": fetch_one(
@@ -19,37 +33,13 @@ def shop_context(connection, day_start_utc, day_end_utc, period_windows=None):
             "SELECT COUNT(*) total FROM products WHERE tenant_id = @petcare_tenant_id "
             "AND active = 1 AND stock_qty <= reorder_level",
         )["total"],
-        "revenue_today": fetch_one(
-            connection,
-            "SELECT COALESCE(SUM(ii.line_total), 0) total "
-            "FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id "
-            "WHERE i.tenant_id = @petcare_tenant_id AND i.status = 'paid' "
-            "AND i.paid_at >= %s AND i.paid_at < %s",
-            (day_start_utc, day_end_utc),
-        )["total"],
+        "revenue_today": _net_revenue(connection, day_start_utc, day_end_utc),
     }
     if period_windows:
-        # Keep the query text static; the optional period keys are a closed
-        # set, but dynamic SQL still makes security review harder and trips
-        # static scanners. A missing period uses today's window and is ignored
-        # when copying results into the returned context.
-        fallback = (day_start_utc, day_end_utc)
-        week_start, week_end = period_windows.get("week", fallback)
-        month_start, month_end = period_windows.get("month", fallback)
-        periods = fetch_one(
-            connection,
-            "SELECT "
-            "COALESCE(SUM(CASE WHEN i.paid_at >= %s AND i.paid_at < %s "
-            "THEN ii.line_total ELSE 0 END), 0) AS revenue_week, "
-            "COALESCE(SUM(CASE WHEN i.paid_at >= %s AND i.paid_at < %s "
-            "THEN ii.line_total ELSE 0 END), 0) AS revenue_month "
-            "FROM invoices i JOIN invoice_items ii ON ii.invoice_id = i.id AND ii.tenant_id = i.tenant_id "
-            "WHERE i.tenant_id = @petcare_tenant_id AND i.status = 'paid'",
-            (week_start, week_end, month_start, month_end),
-        )
         for key in period_windows:
             if key in {"week", "month"}:
-                dashboard[f"revenue_{key}"] = periods[f"revenue_{key}"]
+                start_at, end_at = period_windows[key]
+                dashboard[f"revenue_{key}"] = _net_revenue(connection, start_at, end_at)
     low_stock = fetch_all(
         connection,
         "SELECT code, name, category, unit_price, stock_qty, reorder_level FROM products "

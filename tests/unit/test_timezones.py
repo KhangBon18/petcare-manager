@@ -3,6 +3,7 @@ from datetime import date, datetime
 
 from petcare.timezones import (
     TimezoneError,
+    format_tenant_date,
     format_tenant_datetime,
     normalize_timezone_name,
     utc_window_for_local_day,
@@ -37,6 +38,21 @@ class TenantTimezoneTests(unittest.TestCase):
         self.assertEqual(
             format_tenant_datetime(datetime(2026, 10, 18, 6, 30), "America/Los_Angeles"),
             "17/10/2026 23:30",
+        )
+
+    def test_date_and_timestamp_follow_the_selected_interface_locale(self):
+        value = datetime(2026, 10, 18, 6, 30)
+        self.assertEqual(format_tenant_date(date(2026, 10, 17), "vi"), "17/10/2026")
+        self.assertEqual(format_tenant_date("2026-10-17", "en"), "Oct 17, 2026")
+        self.assertEqual(
+            format_tenant_datetime(value, "America/Los_Angeles", locale="en"),
+            "Oct 17, 2026 11:30 PM",
+        )
+        self.assertEqual(
+            format_tenant_datetime(
+                "2026-10-18T06:30:00+00:00", "America/Los_Angeles", locale="en"
+            ),
+            "Oct 17, 2026 11:30 PM",
         )
 
 

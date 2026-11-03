@@ -16,7 +16,7 @@ from petcare.database.initialize import initialize_database
 from petcare.database.seed import seed_database
 from petcare.repositories import product_repo
 from petcare.repositories.base import fetch_all, fetch_one
-from petcare.services import customer_service, invoice_service, pet_service, product_service, report_service
+from petcare.services import customer_service, invoice_service, pet_service, product_service, refund_service, report_service
 from petcare.services.exceptions import ConflictError, ValidationError
 
 
@@ -60,6 +60,8 @@ class MySQLSalesIntegrationTests(unittest.TestCase):
             try:
                 for invoice_id in self.invoice_ids:
                     cursor.execute("DELETE FROM stock_movements WHERE invoice_id = %s", (invoice_id,))
+                    cursor.execute("DELETE FROM invoice_refund_items WHERE invoice_id = %s", (invoice_id,))
+                    cursor.execute("DELETE FROM invoice_refunds WHERE invoice_id = %s", (invoice_id,))
                     cursor.execute("DELETE FROM invoice_items WHERE invoice_id = %s", (invoice_id,))
                     cursor.execute("DELETE FROM invoices WHERE id = %s", (invoice_id,))
                 for product_id in self.product_ids:
@@ -135,6 +137,74 @@ class MySQLSalesIntegrationTests(unittest.TestCase):
         self.assertEqual(movements["total"], 1)
         self.assertEqual(pet_after["sale_status"], "sold")
         self.assertEqual(pet_after["buyer_id"], self.customer_id)
+
+    def test_partial_refund_is_idempotent_and_net_revenue_uses_refund_date(self):
+        product_id = self._product(3)
+        invoice_id = self._invoice([
+            {"item_type": "product", "item_id": str(product_id), "quantity": "2"}
+        ])
+        before = report_service.report(self.admin_id, date.today().isoformat(), date.today().isoformat())
+        self.assertEqual(invoice_service.pay_invoice(self.admin_id, invoice_id), "paid")
+        invoice = invoice_service.get_invoice(self.admin_id, invoice_id)
+        line_id = invoice["items"][0]["id"]
+        request = {
+            "request_key": str(uuid4()), "method": "cash", "note": "Partial return",
+        }
+        result = refund_service.refund_invoice(
+            self.admin_id, invoice_id, request,
+            [{"invoice_item_id": str(line_id), "quantity": "1", "disposition": "resell"}],
+        )
+        self.assertEqual(result["status"], "refunded")
+        repeated = refund_service.refund_invoice(
+            self.admin_id, invoice_id, request,
+            [{"invoice_item_id": str(line_id), "quantity": "1", "disposition": "resell"}],
+        )
+        self.assertEqual(repeated, {"status": "already_recorded", "refund_id": result["refund_id"]})
+        with get_connection() as connection:
+            product = fetch_one(connection, "SELECT stock_qty FROM products WHERE id = %s", (product_id,))
+            invoice_state = fetch_one(connection, "SELECT status FROM invoices WHERE id = %s", (invoice_id,))
+            refund_link = fetch_one(
+                connection,
+                "SELECT COUNT(*) total, SUM(quantity_delta) quantity FROM stock_movements "
+                "WHERE invoice_id = %s AND refund_id = %s",
+                (invoice_id, result["refund_id"]),
+            )
+        after = report_service.report(self.admin_id, date.today().isoformat(), date.today().isoformat())
+        self.assertEqual(product["stock_qty"], 2)
+        self.assertEqual(invoice_state["status"], "paid")
+        self.assertEqual(refund_link, {"total": 1, "quantity": 1})
+        self.assertEqual(after["summary"]["revenue"] - before["summary"]["revenue"], 100_000)
+        self.assertEqual(invoice_service.get_invoice(self.admin_id, invoice_id)["items"][0]["refundable_quantity"], 1)
+        with self.assertRaisesRegex(ConflictError, "vượt số còn có thể hoàn"):
+            refund_service.refund_invoice(
+                self.admin_id, invoice_id,
+                {"request_key": str(uuid4()), "method": "cash", "note": ""},
+                [{"invoice_item_id": str(line_id), "quantity": "2", "disposition": "resell"}],
+            )
+
+    def test_returned_pet_is_removed_from_buyer_and_quarantined(self):
+        pet_id = self._pet()
+        invoice_id = self._invoice([
+            {"item_type": "pet", "item_id": str(pet_id), "quantity": "1"}
+        ])
+        invoice_service.pay_invoice(self.admin_id, invoice_id)
+        line_id = invoice_service.get_invoice(self.admin_id, invoice_id)["items"][0]["id"]
+        result = refund_service.refund_invoice(
+            self.admin_id, invoice_id,
+            {"request_key": str(uuid4()), "method": "bank_transfer", "note": "Returned to store"},
+            [{"invoice_item_id": str(line_id), "quantity": "1", "disposition": "quarantine"}],
+        )
+        with get_connection() as connection:
+            pet = fetch_one(
+                connection, "SELECT sale_status, buyer_id, sold_at FROM pets WHERE id = %s", (pet_id,)
+            )
+            refund_line = fetch_one(
+                connection, "SELECT disposition, refund_amount FROM invoice_refund_items WHERE refund_id = %s",
+                (result["refund_id"],),
+            )
+        self.assertEqual(pet, {"sale_status": "inactive", "buyer_id": None, "sold_at": None})
+        self.assertEqual(refund_line["disposition"], "quarantine")
+        self.assertEqual(refund_line["refund_amount"], Decimal("2000000.0000"))
 
     def test_report_uses_store_local_day_across_dst_boundary(self):
         product_id = self._product(3)

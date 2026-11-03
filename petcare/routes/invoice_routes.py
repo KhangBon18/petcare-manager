@@ -1,10 +1,11 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from flask import Blueprint, flash, g, jsonify, redirect, render_template, request, url_for
 
-from petcare.auth import login_required
+from petcare.auth import admin_required, login_required
 from petcare.i18n import translate
-from petcare.services import customer_service, invoice_service, pet_service, product_service
+from petcare.services import customer_service, invoice_service, pet_service, product_service, refund_service
 from petcare.services.exceptions import NotFoundError, ServiceError, ValidationError
 
 bp = Blueprint("invoices", __name__, url_prefix="/invoices")
@@ -58,7 +59,11 @@ def create():
     pet_listing = pet_service.list_pets(g.user["id"], status="available", page="1")
     # Restore selections even when their records are outside the first lookup
     # page. These service calls enforce tenant scope and never trust posted prices.
-    selected_customer = request.form.get("customer_id", "")
+    selected_customer = (
+        request.form.get("customer_id", "")
+        if request.method == "POST"
+        else request.args.get("customer_id", "")
+    )
     if selected_customer and not any(
         str(row["id"]) == selected_customer for row in customer_listing["items"]
     ):
@@ -90,6 +95,11 @@ def create():
          "quantity": quantities[index] if index < len(quantities) else ""}
         for index in range(max(len(selections), len(quantities)))
     ] or [{"selection": "", "quantity": "1"}]
+    form_data = (
+        request.form
+        if request.method == "POST"
+        else {"customer_id": selected_customer}
+    )
     return render_template(
         "invoices/form.html",
         customers=customer_listing["items"],
@@ -99,7 +109,7 @@ def create():
         pets=pet_listing["items"],
         pet_pagination=pet_listing["pagination"],
         currency_code=g.tenant["default_currency"],
-        form_data=request.form, form_lines=form_lines,
+        form_data=form_data, form_lines=form_lines,
         errors=errors, form_error=form_error,
     )
 
@@ -177,7 +187,34 @@ def detail(invoice_id):
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("invoices.index"))
-    return render_template("invoices/detail.html", invoice=invoice)
+    return render_template(
+        "invoices/detail.html", invoice=invoice, refund_request_key=str(uuid4())
+    )
+
+
+@bp.post("/<int:invoice_id>/refund")
+@admin_required
+def refund(invoice_id):
+    invoice_item_ids = request.form.getlist("invoice_item_id")
+    lines = [
+        {
+            "invoice_item_id": item_id,
+            "quantity": request.form.get(f"quantity_{item_id}", "0"),
+            "disposition": request.form.get(f"disposition_{item_id}", ""),
+        }
+        for item_id in invoice_item_ids
+    ]
+    try:
+        result = refund_service.refund_invoice(
+            g.user["id"], invoice_id, request.form, lines
+        )
+        if result["status"] == "already_recorded":
+            flash("Yêu cầu này đã được ghi nhận trước đó; không tạo khoản hoàn trùng.", "info")
+        else:
+            flash("Đã ghi nhận hoàn tiền và cập nhật tình trạng hàng trả.", "success")
+    except ServiceError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("invoices.detail", invoice_id=invoice_id))
 
 
 @bp.post("/<int:invoice_id>/pay")

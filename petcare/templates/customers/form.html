@@ -10,7 +10,7 @@
 {{ error_summary(form_error|default(None)) }}
 <div class="form-grid">
   <label class="field-wide">{{ t('Họ và tên') }}
-    <input name="full_name" id="full_name" value="{{ form_data.get('full_name', '') }}" maxlength="160" required {% if not form_error|default(None) %}autofocus{% endif %} {{ invalid('full_name', errors) }} placeholder="{{ t('Ví dụ: Nguyễn Thị Lan') }}">
+    <input name="full_name" id="full_name" value="{{ form_data.get('full_name', '') }}" maxlength="160" required {{ invalid('full_name', errors) }} placeholder="{{ t('Ví dụ: Nguyễn Thị Lan') }}">
     {{ field_error('full_name', errors) }}
   </label>
   <label>{{ t('Số điện thoại') }}

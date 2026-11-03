@@ -7,9 +7,14 @@ _EMPTY_TENANT_TABLES = (
     "tenant_invitations",
     "customers",
     "products",
+    "suppliers",
     "pets",
     "invoices",
     "invoice_items",
+    "invoice_refunds",
+    "invoice_refund_items",
+    "purchase_orders",
+    "purchase_order_items",
     "stock_movements",
 )
 

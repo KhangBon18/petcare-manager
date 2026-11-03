@@ -23,6 +23,19 @@ def index():
     )
 
 
+@bp.get("/<int:customer_id>")
+@login_required
+def detail(customer_id):
+    try:
+        profile = customer_service.get_customer_profile(
+            g.user["id"], customer_id, page=request.args.get("page", "1")
+        )
+    except ServiceError as exc:
+        flash(str(exc), "error")
+        return redirect(url_for("customers.index"))
+    return render_template("customers/detail.html", **profile)
+
+
 @bp.route("/new", methods=["GET", "POST"])
 @login_required
 def create():

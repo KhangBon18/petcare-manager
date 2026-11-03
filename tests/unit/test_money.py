@@ -7,6 +7,7 @@ from petcare.money import (
     currency_precision,
     currency_step,
     format_money,
+    format_number,
     money_input_value,
     normalize_currency_code,
     parse_money,
@@ -57,6 +58,12 @@ class CurrencyTests(unittest.TestCase):
             money_value("5.101", "Price", "USD")
         self.assertIn("USD", format_money(Decimal("1234.50"), "USD"))
         self.assertIn("VND", format_money(1234, "VND"))
+
+    def test_display_numbers_use_locale_separators_and_optional_precision(self):
+        value = Decimal("1234567.1250")
+        self.assertEqual(format_number(value, "en_US"), "1,234,567.125")
+        self.assertEqual(format_number(value, "vi_VN"), "1.234.567,125")
+        self.assertEqual(format_number(value, "vi_VN", "#,##0.0"), "1.234.567,1")
 
 
 if __name__ == "__main__":

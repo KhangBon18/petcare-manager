@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ customer.full_name }} · {{ t('Khách hàng') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading customer-profile-heading">
+  <div>
+    <a class="back-link" href="{{ url_for('customers.index') }}">← {{ t('Khách hàng') }}</a>
+    <span class="eyebrow">{{ t('HỒ SƠ KHÁCH HÀNG') }}</span>
+    <h1>{{ customer.full_name }}</h1>
+    <p>{{ t('Hồ sơ liên hệ và lịch sử mua hàng của khách.') }}</p>
+  </div>
+  <div class="heading-actions">
+    {% if customer.active %}<a class="button button-secondary" href="{{ url_for('invoices.create', customer_id=customer.id) }}">{{ icon('invoice') }} {{ t('Lập hóa đơn') }}</a>{% endif %}
+    <a class="button button-primary" href="{{ url_for('customers.edit', customer_id=customer.id) }}">{{ t('Sửa thông tin') }}</a>
+  </div>
+</div>
+
+<div class="customer-profile-grid">
+  <section class="panel customer-contact-card" aria-label="{{ t('Thông tin liên hệ') }}">
+    <div class="customer-identity">
+      <span class="avatar customer-profile-avatar" aria-hidden="true">{{ customer.full_name[:1]|upper }}</span>
+      <div>
+        <h2>{{ customer.full_name }}</h2>
+        <span class="status-pill {{ 'status-active' if customer.active else 'status-muted' }}">{{ t('Đang dùng') if customer.active else t('Đã ngừng') }}</span>
+      </div>
+    </div>
+    <dl class="customer-contact-list">
+      <div><dt>{{ t('Số điện thoại') }}</dt><dd><a href="tel:{{ customer.phone|replace(' ', '')|replace('-', '')|replace('(', '')|replace(')', '')|replace('.', '') }}">{{ customer.phone }}</a></dd></div>
+      <div><dt>{{ t('Địa chỉ') }}</dt><dd>{{ customer.address or '—' }}</dd></div>
+      <div><dt>{{ t('Ngày tạo hồ sơ') }}</dt><dd>{{ format_datetime(customer.created_at) if customer.created_at else '—' }}</dd></div>
+    </dl>
+  </section>
+
+  <section class="customer-stat-grid" aria-label="{{ t('Tóm tắt mua hàng') }}">
+    <article class="stat-card stat-blue"><span class="customer-stat-label">{{ t('Tổng hóa đơn') }}</span><strong>{{ format_number(summary.invoice_count) }}</strong><small>{{ t('Bao gồm hóa đơn đã hủy') }}</small></article>
+    <article class="stat-card stat-mint"><span class="customer-stat-label">{{ t('Đã thanh toán') }}</span><strong>{{ format_number(summary.paid_invoice_count) }}</strong><small>{{ t('Giao dịch hoàn tất') }}</small></article>
+    <article class="stat-card stat-peach"><span class="customer-stat-label">{{ t('Chưa thanh toán') }}</span><strong>{{ format_number(summary.unpaid_invoice_count) }}</strong><small>{{ t('Cần theo dõi') }}</small></article>
+  </section>
+</div>
+
+<section class="panel customer-money-panel" aria-labelledby="customer-money-title">
+  <div class="panel-heading">
+    <div><span class="eyebrow">{{ t('TỔNG CHI TIÊU') }}</span><h2 id="customer-money-title">{{ t('Tổng tiền theo tiền tệ') }}</h2></div>
+    <small class="muted">{{ t('Không quy đổi giữa các loại tiền.') }}</small>
+  </div>
+  {% if summary.currencies %}
+  <div class="table-scroll"><table>
+    <thead><tr><th>{{ t('Tiền tệ') }}</th><th>{{ t('Đã thanh toán') }}</th><th>{{ t('Chưa thanh toán') }}</th></tr></thead>
+    <tbody>{% for currency in summary.currencies %}<tr><td><span class="soft-badge">{{ currency.currency_code }}</span></td><td class="money-cell">{{ format_money(currency.paid_total, currency.currency_code) }}</td><td class="money-cell">{{ format_money(currency.unpaid_total, currency.currency_code) }}</td></tr>{% endfor %}</tbody>
+  </table></div>
+  <p class="customer-money-note">{{ t('Hóa đơn đã hủy không được tính vào số tiền.') }}</p>
+  {% else %}
+  <p class="customer-panel-empty">{{ t('Khách hàng chưa có giao dịch.') }}</p>
+  {% endif %}
+</section>
+
+<section class="panel customer-history-panel" aria-labelledby="customer-history-title">
+  <div class="panel-heading">
+    <div><span class="eyebrow">{{ t('GIAO DỊCH') }}</span><h2 id="customer-history-title">{{ t('Lịch sử hóa đơn') }}</h2></div>
+    <span class="soft-badge">{{ format_number(pagination.total) }} {{ t('hóa đơn') }}</span>
+  </div>
+  <div class="table-scroll"><table>
+    <thead><tr><th>{{ t('MÃ HÓA ĐƠN') }}</th><th>{{ t('NGÀY TẠO') }}</th><th>{{ t('Mặt hàng') }}</th><th>{{ t('TỔNG CỘNG') }}</th><th>{{ t('ĐÃ HOÀN') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th>{{ t('Thanh toán lúc') }}</th></tr></thead>
+    <tbody>
+      {% for invoice in invoices %}
+      <tr>
+        <td><a class="invoice-number" href="{{ url_for('invoices.detail', invoice_id=invoice.id) }}">#{{ '%06d'|format(invoice.id) }}</a></td>
+        <td>{{ format_datetime(invoice.created_at) if invoice.created_at else '—' }}</td>
+        <td>{{ format_number(invoice.item_count) }}</td>
+        <td class="money-cell">{{ format_money(invoice.total_amount, invoice.currency_code) }}</td>
+        <td class="money-cell">{% if invoice.refunded_amount %}{{ format_money(invoice.refunded_amount, invoice.currency_code) }}{% else %}—{% endif %}</td>
+        <td><span class="status-pill {{ {'unpaid':'status-pending','paid':'status-active','cancelled':'status-muted'}[invoice.status] }}">{{ t({'unpaid':'Chưa thanh toán','paid':'Đã thanh toán','cancelled':'Đã hủy'}[invoice.status]) }}</span></td>
+        <td>{{ format_datetime(invoice.paid_at) if invoice.paid_at else '—' }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7"><div class="table-empty"><span>{{ icon('invoice') }}</span><strong>{{ t('Chưa có hóa đơn') }}</strong><small>{{ t('Lịch sử hóa đơn sẽ hiển thị tại đây sau khi lập giao dịch cho khách hàng.') }}</small></div></td></tr>
+      {% endfor %}
+    </tbody>
+  </table></div>
+  {% include "pagination.html" %}
+</section>
+{% endblock %}

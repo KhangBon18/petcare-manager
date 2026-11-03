@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Thông tin nhà cung cấp') }}{% endblock %}
+{% block content %}
+<div class="page-heading compact-heading purchasing-heading"><div><a class="back-link" href="{{ url_for('purchasing.suppliers_index') }}">← {{ t('Nhà cung cấp') }}</a><span class="eyebrow">{{ t('ĐỐI TÁC CUNG ỨNG') }}</span><h1>{{ t('Cập nhật nhà cung cấp') if supplier else t('Thêm nhà cung cấp') }}</h1><p>{{ t('Các đơn nhập đã lập sẽ giữ ảnh chụp tên nhà cung cấp tại thời điểm tạo.') }}</p></div></div>
+<section class="panel form-card supplier-form-card">
+  <div class="panel-heading"><div><span class="eyebrow">{{ t('THÔNG TIN LIÊN HỆ') }}</span><h2>{{ request.form.get('name', supplier.name if supplier else '') or t('Nhà cung cấp mới') }}</h2></div></div>
+  <form method="post" class="form-stack"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="form-grid">
+    <label>{{ t('Tên nhà cung cấp') }}<input name="name" maxlength="160" required value="{{ request.form.get('name', supplier.name if supplier else '') }}" autocomplete="organization"></label>
+    <label>{{ t('Người liên hệ') }}<input name="contact_name" maxlength="160" value="{{ request.form.get('contact_name', supplier.contact_name if supplier else '') }}" autocomplete="name"></label>
+    <label>{{ t('Số điện thoại') }}<input name="phone" maxlength="32" type="tel" value="{{ request.form.get('phone', supplier.phone if supplier else '') }}" autocomplete="tel"><small>{{ t('Có thể để trống nếu chưa có thông tin.') }}</small></label>
+    <label>{{ t('Email') }}<input name="email" maxlength="254" type="email" value="{{ request.form.get('email', supplier.email if supplier else '') }}" autocomplete="email"></label>
+    <label class="field-wide">{{ t('Địa chỉ') }}<input name="address" maxlength="255" value="{{ request.form.get('address', supplier.address if supplier else '') }}" autocomplete="street-address"></label>
+  </div><div class="form-actions"><a class="button button-light" href="{{ url_for('purchasing.suppliers_index') }}">{{ t('Hủy') }}</a><button class="button button-primary">{{ t('Lưu thay đổi') if supplier else t('Lưu nhà cung cấp') }}</button></div></form>
+</section>
+{% endblock %}
