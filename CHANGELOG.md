@@ -1,5 +1,34 @@
 # Nhật ký thay đổi
 
+## P1.3 — trả hàng và hoàn tiền — 2026-11-02
+
+- Thêm sổ hoàn tiền riêng cho hóa đơn đã thanh toán; hỗ trợ hoàn từng phần/nhiều lần, chống gửi trùng và giữ nguyên hóa đơn gốc.
+- Cập nhật tồn hoặc trạng thái thú cưng theo tình trạng hàng nhận lại; báo cáo và trợ lý tính doanh thu thuần theo thời điểm bán/hoàn.
+- Bổ sung migration cộng dồn, audit, tenant export và giao diện admin. Hệ thống chỉ ghi nhận khoản hoàn, không tự chuyển tiền qua cổng thanh toán.
+- Nghiệm thu 321/321 Python tests và 26/26 JavaScript tests; kiểm migration/luồng MySQL trên container tạm và giao diện desktop/mobile. Database phát triển không bị migration.
+
+## P1.2 — nhà cung cấp và nhập hàng từng phần — 2026-11-02
+
+- Thêm quản lý nhà cung cấp và đơn nhập tenant-scoped với snapshot giá nhập, mã/tên sản phẩm, tên nhà cung cấp và tiền tệ của cửa hàng.
+- Đơn nhập không làm tăng tồn khi mới tạo. Admin có thể nhận nhiều đợt; số đã nhận, stock movement, trạng thái đơn và audit được cập nhật nguyên tử. Vượt số đặt/tồn tối đa hoặc nhận lặp sau khi đơn đóng đều bị từ chối.
+- Thêm migration cộng dồn cho ba bảng mới, liên kết composite tới tenant/product/user, readiness contract, tenant CSV export, cleanup signup và màn hình responsive có tìm sản phẩm theo tên/mã.
+- Kiểm thử focused 54/54 Python; MySQL 8.4 container riêng chạy initializer, kiểm luồng nhận một phần/đủ, rollback khi vượt tồn, readiness và 13 truy vấn export. Unit/web suites đạt 183/183 và 70/70; compileall, JavaScript syntax, `git diff --check` đạt.
+- Playwright kiểm tra desktop 1440 px, mobile 390 px và màn hẹp 320 px; trang tạo đơn co vừa màn hình, nút trợ lý nằm trong tiêu đề form để không che trường nhập hay tạm tính. Thanh tiến độ dùng phần tử native, không phát sinh CSP console error. Không chạy migration trên database phát triển đang dùng.
+
+## P1.1 — hồ sơ khách hàng và lịch sử mua hàng — 2026-11-02
+
+- Bổ sung trang hồ sơ khách với thông tin liên hệ, trạng thái, thống kê hóa đơn và lịch sử có phân trang.
+- Tính số đã thanh toán/chưa thanh toán riêng theo từng currency; hóa đơn hủy không được tính vào số tiền và không cộng lẫn tiền tệ.
+- Liên kết hồ sơ từ danh sách khách/hóa đơn và từ chi tiết hóa đơn; tạo hóa đơn từ hồ sơ chọn sẵn khách hàng.
+- Kiểm tra giao diện desktop/mobile, kiểm tra tràn ngang và nút trợ lý mobile; không chạy migration hoặc ghi dữ liệu vào MySQL.
+
+## GSAP motion — 2026-10-29
+
+- Cài bộ skill GSAP ngoài repo; đưa GSAP core 3.15.0 có provenance vào static local, không dùng CDN/build pipeline.
+- Thêm timeline vào trang/card/biểu đồ, phản hồi POS/modal/trợ lý/toast và polish focus/selected/nav; không đổi dữ liệu hoặc luồng thu tiền.
+- Reduced motion, cleanup SVG/tween, pagehide/BFCache/print; fallback khi thiếu thư viện và giữ CSP.
+- 285 Python tests và 26 JavaScript tests đạt; Chrome desktop/mobile 390px không tràn ngang. Giữ nguyên tag demo và i18n.
+
 ## Phase 4 — tổng duyệt và kịch bản demo — 2026-10-25
 
 - Thêm `python run.py prepare-demo [--json]`: kiểm MySQL/schema/quyền/tồn/ảnh và đúng web/database, cập nhật timestamp marker demo paid trong một transaction, giới hạn thời gian và exit code rõ ràng.

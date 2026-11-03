@@ -12,7 +12,7 @@ Admin vào **Tài khoản**, chọn vai trò rồi bấm **Tạo liên kết m�
 
 ## Export dữ liệu cửa hàng
 
-Quản trị viên cửa hàng vào **Tài khoản → Xuất dữ liệu cửa hàng**, nhập lại mật khẩu hiện tại và tạo passphrase mới tối thiểu 12 ký tự hai lần. Tải xuống là bundle mã hóa riêng của cửa hàng đang chọn; thao tác được ghi audit và giới hạn tần suất. Lưu passphrase ở nơi an toàn, tách khỏi bundle; không thể khôi phục dữ liệu nếu quên. Bundle gồm CSV, metadata và ảnh; không có password hash hoặc invite token hash. Text CSV bắt đầu bằng dấu có thể chạy công thức sẽ được thêm dấu nháy đơn để bảng tính mở an toàn; số và ngày vẫn giữ nguyên. Gói tải xuống vẫn chứa dữ liệu cá nhân sau khi được giải mã, nên chỉ chia sẻ với người được ủy quyền. Export không xóa dữ liệu trên hệ thống.
+Quản trị viên cửa hàng vào **Tài khoản → Xuất dữ liệu cửa hàng**, nhập lại mật khẩu hiện tại và tạo passphrase mới tối thiểu 12 ký tự hai lần. Tải xuống là bundle mã hóa riêng của cửa hàng đang chọn; thao tác được ghi audit và giới hạn tần suất. Lưu passphrase ở nơi an toàn, tách khỏi bundle; không thể khôi phục dữ liệu nếu quên. Bundle gồm CSV, metadata và ảnh; không có password hash hoặc invite token hash. Text CSV bắt đầu bằng dấu có thể chạy công thức sẽ được thêm dấu nháy đơn để bảng tính mở an toàn. CSV dùng header ổn định, timestamp UTC ISO và số thập phân dấu chấm, không phụ thuộc ngôn ngữ giao diện; báo cáo Excel dành cho người đọc được bản địa hóa theo locale. Gói tải xuống vẫn chứa dữ liệu cá nhân sau khi được giải mã, nên chỉ chia sẻ với người được ủy quyền. Export không xóa dữ liệu trên hệ thống.
 
 Operator có quyền database vẫn dùng `python -m petcare.database.export_tenant export <slug> <đường-dẫn.pcarexport>` để tạo bundle cho quy trình vận hành. Chạy `verify` để xác thực mã hóa và checksum mà không trích xuất. Khi cần bàn giao ZIP cho quy trình khác, chạy `decrypt <bundle.pcarexport> <đường-dẫn-zip-mới>`; ZIP mới quyền `0600` chỉ được tạo sau khi xác thực thành công. ZIP sau giải mã chứa dữ liệu khách hàng và ảnh; giới hạn quyền truy cập và xóa theo chính sách lưu trữ. Export không xóa dữ liệu trên hệ thống.
 
@@ -20,11 +20,25 @@ ZIP export từ phiên bản cũ là plaintext và không được lệnh `verif
 
 ## Khách hàng
 
-Vào **Khách hàng** để tìm kiếm và xem danh sách. Chọn **Thêm khách hàng**, nhập tên và số điện thoại hợp lệ, sau đó lưu. Địa chỉ và thông tin liên hệ có thể để trống nếu form cho phép.
+Vào **Khách hàng** để tìm kiếm và xem danh sách. Chọn tên hoặc số hóa đơn để mở hồ sơ, xem thông tin liên hệ, trạng thái và lịch sử giao dịch theo trang. Tổng số hóa đơn được chia theo trạng thái; số tiền đã thu và chưa thu hiển thị riêng theo từng mã tiền tệ, không tự quy đổi.
+
+Chọn **Lập hóa đơn** trong hồ sơ khách đang hoạt động để mở hóa đơn mới với khách đã chọn sẵn. Chọn **Sửa thông tin** để cập nhật hồ sơ. Từ danh sách hoặc trang chi tiết hóa đơn, chọn tên khách để quay lại hồ sơ.
+
+Để tạo khách mới, chọn **Thêm khách hàng**, nhập tên và số điện thoại hợp lệ, sau đó lưu. Địa chỉ và thông tin liên hệ có thể để trống nếu form cho phép.
 
 ## Sản phẩm và tồn kho
 
 Vào **Sản phẩm** để tìm mặt hàng, giá bán, tồn kho, mức cảnh báo, mô tả và ảnh. Admin có thể thêm/cập nhật sản phẩm, tải ảnh JPEG/PNG/WebP tối đa 5 MB, đặt ngưỡng bổ sung và điều chỉnh tồn; mỗi lần thay đổi tồn cần nhập số lượng cùng lý do. Staff có thể tra cứu mặt hàng nhưng không được dùng thao tác chỉ dành cho Admin. Ảnh được chuẩn hóa và chỉ thành viên cửa hàng được xem. Backend local mặc định lưu ở `instance/product-images/`; khi dùng S3, hãy duy trì backup/versioning cho bucket cùng database.
+
+### Nhà cung cấp và nhập hàng
+
+Admin mở **Quản trị → Nhập hàng** để theo dõi đơn đặt. Thêm nhà cung cấp trước nếu cửa hàng chưa có; hồ sơ có tên, người liên hệ, điện thoại, email và địa chỉ. Có thể ngừng sử dụng nhà cung cấp mà không xóa các đơn cũ.
+
+Chọn **Lập đơn nhập**, tìm sản phẩm theo tên hoặc mã, thêm từng mặt hàng, nhập số lượng đặt và giá nhập theo tiền tệ của cửa hàng. Giá và tên/mã mặt hàng được chụp vào đơn tại thời điểm tạo. Tạo đơn chưa làm thay đổi tồn kho.
+
+Khi hàng về, mở đơn và nhập **số lượng nhận thêm** cho từng mặt hàng. Có thể xác nhận nhiều đợt; mỗi lần nhận sẽ cộng đúng số xác nhận vào tồn, ghi người thực hiện và liên kết về đơn nhập trong lịch sử tồn kho. Đơn chuyển sang nhận đủ khi mọi dòng đã đủ số lượng. Nếu nhà cung cấp giao thiếu hoặc hủy phần còn lại, chọn **Đóng phần còn lại**; hàng đã nhận vẫn giữ trong kho và đơn đã đóng không thể nhận tiếp. Không sửa/xóa đơn lịch sử.
+
+Mỗi đơn có tối đa 100 mặt hàng; không thể nhận vượt số lượng còn lại hoặc làm tồn vượt giới hạn hệ thống. Đơn nhập chỉ áp dụng cho sản phẩm còn hoạt động khi lập đơn; nếu sản phẩm được ngừng bán sau đó, cửa hàng vẫn có thể ghi nhận hàng đã đặt.
 
 ## Thú cưng bán lẻ
 
@@ -55,7 +69,9 @@ Hồ sơ chó/mèo mới và ảnh trong seed được tạo tổng hợp bằng
 2. Bên trái tìm mã/tên và bấm thẻ có ảnh, giá, tồn để thêm vào đơn. Bấm lại sản phẩm để tăng số lượng đến mức tồn; mỗi cá thể thú cưng chỉ được chọn một lần với số lượng 1. Bên phải xem giỏ hàng và chọn khách. Nếu khách chưa có, bấm **+ Thêm nhanh**, điền thông tin và lưu; khách được chọn ngay mà không mất mặt hàng. Esc đóng modal và trả focus.
 3. Kiểm tra tổng do máy chủ tính và tạo hóa đơn. Hóa đơn có trạng thái unpaid; việc tạo hóa đơn chưa trừ tồn.
 4. Khi nhận tiền tại quầy, mở hóa đơn và chọn **Thanh toán**. Trong cùng giao dịch, hệ thống kiểm tra lại tồn, trừ kho, lưu lịch sử xuất hàng và gắn người mua cho thú cưng.
-5. Hóa đơn chưa trả có thể hủy. Hóa đơn đã trả là bất biến; chưa hỗ trợ hoàn tiền hoặc trả hàng.
+5. Hóa đơn chưa trả có thể hủy. Hóa đơn đã trả không sửa hoặc hủy; admin có thể mở hóa đơn và ghi một giao dịch trả hàng/hoàn tiền riêng. Chọn số lượng từng dòng, phương thức hoàn và tình trạng hàng nhận lại. Hàng sản phẩm chỉ cộng lại kho khi chọn **Nhận lại · có thể bán**; hàng cách ly được ghi nhận nhưng không nhập kho bán. Thú cưng nhận lại được đưa về trạng thái bán hoặc ngừng bán. Chọn **Khách chưa trả hàng** để ghi khoản hỗ trợ mà không đổi tồn/quyền sở hữu. Số tiền được tính từ snapshot hóa đơn và số lượng đã hoàn trước đó; không thể hoàn vượt quá lượng mua.
+
+Việc ghi nhận không tự chuyển tiền qua ngân hàng hoặc cổng thanh toán. Cửa hàng cần chi tiền/chuyển khoản riêng theo quy trình của mình. Mỗi lần hoàn và thao tác kho được lưu cùng transaction, audit và lịch sử hóa đơn; gửi lại cùng yêu cầu sẽ không tạo khoản hoàn trùng. Chức năng dành cho admin.
 
 Mở **Tìm theo tên / số điện thoại** để tìm khách hàng; catalog bên trái có bộ lọc Sản phẩm/Thú cưng và nút **Hiển thị thêm**. Kết quả được tìm ở máy chủ, có trạng thái tải và bỏ qua phản hồi cũ khi đổi từ khóa. Giỏ hàng giữ nguyên qua tìm kiếm; tổng tạm tính chỉ là xem trước, server xác thực giá/tồn khi tạo và thanh toán.
 
@@ -63,7 +79,7 @@ Khung trợ lý gửi bằng Enter, đóng bằng Esc và giữ focus hợp lý;
 
 ## Báo cáo
 
-Mở **Báo cáo**, chọn khoảng ngày rồi xem doanh thu thực thu, số hóa đơn đã thanh toán, hàng bán và tồn hiện tại. Doanh thu được tính từ hóa đơn paid theo thời điểm thanh toán. Dùng kỳ nhanh Hôm nay/7 ngày/30 ngày/Tháng này để xem biểu đồ, so sánh kỳ trước cùng số ngày và bản tin tự động. Mở bảng ngày/chi tiết để đối chiếu.
+Mở **Báo cáo**, chọn khoảng ngày rồi xem doanh thu thuần, số hóa đơn đã thanh toán, hàng bán/hoàn và tồn hiện tại. Tiền bán được tính theo ngày thanh toán; tiền hoàn được trừ theo ngày hoàn nên biểu đồ và Excel phản ánh dòng tiền từng ngày. Số hóa đơn vẫn đếm các hóa đơn đã thu trong kỳ, không đếm lượt hoàn. Dùng kỳ nhanh Hôm nay/7 ngày/30 ngày/Tháng này để so sánh kỳ trước cùng số ngày và xem bản tin tự động. Mở bảng ngày/chi tiết để đối chiếu.
 
 Bấm **Xuất Excel** để tải bốn sheet tổng quan/doanh thu ngày/chi tiết/top sản phẩm, dùng đúng số liệu đang xem kể cả khi có giao dịch mới. Bản xuất có hiệu lực 15 phút; hết hạn thì tải lại báo cáo. Bấm **In / Lưu PDF** và chọn Save as PDF trong trình duyệt; bảng chi tiết tự mở khi in. Tối đa 366 ngày/5.000 dòng hàng mỗi kỳ, không cắt dữ liệu im lặng.
 

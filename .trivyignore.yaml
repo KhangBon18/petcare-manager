@@ -19,3 +19,8 @@ vulnerabilities:
       - pkg:pypi/urllib3@2.7.0
     expired_at: 2026-11-18
     statement: Trivy 0.76.0 attributes this package to a third-party SBOM; the final image installs urllib3 2.8.0. Recheck the image inventory before expiry.
+  - id: CVE-2026-114613
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    expired_at: 2026-11-18
+    statement: Trivy 0.76.0 attributes this package to a third-party SBOM; msgpack is not installed in the final image. Recheck the image inventory before expiry.

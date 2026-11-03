@@ -1,6 +1,62 @@
 # Trạng thái PetCare Manager
 
-Cập nhật: 2026-10-25. Nhánh làm việc: solo/khang-petcare. Commit gốc: 1c62a48. Chưa push, merge main, tạo PR hoặc tag.
+Cập nhật: 2026-11-03. Nhánh làm việc: solo/khang-petcare. Commit gốc: 1c62a48. Tag local `v1.0-demo-ready` chưa push; nhánh local có một commit ahead origin và các thay đổi working tree chưa commit. Chưa merge hoặc tạo PR.
+
+## P1.1 — hồ sơ khách hàng — 2026-11-02
+
+- Trang hồ sơ hiển thị liên hệ, trạng thái, số hóa đơn theo trạng thái, tổng paid/unpaid theo từng currency và lịch sử hóa đơn phân trang.
+- Từ hồ sơ có thể lập hóa đơn với khách đã chọn; danh sách và chi tiết hóa đơn liên kết ngược về hồ sơ.
+- 17 focused Python web/unit tests đạt; Jinja/Python compile và `git diff --check` đạt. Playwright xác nhận desktop 1280 px và mobile 360 px không tràn ngang; nút trợ lý mobile không che số liệu.
+- Không chạy migration, không ghi dữ liệu hay thay đổi schema MySQL trong lượt này.
+
+## P1.2 — nhà cung cấp và nhập hàng từng phần — 2026-11-02
+
+- Admin quản lý nhà cung cấp và tạo đơn nhập với snapshot nhà cung cấp, mã/tên sản phẩm, giá nhập, số lượng và tiền tệ tại thời điểm đặt; tạo đơn chưa cộng tồn.
+- Có thể nhận hàng qua nhiều đợt. Mỗi đợt khóa đơn, dòng hàng và sản phẩm; kiểm tra số còn lại/giới hạn tồn; cập nhật tồn, số đã nhận, stock movement và audit trong cùng transaction. Đơn hoàn tất hoặc đóng phần còn lại không thể nhận tiếp.
+- Thêm migration MySQL cộng dồn cho `suppliers`, `purchase_orders`, `purchase_order_items` và nguồn đơn nhập trong sổ tồn. Readiness và tenant export đã nhận schema mới. DB phát triển hiện tại chưa chạy migration, vẫn giữ 20 bảng và toàn bộ dữ liệu.
+- 54 focused Python web/unit tests đạt; sau lượt chỉnh UI, toàn bộ unit 183/183 và web 70/70 tiếp tục đạt, compileall, cú pháp JavaScript và `git diff --check` đạt. MySQL 8.4 container riêng xác nhận migration trên DB trống, luồng đặt/nhận từng phần/nhận đủ, rollback khi tồn vượt giới hạn, `/readyz` schema contract và 13 truy vấn CSV tenant export; container đã xóa. Không kết nối hoặc ghi vào `petcare_shop_dev`.
+- Playwright đã kiểm tra danh sách đơn, nhà cung cấp, form lập đơn và chi tiết nhận hàng trên desktop 1440 px, mobile 390 px và màn hẹp 320 px. Trang tạo đơn không tràn ngang, các trường nhận số lượng/giá không bị nút trợ lý hoặc thanh điều hướng che; trợ lý mở từ nút đặt trong form. Console sạch sau khi thay thanh tiến độ inline bằng phần tử native tương thích CSP.
+
+## P1.3 — trả hàng và hoàn tiền — 2026-11-02
+
+- Admin ghi nhận hoàn một phần/toàn phần bằng một sổ mới; hóa đơn đã thanh toán giữ nguyên trạng thái, dòng và snapshot. Idempotency key chặn gửi trùng; lượng hoàn cộng dồn không thể vượt lượng bán.
+- Sản phẩm nhận lại chỉ cộng kho khi có thể bán lại; hàng cách ly không cộng kho. Thú cưng nhận lại được đưa về available hoặc inactive, còn goodwill refund không thay đổi tồn/quyền sở hữu. Header, dòng hoàn, tồn/trạng thái, stock movement và audit cùng một transaction.
+- Migration cộng dồn thêm hai bảng hoàn tiền và liên kết nguồn vào sổ tồn. Readiness, export tenant, cleanup và báo cáo đã cập nhật; báo cáo/assistant tính doanh thu thuần theo ngày hoàn, gợi ý nhập kho chỉ trừ hàng thực nhận lại. DB phát triển vẫn giữ 20 bảng, chưa chạy migration.
+- Thao tác hoàn chỉ ghi nhận và đối soát; không kết nối/chuyển tiền thực tế. UI giới hạn cho admin và nêu rõ cần chi tiền/chuyển khoản riêng.
+- Nghiệm thu: **321/321 Python tests** trên Python 3.13 gồm 189 unit, 73 web và 59 MySQL integration trên container MySQL 8.4 riêng; **26/26 JavaScript**. Migration được kiểm tra cùng luồng hoàn thực; test data và container đã dọn. `pip-audit`, Bandit theo baseline, Compose config, Docker build, source secret scan, `compileall`, `node --check` và `git diff --check` đạt.
+- Playwright: 1440×1000 và 390×844 không tràn ngang; trợ lý mở/đóng bằng Esc và trả focus đúng. Nút nổi được thay bằng nút ngữ cảnh trong hóa đơn; tại cuối form mobile, các trường và nút gửi vẫn nằm phía trên thanh điều hướng. Console không có lỗi/cảnh báo. Không gửi khoản hoàn từ trình duyệt.
+- Không migrate hoặc ghi vào `petcare_shop_dev`; DB phát triển giữ nguyên 20 bảng và dữ liệu.
+
+## P2.1 — local CI và release gates — 2026-11-02
+
+- Chạy trọn suite theo lệnh CI trên Python 3.13: 321/321 Python tests, gồm 59 MySQL integration trên MySQL 8.4 tạm; 26/26 JavaScript tests. `pip-audit`, Bandit theo baseline, `docker compose config --quiet`, Docker image build và Trivy source secret scan đạt.
+- Trivy image scan đạt 0 HIGH/CRITICAL sau khi dùng `.trivyignore.yaml`; Trivy source secret scan không phát hiện secret. Thêm một suppression có ngày hết hạn 2026-11-18 cho `msgpack 1.1.2` bị gán nhầm từ SBOM; đã kiểm tra package không được cài trong image. GitHub Actions run #3 trên commit `479e0f3` đã xanh cả ba job; cần chạy lại trên release candidate chứa thay đổi hiện tại trước khi phát hành.
+- `petcare_shop_dev` không được kết nối hoặc thay đổi. MySQL test container, server Playwright và artifact kiểm thử đã dọn.
+
+## P2.2 — hoàn thiện locale cho email và báo cáo — 2026-11-02
+
+- Email xác minh/khôi phục tài khoản, lời mời thành viên và thông báo bàn giao owner được dựng bằng tiếng Việt hoặc English tại thời điểm enqueue; email bàn giao theo locale đã lưu của tài khoản đích. Nội dung vẫn giữ one-time link và hạn 24 giờ/30 phút/7 ngày/72 giờ tương ứng.
+- API lỗi của trợ lý, gợi ý ảnh, tìm sản phẩm nhập hàng và lỗi kỳ báo cáo trả bản dịch theo locale; trang lỗi báo cáo cũng dịch validation message.
+- Nhật ký audit của giao dịch hoàn tiền hiển thị số tiền, currency và mã hóa đơn bằng tiếng Anh khi dùng locale English; phần mô tả audit lịch sử khác vẫn còn nội dung cần rà soát.
+- Excel báo cáo dùng locale giao diện lúc tải: sheet, tiêu đề, cột, nội dung tóm tắt và định dạng ngày/giờ được bản địa hóa. Dữ liệu số, currency và tên riêng giữ nguyên giá trị.
+- Xác minh đầy đủ: **330/330 Python tests** gồm 195 unit, 76 web và 59 MySQL integration trên MySQL 8.4 container cô lập; **26/26 JavaScript tests**. `pip-audit`, Bandit theo baseline, `compileall` và `git diff --check` cũng đạt sau thay đổi. Container/database test đã xóa; database phát triển vẫn chạy riêng và không bị thay đổi.
+- Email provider thật, bounce/complaint, nội dung audit lịch sử và một số thông báo server vẫn cần nghiệm thu trước public launch. Ngày/giờ/số trên các màn hình nghiệp vụ chính đã định dạng theo ngôn ngữ và múi giờ cửa hàng; CSV giữ header ổn định, timestamp UTC ISO và số thập phân dấu chấm để tương thích trao đổi dữ liệu.
+
+## P2.3 — định dạng ngày giờ và số theo locale — 2026-11-03
+
+- Bổ sung helper định dạng ngày, giờ và số theo `vi`/`en`; timestamp được hiển thị theo múi giờ cửa hàng. Cập nhật các màn hình dashboard, khách hàng, thú cưng, hóa đơn, nhập hàng, sản phẩm và báo cáo; số trong bảng dùng chữ số tabular.
+- Trang báo cáo và các tổng quan hiển thị cùng một khoảng ngày theo locale đã chọn; định dạng tiền tệ giữ quy tắc currency hiện hành. File CSV tiếp tục dùng contract trung tính locale: header ổn định, ngày giờ UTC ISO và số thập phân dấu chấm.
+- Nghiệm thu: **334/334 Python tests** gồm 198 unit, 77 web và 59 MySQL integration trên MySQL 8.4 container cô lập; **26/26 JavaScript tests**. `pip-audit` không tìm thấy lỗ hổng đã biết; Bandit baseline, `compileall`, cú pháp JavaScript, `docker compose config --quiet`, production Docker build và `git diff --check` đạt.
+- Playwright đã kiểm tra trang báo cáo ở desktop 1280×720 và mobile 360 px, xác nhận hiển thị VI/EN và không tràn ngang trên mobile. Không migrate hoặc ghi vào `petcare_shop_dev`; database MySQL và media tạm đã được dọn sau kiểm tra.
+- Còn mở trước public launch: rà soát đầy đủ thông báo/validation ở mọi route, bản dịch nội dung audit lịch sử, nghiệm thu SMTP/bounce/complaint và hosted CI trên release candidate.
+
+## P2.4 — thông báo workflow và nhật ký audit VI/EN — 2026-11-03
+
+- Bổ sung bản dịch cho các lỗi nhập hàng, báo cáo/export, giới hạn tốc độ, tìm ảnh và xác thực vai trò còn thiếu; chuỗi flash/lỗi tĩnh trong route/service được kiểm tra tự động để tránh thêm nội dung English chưa dịch.
+- Hoàn thiện nhãn sự kiện và đối tượng audit cho hoàn tiền, đơn nhập, nhà cung cấp, bàn giao owner, cập nhật tài khoản và đăng ký cửa hàng; bổ sung bản dịch cho summary tài khoản/đăng ký đã được ghi trong nhật ký cũ.
+- Nghiệm thu: **338/338 Python tests** (201 unit, 78 web, 59 MySQL integration trên MySQL 8.4 cô lập), **26/26 JavaScript tests**. `pip-audit`, Bandit theo baseline, Compose config, production Docker build và `git diff --check` đạt.
+- Playwright: trang audit English trên desktop hiển thị đúng nhãn/summary hoàn tiền và lịch sử; mobile 360 px không tràn ngang, bảng cuộn trong khung riêng. Đã xóa 68 ảnh chỉ được DB test tham chiếu; toàn bộ file mà `petcare_shop_dev` tham chiếu được giữ nguyên. CI DB tạm đã dọn; database phát triển không bị ghi hoặc migrate.
+- Các summary phát sinh từ ứng dụng và event/entity đã biết được dịch. Audit nhập từ hệ thống khác hoặc summary tự do không khớp mẫu vẫn hiển thị nguyên văn nguồn; hosted CI cần chạy lại sau khi có release candidate được push.
 
 ## Nghiệm thu Phase 4 — 2026-10-25
 
@@ -41,13 +97,13 @@ Cập nhật: 2026-10-25. Nhánh làm việc: solo/khang-petcare. Commit gốc: 
 ## Đã hoàn thiện
 
 - App factory, blueprint, đăng nhập/đăng xuất, CSRF, session có user/tenant/version đã ký, thu hồi phiên sau đổi mật khẩu hoặc đổi trạng thái membership; membership/role được tải lại ở mỗi request.
-- Schema hiện có 20 bảng gồm `schema_migrations`, tenants, users/account_tokens/email_outbox, tenant memberships/invitations/owner transfers/export jobs, dữ liệu nghiệp vụ, audit và throttle; business data tenant-scoped, composite foreign keys chống ghép chéo; migration cộng thêm backfill DB cũ vào `main`, không DROP.
+- Schema code hiện hành có 25 bảng sau migration P1.2/P1.3 gồm nhà cung cấp/đơn nhập và trả hàng/hoàn tiền; database phát triển đang dùng chưa chạy các migration này nên vẫn có 20 bảng. Business data tenant-scoped, composite foreign keys chống ghép chéo; migration cộng thêm backfill DB cũ vào `main`, không DROP.
 - Cửa hàng mới có thể được provision qua `python -m petcare.database.create_store`; user nhiều membership chọn/đổi cửa hàng, role khác nhau theo từng store.
 - Tên hiển thị/mật khẩu là thuộc tính toàn nền tảng; admin không sửa hồ sơ toàn cục của user nhiều membership, còn người dùng đổi tên ở cài đặt tài khoản sau re-auth.
 - Admin tạo/thu hồi liên kết mời dùng một lần, 7 ngày; với SMTP cấu hình, lời mời gửi qua encrypted outbox; môi trường local chưa có SMTP dùng link thủ công. Người nhận gắn tài khoản đã xác minh đúng email hoặc tạo tài khoản mới. Email tài khoản có thể xác minh; khôi phục mật khẩu dùng token một lần. SMTP provider thật chưa được kiểm tra.
 - Operator có CLI export; store-admin gửi yêu cầu nền vào MySQL queue, worker snapshot tenant và tạo bundle AES-GCM gồm CSV, ảnh và manifest checksum. Passphrase được mã hóa tạm bằng Fernet, worker lease/retry, recheck role, audit hoàn tất, phân quyền status/download theo requester + tenant và tự dọn artifact theo retention; password/token hashes không được xuất.
-- CRUD khách hàng, sản phẩm (mô tả, ảnh, ngưỡng nhập lại riêng) và thú cưng; điều chỉnh tồn kho có lý do.
-- Hóa đơn snapshot; thanh toán transaction, khóa hàng, trừ kho và ghi người mua; unpaid hủy được, paid bất biến.
+- CRUD khách hàng, sản phẩm (mô tả, ảnh, ngưỡng nhập lại riêng), thú cưng và nhà cung cấp; điều chỉnh tồn kho có lý do; đơn nhập ghi tăng tồn theo các lần nhận thực tế.
+- Hóa đơn snapshot; thanh toán transaction, khóa hàng, trừ kho và ghi người mua; unpaid hủy được, paid bất biến. Hoàn tiền lưu sổ điều chỉnh riêng, không sửa invoice gốc.
 - Dashboard, báo cáo doanh thu/hàng bán/tồn; layout responsive tiếng Việt.
 - Timestamp lưu UTC; mỗi tenant chọn múi giờ IANA hợp lệ, ngày báo cáo theo lịch địa phương qua DST, timestamp hiển thị theo giờ cửa hàng. Migration +07 chỉ chạy một lần và readiness kiểm marker.
 - Runtime dùng MySQL connection pool giới hạn theo process; session reset khi trả pool và UTC/tenant context được đặt lại trên mỗi checkout. Production xác thực TLS MySQL qua `DB_SSL_CA`, CA và hostname đều được kiểm tra.
@@ -91,7 +147,7 @@ Cập nhật: 2026-10-25. Nhánh làm việc: solo/khang-petcare. Commit gốc: 
 
 - Chưa kiểm setup sạch trên Windows.
 - App chưa triển khai Internet/HTTPS, kiểm thử tải hoặc nghiệm thu hệ thống sao lưu ngoài máy. SaaS có invitation email qua outbox, public signup route mặc định tắt, email verify/recovery và self-service export mã hóa; còn thiếu billing, deletion/retention workflow, cấu hình bucket production, kiểm live SMTP và review độc lập về bảo mật cô lập.
-- Giá, hóa đơn và báo cáo dùng Decimal/DECIMAL theo currency tenant; tenant mới chọn currency ISO và IANA timezone khi onboarding, hóa đơn snapshot mã tiền, timestamp lưu UTC rồi hiển thị theo giờ cửa hàng. Locale UI vẫn tiếng Việt; chưa có thuế đa vùng, FX/đổi currency, online payment, refund hay trả hàng.
+- Giá, hóa đơn, hoàn tiền và báo cáo dùng Decimal/DECIMAL theo currency tenant; tenant mới chọn currency ISO và IANA timezone khi onboarding, hóa đơn snapshot mã tiền, timestamp lưu UTC rồi hiển thị theo giờ cửa hàng. Locale UI hỗ trợ vi/en; chưa có thuế đa vùng, FX/đổi currency hoặc cổng thanh toán tự động.
 - Camera laptop trực tiếp cần localhost/HTTPS; trên điện thoại truy cập LAN dùng trình chụp ảnh gốc thay cho video trực tiếp do giới hạn secure-context của trình duyệt. LAN access mặc định tắt.
 - Tìm ảnh local dùng histogram màu vùng trung tâm/toàn ảnh và cấu trúc toàn ảnh; nền/framing vẫn có thể ảnh hưởng, đây chưa phải object detector/embedding đã huấn luyện. Ảnh truy vấn được gửi tới app server, không lưu; chỉ gửi AI endpoint nếu AI Vision bật. Tạo sinh chat và AI Vision cần endpoint tương thích cấu hình; AI Vision mặc định tắt.
 - Báo cáo tổng kết chính được cập nhật; các trang báo cáo/slide ghi tên từng thành viên vẫn là ghi chép của phiên bản clinic và cần tác giả rà soát trước khi nộp.

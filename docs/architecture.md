@@ -31,6 +31,10 @@ Trình duyệt gửi GET/POST đến Flask. Blueprint kiểm tra phiên, CSRF v�
 
 InvoiceService mở một MySQL transaction, xác nhận actor, khóa hóa đơn unpaid, đọc/khóa các hàng hóa theo id tăng dần, xác thực lại tồn và cá thể available, giảm tồn và ghi stock_movements, gắn buyer_id cho thú cưng, sau đó cập nhật paid_at/status. Nếu bất kỳ bước nào lỗi thì rollback toàn bộ.
 
+RefundService chỉ cho admin ghi nhận hoàn trên invoice paid. Khóa hóa đơn trước để tuần tự hóa các yêu cầu hoàn song song; sau đó khóa dòng hóa đơn, tồn sản phẩm/cá thể theo id, kiểm tra số lượng đã hoàn và tính tiền từ giá snapshot. `invoice_refunds` và `invoice_refund_items` là sổ điều chỉnh riêng; invoice paid không đổi trạng thái hay nội dung. Nhập kho sản phẩm, đổi thú cưng sold về available/inactive, stock movement và audit được commit cùng khoản hoàn. Khóa idempotency chống ghi trùng khi client gửi lại. Giao dịch ghi nhận không kết nối cổng thanh toán; cửa hàng tự thực hiện chuyển tiền.
+
+Doanh thu báo cáo, dashboard và ngữ cảnh trợ lý là dòng tiền thuần theo thời điểm phát sinh: bán dùng `invoices.paid_at`, hoàn dùng `invoice_refunds.created_at`. Stock velocity chỉ trừ hàng thực sự nhận lại, không trừ trường hợp goodwill refund mà khách giữ hàng.
+
 Hàng hóa chưa bị giữ khi hóa đơn ở trạng thái unpaid. Một hóa đơn khác có thể thanh toán trước; lần thanh toán còn lại phải kiểm tra lại tồn/trạng thái và từ chối nếu không còn hàng.
 
 ## Phiên và quyền
