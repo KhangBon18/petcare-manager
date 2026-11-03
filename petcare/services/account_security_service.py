@@ -8,6 +8,7 @@ from flask import current_app, url_for
 
 from petcare.database.connection import read_connection, transaction
 from petcare.email_address import normalize_email
+from petcare.i18n import current_locale
 from petcare.money import CurrencyError, normalize_currency_code
 from petcare.repositories import account_token_repo, audit_repo, user_repo
 from petcare.security import hash_password, verify_password
@@ -15,6 +16,7 @@ from petcare.services import request_throttle_service
 from petcare.services.common import password_hash_value, require_actor, text_value
 from petcare.services.exceptions import ForbiddenError, RateLimitError, ValidationError
 from petcare.services.mail_service import MailDeliveryError, is_configured, enqueue_text_email
+from petcare.services.mail_templates import account_token_email
 from petcare.timezones import DEFAULT_TIMEZONE, TimezoneError, normalize_timezone_name
 
 
@@ -56,17 +58,10 @@ def _queue_token_email(email, purpose, token, expires_at, connection=None, requi
         return False
     if purpose == _EMAIL_VERIFY:
         endpoint = "account.verify_email"
-        subject = "Xác minh email PetCare Manager"
-        explanation = "Xác minh địa chỉ email để bảo vệ tài khoản của bạn."
     else:
         endpoint = "account.reset_password"
-        subject = "Đặt lại mật khẩu PetCare Manager"
-        explanation = "Yêu cầu đặt lại mật khẩu cho tài khoản PetCare Manager."
     link = current_app.config["PUBLIC_BASE_URL"] + url_for(endpoint, token=token)
-    body = (
-        f"{explanation}\n\nMở liên kết này để tiếp tục (liên kết hết hạn sau thời gian ngắn):\n"
-        f"{link}\n\nNếu bạn không yêu cầu thao tác này, hãy bỏ qua email."
-    )
+    subject, body = account_token_email(purpose, link, current_locale())
     try:
         enqueue_text_email(
             email, subject, body, expires_at=expires_at, connection=connection

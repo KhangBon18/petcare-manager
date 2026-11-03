@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from flask import Blueprint, abort, current_app, flash, g, jsonify, redirect, render_template, request, send_file, url_for
 
 from petcare.auth import admin_required, login_required
+from petcare.i18n import translate
 from petcare.services import pet_image_service, pet_service
 from petcare.services import request_throttle_service
 from petcare.services.exceptions import ServiceError
@@ -109,7 +110,7 @@ def suggest_attributes():
         content = read_upload(photo.stream, current_app.config["PET_IMAGE_MAX_BYTES"])
         return jsonify(pet_image_service.suggest_attributes(g.user["id"], content))
     except (ServiceError, ValueError) as exc:
-        return jsonify(error=str(exc)), 400
+        return jsonify(error=translate(str(exc))), 400
 
 
 @bp.get("/photo/<filename>")

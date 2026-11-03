@@ -2,6 +2,7 @@ from io import BytesIO
 from flask import Blueprint, flash, g, jsonify, render_template, request, send_file
 
 from petcare.auth import login_required
+from petcare.i18n import translate
 from petcare.services import report_service, report_export_service
 from petcare.services.exceptions import ServiceError
 from petcare.services.ui_text import ui_text
@@ -20,7 +21,7 @@ def index():
             request.args.get("period"),
         )
     except (ServiceError, ValueError, OverflowError) as exc:
-        return render_template("reports/error.html", message=str(exc)), 400
+        return render_template("reports/error.html", message=translate(str(exc))), 400
     token = report_export_service.snapshot(report, g.user["id"], g.tenant["id"])
     return render_template("reports/index.html", report=report, report_snapshot=token)
 
@@ -51,9 +52,9 @@ def export_xlsx():
         report = report_export_service.read_snapshot(
             payload["snapshot"], g.user["id"], g.tenant["id"]
         )
-        content = report_export_service.workbook_bytes(report)
+        content = report_export_service.workbook_bytes(report, g.locale)
     except ServiceError as exc:
-        return jsonify(error=str(exc)), 400
+        return jsonify(error=translate(str(exc))), 400
     return send_file(
         BytesIO(content),
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

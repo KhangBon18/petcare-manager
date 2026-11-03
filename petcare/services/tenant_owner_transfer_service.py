@@ -2,6 +2,7 @@
 
 from flask import current_app, url_for
 
+from petcare.i18n import current_locale
 from petcare.database.connection import read_connection, transaction
 from petcare.repositories import audit_repo, tenant_owner_transfer_repo, tenant_repo, user_repo
 from petcare.security import verify_password
@@ -14,6 +15,7 @@ from petcare.services.exceptions import (
     RateLimitError,
     ValidationError,
 )
+from petcare.services.mail_templates import ownership_transfer_email
 
 
 def _lock_admin_memberships(connection, tenant_id):
@@ -125,16 +127,16 @@ def initiate_transfer(actor_id, target_user_id, current_password):
         )
         if email_queued:
             link = current_app.config["PUBLIC_BASE_URL"] + url_for("users.ownership")
-            body = (
-                f"Chủ cửa hàng {tenant['name']} đã đề nghị bàn giao quyền owner cho tài khoản "
-                f"{target['username']}. Đăng nhập bằng tài khoản đó, mở trang thành viên và "
-                f"xác nhận bằng mật khẩu hiện tại trước {transfer['expires_at']} tại:\n{link}\n\n"
-                "Email này chỉ thông báo; không chứa liên kết xác nhận dùng thay cho đăng nhập."
+            subject, body = ownership_transfer_email(
+                tenant["name"],
+                target["username"],
+                link,
+                target.get("preferred_locale") or current_locale(),
             )
             try:
                 outbox_id = mail_service.enqueue_text_email(
                     target["email"],
-                    f"Yêu cầu bàn giao chủ cửa hàng {tenant['name']}",
+                    subject,
                     body,
                     expires_at=transfer["expires_at"],
                     connection=connection,

@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 from cryptography.fernet import Fernet
-from flask import g, render_template
+from flask import g, render_template, render_template_string
 
 from petcare import create_app
 from petcare.i18n import translate
@@ -69,6 +69,23 @@ class WebPageTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn('<html lang="en">', body)
         self.assertIn("Sign in", body)
+
+    def test_server_rendered_dates_times_and_numbers_follow_the_ui_locale(self):
+        template = "{{ format_date(day) }}|{{ format_datetime(timestamp) }}|{{ format_number(value) }}"
+        values = {
+            "day": "2026-10-17",
+            "timestamp": "2026-10-18T06:30:00+00:00",
+            "value": Decimal("1234567.1250"),
+        }
+        with self.app.test_request_context("/"):
+            g.tenant = {"timezone": "America/Los_Angeles"}
+            g.locale = "en"
+            english = render_template_string(template, **values)
+            self.assertEqual(english, "Oct 17, 2026|Oct 17, 2026 11:30 PM|1,234,567.125")
+
+            g.locale = "vi"
+            vietnamese = render_template_string(template, **values)
+            self.assertEqual(vietnamese, "17/10/2026|17/10/2026 23:30|1.234.567,125")
 
     def test_english_invoice_feedback_keeps_payment_and_inventory_state_clear(self):
         cases = {
@@ -137,6 +154,73 @@ class WebPageTests(unittest.TestCase):
             translate("Câu hỏi không được để trống.", "en"),
             "Question is required.",
         )
+
+    def test_english_activity_page_translates_new_and_historical_audit_rows(self):
+        from datetime import datetime, timezone
+
+        with self.client.session_transaction() as session:
+            session.update(user_id=17, tenant_id=3, session_version=2, locale="en")
+        user = {
+            "id": 17,
+            "role": "admin",
+            "session_version": 2,
+            "full_name": "Sample Admin",
+            "store_memberships": [],
+            "tenant": {
+                "id": 3,
+                "slug": "sample",
+                "name": "Sample Store",
+                "timezone": "UTC",
+                "default_currency": "USD",
+            },
+        }
+        listing = {
+            "items": [
+                {
+                    "event_type": "invoice.refunded",
+                    "event_label": "Hoàn tiền hóa đơn",
+                    "summary": "Hoàn 125000.50 VND cho hóa đơn #42",
+                    "entity_type": "invoice_refund",
+                    "entity_label": "Khoản hoàn tiền",
+                    "entity_id": 9,
+                    "created_at": datetime(2026, 11, 3, 10, tzinfo=timezone.utc),
+                    "actor_name": "Sample Admin",
+                    "actor_username": "admin",
+                },
+                {
+                    "event_type": "account.profile_updated",
+                    "event_label": "Cập nhật tên tài khoản",
+                    "summary": "Cập nhật tên hiển thị tài khoản",
+                    "entity_type": "user",
+                    "entity_label": "Tài khoản",
+                    "entity_id": 17,
+                    "created_at": datetime(2026, 11, 2, 10, tzinfo=timezone.utc),
+                    "actor_name": "Sample Admin",
+                    "actor_username": "admin",
+                },
+            ],
+            "pagination": {
+                "page": 1,
+                "pages": 1,
+                "total": 2,
+                "first": 1,
+                "last": 2,
+                "has_previous": False,
+                "has_next": False,
+            },
+        }
+        with patch("petcare.auth.load_active_user", return_value=user), patch(
+            "petcare.routes.audit_routes.audit_service.list_events", return_value=listing
+        ):
+            response = self.client.get("/activity/")
+
+        body = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Recorded invoice refund", body)
+        self.assertIn("Recorded a refund of 125000.50 VND for invoice #42", body)
+        self.assertIn("Invoice refund", body)
+        self.assertIn("Updated account profile", body)
+        self.assertIn("Updated account display name", body)
 
     def test_login_preserves_selected_locale_when_rotating_session(self):
         user = {
@@ -414,7 +498,7 @@ class WebPageTests(unittest.TestCase):
         foreign_keys = list(REQUIRED_TENANT_FOREIGN_KEYS | REQUIRED_GLOBAL_FOREIGN_KEYS)
         cursor = MagicMock()
         cursor.fetchall.side_effect = [columns, foreign_keys]
-        cursor.fetchone.return_value = (1,)
+        cursor.fetchone.return_value = (3,)
         self.assertTrue(schema_contract_is_ready(cursor))
 
         cursor.fetchall.side_effect = [

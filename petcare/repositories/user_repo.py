@@ -43,7 +43,7 @@ def get_account_by_id_for_update(connection, user_id):
     return fetch_one(
         connection,
         "SELECT id, username, email, email_verified_at, password_hash, full_name, "
-        "active, session_version FROM users WHERE id = %s FOR UPDATE",
+        "preferred_locale, active, session_version FROM users WHERE id = %s FOR UPDATE",
         (user_id,),
     )
 

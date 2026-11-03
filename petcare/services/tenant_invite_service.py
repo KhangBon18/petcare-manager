@@ -8,10 +8,12 @@ from flask import current_app, url_for
 
 from petcare.database.connection import read_connection, transaction
 from petcare.email_address import normalize_email
+from petcare.i18n import current_locale
 from petcare.repositories import audit_repo, invitation_repo
 from petcare.services import mail_service, request_throttle_service
 from petcare.services.common import require_actor
 from petcare.services.exceptions import ConflictError, NotFoundError, RateLimitError, ValidationError
+from petcare.services.mail_templates import invitation_email
 from petcare.security import hash_password, verify_password
 
 
@@ -50,16 +52,13 @@ def create_invitation(actor_id, email, role="staff"):
                     current_app.config["PUBLIC_BASE_URL"]
                     + url_for("users.accept_invitation", token=token)
                 )
-                body = (
-                    f"Bạn được mời tham gia cửa hàng {actor['tenant_name']} với vai trò "
-                    f"{'quản trị viên' if role == 'admin' else 'nhân viên'}.\n\n"
-                    f"Chấp nhận lời mời trong 7 ngày tại:\n{invite_link}\n\n"
-                    "Liên kết chỉ dùng một lần. Nếu bạn không mong đợi lời mời này, hãy bỏ qua email."
+                subject, body = invitation_email(
+                    actor["tenant_name"], role, invite_link, current_locale()
                 )
                 try:
                     outbox_id = mail_service.enqueue_text_email(
                         email,
-                        f"Lời mời tham gia {actor['tenant_name']} trên PetCare Manager",
+                        subject,
                         body,
                         expires_at=invitation["expires_at"],
                         connection=connection,

@@ -10,9 +10,9 @@
 </div>
 <div class="stat-grid">
   <article class="stat-card stat-peach"><div class="stat-top"><span>{{ t('Doanh thu hôm nay') }}</span><span class="stat-icon">{{ icon('reports') }}</span></div><strong>{{ format_money(metrics.today) }}</strong><small>{{ t('Đơn đã thanh toán trong ngày') }}</small></article>
-  <article class="stat-card stat-lilac"><div class="stat-top"><span>{{ t('Khách hàng') }}</span><span class="stat-icon">{{ icon('customers') }}</span></div><strong>{{ metrics.customers }}</strong><small>{{ t('Khách hàng đang hoạt động') }}</small></article>
-  <article class="stat-card stat-mint"><div class="stat-top"><span>{{ t('Sản phẩm') }}</span><span class="stat-icon">{{ icon('products') }}</span></div><strong>{{ metrics.products }}</strong><small>{% if metrics.low_stock == 1 %}{{ t('1 sản phẩm sắp hết hàng') }}{% else %}{{ metrics.low_stock }} {{ t('sản phẩm sắp hết hàng') }}{% endif %}</small></article>
-  <article class="stat-card stat-blue"><div class="stat-top"><span>{{ t('Thú cưng đang bán') }}</span><span class="stat-icon">{{ icon('pets') }}</span></div><strong>{{ metrics.pets_available }}</strong><small>{{ t('Các cá thể đang sẵn sàng') }}</small></article>
+  <article class="stat-card stat-lilac"><div class="stat-top"><span>{{ t('Khách hàng') }}</span><span class="stat-icon">{{ icon('customers') }}</span></div><strong>{{ format_number(metrics.customers) }}</strong><small>{{ t('Khách hàng đang hoạt động') }}</small></article>
+  <article class="stat-card stat-mint"><div class="stat-top"><span>{{ t('Sản phẩm') }}</span><span class="stat-icon">{{ icon('products') }}</span></div><strong>{{ format_number(metrics.products) }}</strong><small>{% if metrics.low_stock == 1 %}{{ t('1 sản phẩm sắp hết hàng') }}{% else %}{{ format_number(metrics.low_stock) }} {{ t('sản phẩm sắp hết hàng') }}{% endif %}</small></article>
+  <article class="stat-card stat-blue"><div class="stat-top"><span>{{ t('Thú cưng đang bán') }}</span><span class="stat-icon">{{ icon('pets') }}</span></div><strong>{{ format_number(metrics.pets_available) }}</strong><small>{{ t('Các cá thể đang sẵn sàng') }}</small></article>
 </div>
 {% if metrics.business is defined %}{{ business(metrics.business, true) }}{% elif metrics.business_error is defined %}<section class="panel report-detail-panel"><p>{{ metrics.business_error }}</p><a class="text-link" href="{{ url_for('reports.index',period='today') }}">{{ 'Xem báo cáo hôm nay' if locale == 'vi' else 'View today’s report' }} →</a></section>{% endif %}
 {% if metrics.restock is defined %}{{ restock_panel(metrics.restock, "Ưu tiên bổ sung tồn kho" if locale == 'vi' else "Restock priorities") }}{% endif %}
@@ -33,8 +33,8 @@
       {% for product in metrics.low_stock_items %}
       <a class="dashboard-list-row" href="{{ url_for('products.edit', product_id=product.id) if g.user.role == 'admin' else url_for('products.index', q=product.code) }}">
         <span class="dashboard-list-icon inventory-icon" aria-hidden="true">{{ icon('products') }}</span>
-        <span class="dashboard-list-copy"><strong>{{ product.name }}</strong><small>{{ product.code }} · {{ t('Ngưỡng cảnh báo') }} {{ product.reorder_level }}</small></span>
-        <span class="dashboard-stock {{ 'dashboard-stock-empty' if product.stock_qty == 0 else '' }}">{{ product.stock_qty }} <small>{{ t('còn') }}</small></span>
+        <span class="dashboard-list-copy"><strong>{{ product.name }}</strong><small>{{ product.code }} · {{ t('Ngưỡng cảnh báo') }} {{ format_number(product.reorder_level) }}</small></span>
+        <span class="dashboard-stock {{ 'dashboard-stock-empty' if product.stock_qty == 0 else '' }}">{{ format_number(product.stock_qty) }} <small>{{ t('còn') }}</small></span>
       </a>
       {% endfor %}
     </div>

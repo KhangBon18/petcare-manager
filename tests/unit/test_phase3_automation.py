@@ -47,6 +47,7 @@ def report_fixture():
             {
                 "invoice_id": 1,
                 "paid_at": "2026-10-25T12:00:00+07:00",
+                "entry_type": "sale",
                 "item_type": "product",
                 "code": "P1",
                 "name": '=WEBSERVICE("https://example.test")',
@@ -210,7 +211,7 @@ class RestockTests(unittest.TestCase):
         self.assertIn("i.status = 'paid'", sql)
         self.assertIn("ii.item_type = 'product'", sql)
         self.assertIn("i.paid_at >= %s AND i.paid_at < %s", sql)
-        self.assertEqual(params, ("start14", "start30", "end"))
+        self.assertEqual(params, ("start14", "start30", "end", "start30", "end"))
 
     def row(self, **kw):
         return dict(
@@ -329,13 +330,32 @@ class ReportAutomationTests(unittest.TestCase):
         details, root = cells_from_xlsx(blob, 3)
         self.assertEqual(overview["B6"], 150000)
         self.assertEqual(daily["B6"] + daily["B7"], overview["B6"])
-        self.assertEqual(details["H6"], overview["B6"])
-        self.assertEqual(details["H7"], overview["B6"])
-        self.assertTrue(details["E6"].startswith("=WEBSERVICE"))
+        self.assertEqual(details["I6"], overview["B6"])
+        self.assertEqual(details["I7"], overview["B6"])
+        self.assertTrue(details["F6"].startswith("=WEBSERVICE"))
         self.assertNotIn(b"<f>", ET.tostring(root))
         with ZipFile(BytesIO(blob)) as book:
             self.assertIn("₫", book.read("xl/styles.xml").decode())
             self.assertIn("frozen", book.read("xl/worksheets/sheet3.xml").decode())
+
+    def test_english_xlsx_localizes_labels_dates_and_report_summary(self):
+        blob = report_export_service.workbook_bytes(
+            json.loads(json.dumps(report_fixture(), default=str)), locale="en"
+        )
+        overview, _ = cells_from_xlsx(blob, 1)
+        with ZipFile(BytesIO(blob)) as book:
+            workbook = ET.fromstring(book.read("xl/workbook.xml"))
+            names = [node.attrib["name"] for node in workbook.findall(".//m:sheet", {
+                "m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+            })]
+            strings = book.read("xl/sharedStrings.xml").decode()
+        self.assertEqual(names, ["Overview", "Daily revenue", "Details", "Top products"])
+        self.assertIn("Paid revenue", strings)
+        self.assertIn("SALES AND REFUNDS", strings)
+        self.assertIn("Paid invoices", strings)
+        self.assertNotIn("Doanh thu đã thu", strings)
+        self.assertIn("Revenue changed by", strings)
+        self.assertEqual(overview["B6"], 150000)
 
     def test_large_amount_is_exact_text_not_silently_rounded_by_excel(self):
         report = report_fixture()
@@ -347,6 +367,25 @@ class ReportAutomationTests(unittest.TestCase):
         report = report_fixture()
         report.update(growth=None, peak={"date": "2026-10-25"})
         self.assertIn("nền bằng 0", report_service.business_brief(report)[1])
+
+    def test_business_brief_uses_locale_number_and_date_formats(self):
+        report = report_fixture()
+        report["summary"]["invoice_count"] = 1234
+        report["growth"] = Decimal("1234.56")
+        report["peak"] = {"date": "2026-10-25"}
+        report["top_products"] = [{"name": "Food", "quantity_sold": 12345}]
+
+        english = report_service.business_brief(report, "en")
+        self.assertIn("1,234 paid invoices", english[0])
+        self.assertIn("+1,234.6%", english[1])
+        self.assertEqual(english[2], "Best day: Oct 25, 2026.")
+        self.assertIn("Food (12,345)", english[3])
+
+        vietnamese = report_service.business_brief(report, "vi")
+        self.assertIn("1.234 hóa đơn", vietnamese[0])
+        self.assertIn("+1.234,6%", vietnamese[1])
+        self.assertEqual(vietnamese[2], "Ngày doanh thu cao nhất: 25/10/2026.")
+        self.assertIn("Food (12.345)", vietnamese[3])
 
     def test_period_bounds_reject_unbounded_range(self):
         with self.assertRaises(ValidationError):
@@ -364,11 +403,13 @@ class ReportAutomationTests(unittest.TestCase):
             {
                 "invoice_id": 1,
                 "paid_at": datetime(2026, 3, 8, 9, 30),
+                "entry_type": "sale",
                 "line_total": Decimal(20),
             },
             {
                 "invoice_id": 1,
                 "paid_at": datetime(2026, 3, 8, 9, 30),
+                "entry_type": "sale",
                 "line_total": Decimal(30),
             },
         ]

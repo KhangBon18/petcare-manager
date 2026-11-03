@@ -35,7 +35,7 @@ def chat():
             g.user["id"], payload.get("message"), payload.get("history"), locale=g.locale
         )
     except ServiceError as exc:
-        return jsonify(error=str(exc)), 400
+        return jsonify(error=translate(str(exc))), 400
     for item in response.get("catalog", {}).get("items", []):
         pet = item["kind"] == "pet"
         item["url"] = url_for("pets.detail", pet_id=item["id"]) if pet else url_for("products.detail", product_id=item["id"])

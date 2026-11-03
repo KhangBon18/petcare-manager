@@ -16,6 +16,9 @@ EVENT_LABELS = {
     "invoice.created": "Tạo hóa đơn",
     "invoice.paid": "Thu tiền hóa đơn",
     "invoice.cancelled": "Hủy hóa đơn",
+    "invoice.refunded": "Hoàn tiền hóa đơn",
+    "account.profile_updated": "Cập nhật tên tài khoản",
+    "tenant.signup_started": "Bắt đầu đăng ký cửa hàng",
     "stock.adjusted": "Điều chỉnh tồn kho",
     "user.created": "Tạo tài khoản",
     "user.updated": "Cập nhật tài khoản",
@@ -45,6 +48,10 @@ ENTITY_LABELS = {
     "user": "Tài khoản",
     "invitation": "Lời mời",
     "tenant": "Cửa hàng",
+    "invoice_refund": "Khoản hoàn tiền",
+    "purchase_order": "Đơn nhập",
+    "supplier": "Nhà cung cấp",
+    "owner_transfer": "Bàn giao chủ cửa hàng",
 }
 
 

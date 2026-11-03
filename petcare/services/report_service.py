@@ -3,6 +3,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from petcare.i18n import current_locale
+from petcare.money import format_number
 from petcare.services.ui_text import ui_text
 from petcare.services.exceptions import ValidationError
 from petcare.services import restock_service
@@ -11,6 +12,7 @@ from petcare.database.connection import read_connection
 from petcare.repositories import report_repo
 from petcare.services.common import date_value, require_actor
 from petcare.timezones import (
+    format_tenant_date,
     tenant_today,
     utc_window_for_local_dates,
     utc_window_for_local_day,
@@ -127,7 +129,8 @@ def _report(connection, actor, start, end):
         local_paid = row["paid_at"].replace(tzinfo=timezone.utc).astimezone(zone)
         day = local_paid.date()
         daily[day]["revenue"] += row["line_total"]
-        daily[day]["invoices"].add(row["invoice_id"])
+        if row["entry_type"] == "sale":
+            daily[day]["invoices"].add(row["invoice_id"])
         details.append({**row, "paid_at": local_paid.isoformat()})
     series = [
         {
@@ -139,7 +142,7 @@ def _report(connection, actor, start, end):
     ]
     summary = {
         "revenue": sum((row["revenue"] for row in series), Decimal(0)),
-        "invoice_count": len({row["invoice_id"] for row in rows}),
+        "invoice_count": len({row["invoice_id"] for row in rows if row["entry_type"] == "sale"}),
     }
     previous = report_repo.summary(connection, previous_at, previous_end)
     growth = (
@@ -148,13 +151,14 @@ def _report(connection, actor, start, end):
         else None
     )
     peak = max(series, key=lambda row: row["revenue"])
-    maximum = max((row["revenue"] for row in series), default=Decimal(0)) or Decimal(1)
+    maximum = max((row["revenue"] for row in series), default=Decimal(0))
+    maximum = max(maximum, Decimal(1))
     bars = [
         {
             "x": round(i * 680 / count_days + 1, 2),
             "width": round(max(0.5, 680 / count_days - 2), 2),
-            "y": round(160 - float(row["revenue"] / maximum) * 150, 2),
-            "height": round(float(row["revenue"] / maximum) * 150, 2),
+            "y": round(160 - max(0, float(row["revenue"] / maximum)) * 150, 2),
+            "height": round(max(0, float(row["revenue"] / maximum)) * 150, 2),
             **row,
         }
         for i, row in enumerate(series)
@@ -186,36 +190,44 @@ def _report(connection, actor, start, end):
 def business_brief(report, locale="vi"):
     summary, previous = report["summary"], report["previous"]
     count = summary["invoice_count"]
+    number_locale = "en_US" if locale == "en" else "vi_VN"
+    growth = Decimal(str(report["growth"])) if report["growth"] is not None else None
     if locale == "en":
-        first = f"{count} paid invoices. Unpaid and cancelled invoices are excluded."
+        first = f"{format_number(count, number_locale)} paid invoices. Unpaid and cancelled invoices are excluded."
         trend = (
-            f"Revenue changed by {report['growth']:+.1f}% versus the previous equal-length period."
-            if report["growth"] is not None
+            f"Revenue changed by {'+' if growth >= 0 else '−'}{format_number(abs(growth), number_locale, '#,##0.0')}% versus the previous equal-length period."
+            if growth is not None
             else "Previous period had no revenue; percentage growth is not defined."
         )
+        peak_date = (report.get("peak") or {}).get("date")
         peak = (
-            f"Best day: {report['peak']['date']}."
-            if count
+            f"Best day: {format_tenant_date(peak_date, locale)}."
+            if count and peak_date
             else "No paid sales in this period. Try a different period."
+            if not count
+            else "Peak-day details are unavailable for this snapshot."
         )
     else:
-        first = f"Có {count} hóa đơn đã thu; không tính hóa đơn chưa thu hoặc đã hủy."
+        first = f"Có {format_number(count, number_locale)} hóa đơn đã thu; không tính hóa đơn chưa thu hoặc đã hủy."
         trend = (
-            f"Doanh thu thay đổi {report['growth']:+.1f}% so với kỳ trước cùng số ngày."
-            if report["growth"] is not None
+            f"Doanh thu thay đổi {'+' if growth >= 0 else '−'}{format_number(abs(growth), number_locale, '#,##0.0')}% so với kỳ trước cùng số ngày."
+            if growth is not None
             else "Kỳ trước chưa có doanh thu; không tính tỷ lệ tăng trưởng từ nền bằng 0."
         )
+        peak_date = (report.get("peak") or {}).get("date")
         peak = (
-            f"Ngày doanh thu cao nhất: {report['peak']['date']}."
-            if count
+            f"Ngày doanh thu cao nhất: {format_tenant_date(peak_date, locale)}."
+            if count and peak_date
             else "Chưa có giao dịch đã thu trong kỳ. Hãy thử kỳ khác."
+            if not count
+            else "Snapshot này không lưu chi tiết ngày doanh thu cao nhất."
         )
     lines = [first, trend, peak]
     if report.get("top_products"):
         best = report["top_products"][0]
         lines.append(
-            f"Best seller by units: {best['name']} ({best['quantity_sold']})."
+            f"Best seller by units: {best['name']} ({format_number(best['quantity_sold'], number_locale)})."
             if locale == "en"
-            else f"Bán chạy theo số lượng: {best['name']} ({best['quantity_sold']})."
+            else f"Bán chạy theo số lượng: {best['name']} ({format_number(best['quantity_sold'], number_locale)})."
         )
     return lines

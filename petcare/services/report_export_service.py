@@ -1,6 +1,6 @@
 """Signed screen snapshots keep Excel identical even if sales change after rendering."""
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from io import BytesIO
 import json
@@ -9,6 +9,7 @@ from flask import current_app
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 import xlsxwriter
 
+from petcare.i18n import current_locale
 from petcare.money import currency_precision
 from petcare.services.ui_text import ui_text
 from petcare.services.exceptions import ValidationError
@@ -51,7 +52,17 @@ def read_snapshot(token, actor_id, tenant_id):
     return payload["report"]
 
 
-def workbook_bytes(report):
+def workbook_bytes(report, locale=None):
+    locale = locale or current_locale()
+    english = locale == "en"
+
+    def label(vietnamese, english_text):
+        return english_text if english else vietnamese
+
+    def display_date(value):
+        parsed = value if isinstance(value, date) else date.fromisoformat(str(value))
+        return parsed.strftime("%b %d, %Y" if english else "%d/%m/%Y")
+
     output = BytesIO()
     book = xlsxwriter.Workbook(
         output,
@@ -59,7 +70,7 @@ def workbook_bytes(report):
     )
     book.set_properties(
         {
-            "title": "PetCare — Báo cáo kinh doanh",
+            "title": label("PetCare — Báo cáo kinh doanh", "PetCare — Business report"),
             "company": report["tenant_name"],
             "author": "PetCare Manager",
         }
@@ -96,8 +107,8 @@ def workbook_bytes(report):
     total_format = book.add_format(
         {**base, "num_format": number_format, "bold": True, "bg_color": "#E8F3ED"}
     )
-    day_format = book.add_format({**base, "num_format": "dd/mm/yyyy"})
-    time_format = book.add_format({**base, "num_format": "dd/mm/yyyy hh:mm"})
+    day_format = book.add_format({**base, "num_format": "mm/dd/yyyy" if english else "dd/mm/yyyy"})
+    time_format = book.add_format({**base, "num_format": "mm/dd/yyyy hh:mm AM/PM" if english else "dd/mm/yyyy hh:mm"})
     growth_format = book.add_format({**base, "num_format": '0.0"%"'})
 
     def amount(sheet, row, col, value, fmt=money):
@@ -127,9 +138,9 @@ def workbook_bytes(report):
             columns - 1,
             report["tenant_name"]
             + " · "
-            + str(report["start_date"])
+            + display_date(report["start_date"])
             + " — "
-            + str(report["end_date"]),
+            + display_date(report["end_date"]),
             text,
         )
         sheet.merge_range(
@@ -137,7 +148,12 @@ def workbook_bytes(report):
             0,
             2,
             columns - 1,
-            "Chốt số liệu: " + report["captured_at"] + " · " + report["timezone"],
+            label("Chốt số liệu: ", "Snapshot: ")
+            + datetime.fromisoformat(report["captured_at"]).strftime(
+                "%b %d, %Y %I:%M %p" if english else "%d/%m/%Y %H:%M"
+            )
+            + " · "
+            + report["timezone"],
             text,
         )
         sheet.set_row(1, 32)
@@ -147,38 +163,48 @@ def workbook_bytes(report):
         sheet.set_paper(9)
         sheet.fit_to_pages(1, 0)
         sheet.repeat_rows(0, 4)
-        sheet.set_footer("&L" + report["tenant_name"] + "&RTrang &P / &N")
+        sheet.set_footer(
+            "&L" + report["tenant_name"] + "&R" + label("Trang", "Page") + " &P / &N"
+        )
         return sheet
 
-    overview = setup("Tong quan", 2, "BÁO CÁO KINH DOANH")
+    overview = setup(
+        "Overview" if english else "Tong quan",
+        2,
+        label("BÁO CÁO KINH DOANH", "BUSINESS REPORT"),
+    )
     overview.set_column(0, 0, 30, text)
     overview.set_column(1, 1, 32)
-    overview.write_row(4, 0, ["Chỉ tiêu", "Giá trị"], header)
-    overview.write(5, 0, "Doanh thu đã thu")
+    overview.write_row(4, 0, [label("Chỉ tiêu", "Metric"), label("Giá trị", "Value")], header)
+    overview.write(5, 0, label("Doanh thu đã thu", "Paid revenue"))
     amount(overview, 5, 1, report["summary"]["revenue"], total_format)
-    overview.write(6, 0, "Hóa đơn hoàn tất")
+    overview.write(6, 0, label("Hóa đơn hoàn tất", "Paid invoices"))
     overview.write_number(6, 1, report["summary"]["invoice_count"])
-    overview.write(7, 0, "Doanh thu kỳ trước")
+    overview.write(7, 0, label("Doanh thu kỳ trước", "Previous-period revenue"))
     amount(overview, 7, 1, report["previous"]["revenue"])
-    overview.write(8, 0, "Thay đổi (%)")
+    overview.write(8, 0, label("Thay đổi (%)", "Change (%)"))
     overview.write(
         8,
         1,
         (
             float(report["growth"])
             if report["growth"] is not None
-            else "Không có nền so sánh"
+            else label("Không có nền so sánh", "No previous-period baseline")
         ),
         growth_format,
     )
-    overview.write(9, 0, "Thú cưng đã bán")
+    overview.write(9, 0, label("Thú cưng đã bán", "Pets sold"))
     overview.write_number(9, 1, report["pets_sold"]["pets_sold"])
-    overview.write(10, 0, "Tồn hàng hiện tại")
+    overview.write(10, 0, label("Tồn hàng hiện tại", "Current stock"))
     overview.write_number(10, 1, int(report["inventory"]["units_in_stock"]))
-    overview.write(11, 0, "Mặt hàng dưới ngưỡng")
+    overview.write(11, 0, label("Mặt hàng dưới ngưỡng", "Products at or below reorder level"))
     overview.write_number(11, 1, int(report["inventory"].get("low_stock_count", 0)))
-    overview.merge_range(12, 0, 12, 1, "BẢN TIN TỰ ĐỘNG · PYTHON", header)
-    for i, line in enumerate(report["brief"], 13):
+    overview.merge_range(
+        12, 0, 12, 1, label("BẢN TIN TỰ ĐỘNG · PYTHON", "AUTOMATED SUMMARY · PYTHON"), header
+    )
+    from petcare.services.report_service import business_brief
+
+    for i, line in enumerate(business_brief(report, locale), 13):
         overview.merge_range(i, 0, i, 1, line, text)
         overview.set_row(i, 44)
     overview.set_row(17, 40)
@@ -188,31 +214,47 @@ def workbook_bytes(report):
         0,
         18,
         1,
-        "Nguồn: hóa đơn đã thanh toán của cửa hàng. File dùng đúng snapshot trên màn hình, không tải lại dữ liệu. Tồn kho là số hiện tại lúc chốt, không phải tồn cuối kỳ. Giá trị vượt 15 chữ số được lưu dạng văn bản chính xác.",
+        label(
+            "Nguồn: hóa đơn đã thanh toán của cửa hàng. File dùng đúng snapshot trên màn hình, không tải lại dữ liệu. Tồn kho là số hiện tại lúc chốt, không phải tồn cuối kỳ. Giá trị vượt 15 chữ số được lưu dạng văn bản chính xác.",
+            "Source: paid store invoices. This file uses the displayed snapshot and does not reload data. Inventory is the current snapshot, not historical period-end stock. Values over 15 digits are stored as exact text.",
+        ),
         text,
     )
-    daily = setup("Doanh thu ngay", 3, "DOANH THU THEO NGÀY")
-    daily.write_row(4, 0, ["Ngày địa phương", "Doanh thu", "Hóa đơn"], header)
+    daily = setup(
+        "Daily revenue" if english else "Doanh thu ngay",
+        3,
+        label("DOANH THU THEO NGÀY", "DAILY REVENUE"),
+    )
+    daily.write_row(
+        4, 0,
+        [label("Ngày địa phương", "Local date"), label("Doanh thu", "Revenue"), label("Hóa đơn", "Invoices")],
+        header,
+    )
     for r, item in enumerate(report["daily"], 5):
         daily.write_datetime(r, 0, datetime.fromisoformat(item["date"]), day_format)
         amount(daily, r, 1, item["revenue"])
         daily.write_number(r, 2, item["invoice_count"])
     daily.autofilter(4, 0, 4 + len(report["daily"]), 2)
-    details = setup("Chi tiet", 8, "CHI TIẾT DÒNG HÀNG ĐÃ THU")
-    for column, width in enumerate((10, 24, 12, 14, 32, 10, 19, 19)):
+    details = setup(
+        "Details" if english else "Chi tiet",
+        9,
+        label("CHI TIẾT BÁN HÀNG VÀ HOÀN TIỀN", "SALES AND REFUNDS"),
+    )
+    for column, width in enumerate((10, 24, 15, 12, 14, 32, 10, 19, 19)):
         details.set_column(column, column, width, text)
     details.write_row(
         4,
         0,
         [
-            "Hóa đơn",
-            "Ngày thu địa phương",
-            "Loại",
-            "Mã",
-            "Mặt hàng",
-            "Số lượng",
-            "Đơn giá",
-            "Thành tiền",
+            label("Hóa đơn", "Invoice"),
+            label("Ngày thu / hoàn địa phương", "Local payment / refund date"),
+            label("Giao dịch", "Transaction"),
+            label("Loại", "Type"),
+            label("Mã", "Code"),
+            label("Mặt hàng", "Item"),
+            label("Số lượng", "Quantity"),
+            label("Đơn giá", "Unit price"),
+            label("Thành tiền", "Line total"),
         ],
         header,
     )
@@ -224,23 +266,45 @@ def workbook_bytes(report):
             datetime.fromisoformat(item["paid_at"]).replace(tzinfo=None),
             time_format,
         )
+        # Signed report snapshots created just before a rolling deploy may
+        # predate the refund-aware entry_type field; those rows are sales.
         details.write_string(
-            r, 2, "Thú cưng" if item["item_type"] == "pet" else "Sản phẩm"
+            r,
+            2,
+            label("Bán", "Sale")
+            if item.get("entry_type", "sale") == "sale"
+            else label("Hoàn tiền", "Refund"),
         )
-        details.write_string(r, 3, item["code"])
-        details.write_string(r, 4, item["name"])
-        details.write_number(r, 5, item["quantity"])
-        amount(details, r, 6, item["unit_price"])
-        amount(details, r, 7, item["line_total"])
+        details.write_string(
+            r,
+            3,
+            label("Thú cưng", "Pet")
+            if item["item_type"] == "pet"
+            else label("Sản phẩm", "Product"),
+        )
+        details.write_string(r, 4, item["code"])
+        details.write_string(r, 5, item["name"])
+        details.write_number(r, 6, item["quantity"])
+        amount(details, r, 7, item["unit_price"])
+        amount(details, r, 8, item["line_total"])
         details.set_row(r, max(34, ((len(item["name"]) + 29) // 30) * 16))
     if report["details"]:
-        details.autofilter(4, 0, 4 + len(report["details"]), 7)
+        details.autofilter(4, 0, 4 + len(report["details"]), 8)
     total_row = 5 + len(report["details"])
-    details.merge_range(total_row, 0, total_row, 6, "TỔNG DOANH THU", header)
-    amount(details, total_row, 7, report["summary"]["revenue"], total_format)
-    products = setup("San pham ban chay", 4, "TOP 10 SẢN PHẨM TRONG KỲ")
+    details.merge_range(total_row, 0, total_row, 7, label("DOANH THU THUẦN", "NET REVENUE"), header)
+    amount(details, total_row, 8, report["summary"]["revenue"], total_format)
+    products = setup(
+        "Top products" if english else "San pham ban chay",
+        4,
+        label("TOP 10 SẢN PHẨM TRONG KỲ", "TOP PRODUCTS"),
+    )
     products.set_column(1, 1, 40, text)
-    products.write_row(4, 0, ["Mã", "Sản phẩm", "Số lượng bán", "Doanh thu"], header)
+    products.write_row(
+        4,
+        0,
+        [label("Mã", "Code"), label("Sản phẩm", "Product"), label("Số lượng bán", "Units sold"), label("Doanh thu", "Revenue")],
+        header,
+    )
     for r, item in enumerate(report.get("top_products", []), 5):
         products.write_string(r, 0, item["code"])
         products.write_string(r, 1, item["name"])
