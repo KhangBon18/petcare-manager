@@ -1,6 +1,6 @@
 # Trạng thái PetCare Manager
 
-Cập nhật: 2026-11-03. Nhánh làm việc: solo/khang-petcare. Commit gốc: 1c62a48. Tag local `v1.0-demo-ready` chưa push; nhánh local có một commit ahead origin và các thay đổi working tree chưa commit. Chưa merge hoặc tạo PR.
+Cập nhật: 2026-11-03. Nhánh làm việc `solo/khang-petcare` đã push đầy đủ thay đổi P1.1–P2.4, UI và tài liệu tới commit `c9b8621`; nhánh local khớp origin. GitHub Actions run #5 xanh trên Python 3.11–3.13, source-security và container. Run #4 từng fail do checksum GSAP bị thay đổi khi trim whitespace; đã khôi phục nguyên file phân phối và kiểm tra full suite local. Tag `v1.0-demo-ready` vẫn chỉ ở local; chưa merge hoặc tạo PR.
 
 ## P1.1 — hồ sơ khách hàng — 2026-11-02
 
@@ -56,7 +56,7 @@ Cập nhật: 2026-11-03. Nhánh làm việc: solo/khang-petcare. Commit gốc: 
 - Hoàn thiện nhãn sự kiện và đối tượng audit cho hoàn tiền, đơn nhập, nhà cung cấp, bàn giao owner, cập nhật tài khoản và đăng ký cửa hàng; bổ sung bản dịch cho summary tài khoản/đăng ký đã được ghi trong nhật ký cũ.
 - Nghiệm thu: **338/338 Python tests** (201 unit, 78 web, 59 MySQL integration trên MySQL 8.4 cô lập), **26/26 JavaScript tests**. `pip-audit`, Bandit theo baseline, Compose config, production Docker build và `git diff --check` đạt.
 - Playwright: trang audit English trên desktop hiển thị đúng nhãn/summary hoàn tiền và lịch sử; mobile 360 px không tràn ngang, bảng cuộn trong khung riêng. Đã xóa 68 ảnh chỉ được DB test tham chiếu; toàn bộ file mà `petcare_shop_dev` tham chiếu được giữ nguyên. CI DB tạm đã dọn; database phát triển không bị ghi hoặc migrate.
-- Các summary phát sinh từ ứng dụng và event/entity đã biết được dịch. Audit nhập từ hệ thống khác hoặc summary tự do không khớp mẫu vẫn hiển thị nguyên văn nguồn; hosted CI cần chạy lại sau khi có release candidate được push.
+- Các summary phát sinh từ ứng dụng và event/entity đã biết được dịch. Audit nhập từ hệ thống khác hoặc summary tự do không khớp mẫu vẫn hiển thị nguyên văn nguồn. Hosted CI run #5 xanh trên commit `c9b8621` cho cả ba phiên bản Python cùng source-security/container.
 
 ## Nghiệm thu Phase 4 — 2026-10-25
 

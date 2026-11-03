@@ -22,9 +22,9 @@
 - [x] Operator export per-tenant gồm CSV/ảnh, bundle AES-GCM + manifest/checksum, verify và decrypt sau xác thực; loại password/token hashes, không ghi đè file.
 - [x] Admin tự tải export mã hóa của tenant đang chọn sau re-authentication, ghi audit event, áp dụng rate limit, no-store response và dọn file tạm khi stream đóng.
 - [x] Chạy unit/web/MySQL integration suite sau khi thêm cryptography; `pip-audit -r requirements.txt` không tìm thấy lỗ hổng đã biết; Docker image build thành công.
-- [x] Cấu hình CI source scan Bandit, Trivy secret scan trên source tree, và Trivy HIGH/CRITICAL + secret scan trên production image; local scans đạt ngày 2026-10-18. GitHub Actions run #3 xanh cả ba job trên `479e0f3`; cần rerun cho release candidate hiện tại và hoàn tất independent review trước release.
-- [ ] Billing/plan limits, localized commerce, deletion/retention, live SMTP provider validation, queue alerting/bounce handling, production bucket/IAM/versioning and restore rehearsal, independent security review, green hosted security/CI workflow and production rehearsal before enabling public signup.
+- [x] Cấu hình CI source scan Bandit, Trivy secret scan trên source tree, và Trivy HIGH/CRITICAL + secret scan trên production image; GitHub Actions run #5 xanh toàn bộ job trên `c9b8621` (Python 3.11–3.13, source-security và container).
+- [ ] Billing/plan limits, localized commerce, deletion/retention, live SMTP provider validation, queue alerting/bounce handling, production bucket/IAM/versioning and restore rehearsal, independent security review and production rehearsal before enabling public signup.
 - [x] Diễn tập backup/verify/decrypt/restore trên `petcare_shop_test` và database `_test` tạm; row counts khớp, 9 ảnh trích xuất, database tạm được dọn. Không sửa database làm việc.
 - [ ] Diễn tập restore từ backup managed production sau khi có môi trường và dịch vụ lưu trữ.
 - [ ] Cài sạch trên Windows; chưa có bằng chứng thử trên hệ điều hành này.
-- [ ] Người nộp xác nhận thời điểm commit/push/PR/release; hiện chưa push/merge/tag.
+- [x] Pushed the P1.1–P2.4 code, UI and CI checksum fix to `solo/khang-petcare`; GitHub Actions run #5 passed on `c9b8621`. Release/status documentation records the result. No PR/merge was created; `v1.0-demo-ready` remains local and was not pushed.
