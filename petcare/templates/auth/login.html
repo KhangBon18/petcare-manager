@@ -21,7 +21,7 @@
       <form method="post" class="form-stack">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>{{ t('Mã cửa hàng') }}<input type="text" name="store_slug" value="{{ request.form.get('store_slug', 'main') }}" autocomplete="organization" required placeholder="{{ t('Ví dụ: main') }}"></label>
-        <label>{{ t('Tên đăng nhập') }}<input type="text" name="username" autocomplete="username" required autofocus placeholder="{{ t('Ví dụ: admin') }}"></label>
+        <label>{{ t('Tên đăng nhập') }}<input type="text" name="username" autocomplete="username" required placeholder="{{ t('Ví dụ: admin') }}"></label>
         <label>{{ t('Mật khẩu') }}<input type="password" name="password" autocomplete="current-password" required placeholder="{{ t('Nhập mật khẩu') }}"></label>
         <button class="button button-primary button-wide" type="submit">{{ t('Đăng nhập') }} <span>→</span></button>
       </form>

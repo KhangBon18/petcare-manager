@@ -10,6 +10,7 @@
     close.textContent = "×"; close.addEventListener("click", () => node.remove());
     node.append(close);
     region.append(node);
+    window.PetCare?.motion?.reveal([node]);
     if (category === "success") window.setTimeout(() => node.remove(), 6000);
   }
   window.PetCare = {...window.PetCare, toast(message, category = "success") {
@@ -41,6 +42,54 @@
     const form = summary.closest("form");
     (form?.querySelector('[aria-invalid="true"]') || summary).focus();
   }
+
+  const tableScrollHint = english
+    ? "Scrollable table. Focus here, then use the left and right arrow keys to view more columns."
+    : "Bảng có thể cuộn ngang. Đưa tiêu điểm vào đây rồi dùng phím mũi tên trái/phải để xem thêm cột.";
+  let tableRegionNumber = 0;
+  document.querySelectorAll(".table-scroll").forEach(region => {
+    const table = region.querySelector("table");
+    if (!table) return;
+    const original = {
+      tabindex: region.getAttribute("tabindex"),
+      role: region.getAttribute("role"),
+      label: region.getAttribute("aria-label"),
+      describedBy: region.getAttribute("aria-describedby")
+    };
+    let hint = null;
+    const updateScrollAccess = () => {
+      const overflows = region.scrollWidth > region.clientWidth + 1;
+      if (overflows && !hint) {
+        const sectionTitle = region.querySelector("caption")?.textContent.trim()
+          || region.closest("section, article")?.querySelector("h2")?.textContent.trim();
+        const regionLabel = sectionTitle ? `${sectionTitle}. ${tableScrollHint}` : tableScrollHint;
+        hint = document.createElement("p");
+        hint.className = "table-scroll-hint";
+        hint.id = `table-scroll-hint-${++tableRegionNumber}`;
+        hint.textContent = english ? "Scroll horizontally to see all columns." : "Cuộn ngang để xem đầy đủ các cột.";
+        region.setAttribute("tabindex", "0");
+        region.setAttribute("role", "region");
+        region.setAttribute("aria-label", regionLabel);
+        region.setAttribute("aria-describedby", hint.id);
+        region.insertAdjacentElement("afterend", hint);
+      } else if (!overflows && hint) {
+        hint.remove();
+        hint = null;
+        for (const [name, value] of Object.entries({
+          tabindex: original.tabindex,
+          role: original.role,
+          "aria-label": original.label,
+          "aria-describedby": original.describedBy
+        })) {
+          if (value === null) region.removeAttribute(name);
+          else region.setAttribute(name, value);
+        }
+      }
+    };
+    updateScrollAccess();
+    if ("ResizeObserver" in window) new ResizeObserver(updateScrollAccess).observe(region);
+    else window.addEventListener("resize", updateScrollAccess, {passive: true});
+  });
 
   function clearFieldError(event) {
     const field = event.target;

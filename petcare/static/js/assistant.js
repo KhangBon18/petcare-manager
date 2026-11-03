@@ -21,7 +21,7 @@
     panel.hidden = !open;
     launcher.setAttribute("aria-expanded", String(open));
     pageOpeners.forEach(button => button.setAttribute("aria-expanded", String(open)));
-    if (open) input.focus();
+    if (open) { input.focus(); window.PetCare?.motion?.reveal([panel]); }
     else previousFocus?.focus();
   }
 
@@ -30,6 +30,7 @@
     bubble.className = `assistant-message ${role === "user" ? "assistant-message-user" : "assistant-message-bot"}`;
     bubble.textContent = text;
     messages.append(bubble);
+    window.PetCare?.motion?.reveal([bubble]);
     messages.scrollTop = messages.scrollHeight;
     return bubble;
   }
@@ -56,6 +57,7 @@
       body.append(title, meta, price, link); card.append(body); group.append(card);
     }
     parent.append(group);
+    window.PetCare?.motion?.reveal(group.querySelectorAll(".assistant-result-card"));
   }
 
   launcher.addEventListener("click", () => setOpen(panel.hidden));

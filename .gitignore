@@ -16,3 +16,5 @@ instance/product-images/
 exports/
 demo_exports/
 backups/
+# Playwright CLI output (may contain credentials)
+.playwright-cli/

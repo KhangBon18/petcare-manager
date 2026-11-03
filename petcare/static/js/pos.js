@@ -154,6 +154,7 @@
         more.dataset[`${kind}HasMore`] = String(payload[`${kind}_pagination`].has_next);
       }
       setLoading(false); filterCards();
+      window.PetCare?.motion?.reveal(results.querySelectorAll("[data-pos-item]"));
     } catch (error) {
       if (controller !== active || active.signal.aborted) return;
       setLoading(false); filterCards(); status.textContent = copy.error;
@@ -181,6 +182,7 @@
       select.dispatchEvent(new Event("change", {bubbles: true}));
     }
     paintCartRow(row); updateCart();
+    window.PetCare?.motion?.feedback([row.querySelector("[data-cart-image]"), document.getElementById("estimate")]);
     row.querySelector(".quantity-input").focus();
   });
   search.addEventListener("input", () => {
@@ -205,7 +207,7 @@
   const open = form.querySelector("[data-quick-customer-open]");
   let saving = false;
   let closeFocus = open;
-  open.addEventListener("click", () => { closeFocus = open; dialog.showModal(); quickForm.querySelector('[name="full_name"]').focus(); });
+  open.addEventListener("click", () => { closeFocus = open; dialog.showModal(); quickForm.querySelector('[name="full_name"]').focus(); window.PetCare?.motion?.reveal([dialog]); });
   dialog.querySelectorAll("[data-quick-customer-close]").forEach(button => button.addEventListener("click", () => dialog.close()));
   dialog.addEventListener("close", () => closeFocus.focus());
   quickForm.addEventListener("submit", async event => {
