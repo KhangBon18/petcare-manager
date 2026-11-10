@@ -67,8 +67,8 @@ jobs:
     timeout-minutes: 15
     env:
       APP_ENV: test
-      APP_PORT: "5060"
-      PUBLIC_BASE_URL: http://127.0.0.1:5060
+      APP_PORT: "5080"
+      PUBLIC_BASE_URL: http://127.0.0.1:5080
       DB_HOST: 127.0.0.1
       DB_PORT: 3306
       DB_NAME: petcare_ci_browser_test
