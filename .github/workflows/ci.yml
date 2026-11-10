@@ -78,10 +78,6 @@ jobs:
       COOKIE_SECURE: "0"
       LAN_ACCESS_ENABLED: "0"
       PETCARE_TEST_DB_NAME: petcare_ci_browser_test
-      PLAYWRIGHT_ARTIFACT_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts
-      PET_IMAGE_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/pet-images
-      PRODUCT_IMAGE_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/product-images
-      TENANT_EXPORT_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/exports
       MEDIA_STORAGE_BACKEND: local
       TENANT_EXPORT_STORAGE_BACKEND: local
       AI_API_BASE_URL: ""
@@ -133,6 +129,11 @@ jobs:
         run: python -m playwright install --with-deps chromium
       - name: Run isolated Playwright browser smoke
         run: python scripts/browser_smoke/run_smoke.py
+        env:
+          PLAYWRIGHT_ARTIFACT_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts
+          PET_IMAGE_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/pet-images
+          PRODUCT_IMAGE_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/product-images
+          TENANT_EXPORT_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/exports
       - name: Upload screenshots, traces, logs, and result summary
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
