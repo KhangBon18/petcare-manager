@@ -33,7 +33,7 @@ def _fernet():
         raise RuntimeError("TENANT_EXPORT_JOB_KEY must be a valid Fernet key.") from exc
 
 
-def enqueue_export(actor_id, current_password, passphrase, confirmation):
+def enqueue_export(actor_id, current_password, passphrase, confirmation, tenant_id=None):
     """Create a durable job; the request never reads tenant data or writes an artifact."""
     allowed, retry_after = request_throttle_service.consume(actor_id, "tenant_export")
     if not allowed:
@@ -53,7 +53,7 @@ def enqueue_export(actor_id, current_password, passphrase, confirmation):
 
     encrypted_passphrase = _fernet().encrypt(passphrase.encode("utf-8"))
     with transaction() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         user = user_repo.get_by_id(connection, actor_id, actor["tenant_id"])
         if not user or not verify_password(current_password, user["password_hash"]):
             raise ForbiddenError("Mật khẩu hiện tại không đúng hoặc phiên không còn hợp lệ.")
@@ -64,10 +64,10 @@ def enqueue_export(actor_id, current_password, passphrase, confirmation):
     return job_id
 
 
-def get_export_job(actor_id, job_id, include_storage_key=False):
+def get_export_job(actor_id, job_id, include_storage_key=False, tenant_id=None):
     """Return only the requesting admin's job in the currently selected tenant."""
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         job = tenant_export_repo.get_for_requester(
             connection, actor["tenant_id"], actor_id, job_id
         )
@@ -78,16 +78,16 @@ def get_export_job(actor_id, job_id, include_storage_key=False):
         return job
 
 
-def list_export_jobs(actor_id):
+def list_export_jobs(actor_id, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         return tenant_export_repo.list_for_requester(
             connection, actor["tenant_id"], actor_id, limit=10
         )
 
 
-def get_downloadable_export(actor_id, job_id):
-    job = get_export_job(actor_id, job_id, include_storage_key=True)
+def get_downloadable_export(actor_id, job_id, tenant_id=None):
+    job = get_export_job(actor_id, job_id, include_storage_key=True, tenant_id=tenant_id)
     if job["status"] != "ready" or job["expired"]:
         raise NotFoundError("Bản xuất chưa sẵn sàng hoặc đã hết hạn.")
     return job

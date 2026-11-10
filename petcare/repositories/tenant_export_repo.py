@@ -53,6 +53,21 @@ def claim_one(connection, lease_seconds=300, job_id=None):
     return {**row, "attempt_count": attempt, "previous_artifact_key": previous_key, "artifact_key": artifact_key}
 
 
+def requester_has_active_admin_access(connection, job):
+    return fetch_one(
+        connection,
+        "SELECT 1 allowed FROM tenant_export_jobs j "
+        "JOIN tenants t ON t.id = j.tenant_id "
+        "JOIN tenant_users tu ON tu.tenant_id = j.tenant_id AND tu.user_id = j.requested_by "
+        "JOIN users u ON u.id = j.requested_by "
+        "WHERE j.id = %s AND j.tenant_id = %s AND j.requested_by = %s "
+        "AND j.status = 'processing' AND j.artifact_key = %s "
+        "AND t.status = 'active' AND tu.active = 1 "
+        "AND tu.role IN ('owner', 'admin') AND u.active = 1",
+        (job["id"], job["tenant_id"], job["requested_by"], job["artifact_key"]),
+    ) is not None
+
+
 def renew_lease(connection, job_id, artifact_key, lease_seconds=300):
     return execute(
         connection,

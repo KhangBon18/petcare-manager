@@ -70,6 +70,15 @@ def get_connection():
     return _initialize_session(connection)
 
 
+def set_tenant_context(connection, tenant_id):
+    """Set the transaction-local tenant filter for this checked-out connection."""
+    cursor = connection.cursor()
+    try:
+        cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
+    finally:
+        cursor.close()
+
+
 def get_migration_connection():
     return _initialize_session(mysql.connector.connect(**migration_mysql_config()))
 

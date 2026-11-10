@@ -90,8 +90,12 @@
         quantity.readOnly = false;
       }
       if (option && option.dataset.price) {
-        const quantityValue = Math.max(1, Number.parseInt(quantity.value, 10) || 1);
-        total += toMinorUnits(option.dataset.price) * BigInt(quantityValue);
+        const quantityValue = Number(quantity.value);
+        const maximum = Number(quantity.max);
+        const withinStock = !quantity.max || quantityValue <= maximum;
+        if (Number.isSafeInteger(quantityValue) && quantityValue > 0 && withinStock) {
+          total += toMinorUnits(option.dataset.price) * BigInt(quantityValue);
+        }
       }
       const remove = row.querySelector(".remove-line");
       if (remove) remove.disabled = !form.dataset.pos && rows.length === 1;

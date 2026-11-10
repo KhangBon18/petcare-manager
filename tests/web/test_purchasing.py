@@ -71,7 +71,7 @@ class PurchasingWebTests(TestCase):
         self.assertIn("/purchasing/42", html)
         self.assertIn("/purchasing/suppliers", html)
         self.assertIn("/purchasing/new", html)
-        list_orders.assert_called_once_with(9, None, "1")
+        list_orders.assert_called_once_with(9, None, "1", tenant_id=4)
 
     def test_create_form_renders_search_and_partial_receipt_explanation(self):
         with patch(
@@ -125,7 +125,7 @@ class PurchasingWebTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"items": [{"id": 1, "code": "FOOD-1", "name": "Cat food"}]})
-        search.assert_called_once_with(9, "food")
+        search.assert_called_once_with(9, "food", tenant_id=4)
 
     def test_supplier_listing_and_create_routes_work(self):
         empty_page = {"page": 1, "pages": 1, "total": 0, "first": 0, "last": 0,
@@ -159,13 +159,20 @@ class PurchasingWebTests(TestCase):
             response = self.client.post("/purchasing/42/receive", data={
                 "item_id[]": ["88", "89"],
                 "quantity[]": ["4", "0"],
+                "receipt_request_key": "53c8cb27-5ad2-43fb-9b28-8fd292d983a1",
             })
         self.assertEqual(response.status_code, 302)
         self.assertIn("/purchasing/42", response.headers["Location"])
-        receive.assert_called_once_with(9, 42, [
-            {"item_id": "88", "quantity": "4"},
-            {"item_id": "89", "quantity": "0"},
-        ])
+        receive.assert_called_once_with(
+            9,
+            42,
+            [
+                {"item_id": "88", "quantity": "4"},
+                {"item_id": "89", "quantity": "0"},
+            ],
+            tenant_id=4,
+            request_key="53c8cb27-5ad2-43fb-9b28-8fd292d983a1",
+        )
 
     def test_purchase_order_detail_renders_receiving_controls_until_complete(self):
         order = {
@@ -202,5 +209,6 @@ class PurchasingWebTests(TestCase):
         self.assertIn("Ghi số lượng thực nhận", html)
         self.assertIn("/purchasing/42/receive", html)
         self.assertIn("/purchasing/42/cancel", html)
+        self.assertIn('name="receipt_request_key"', html)
         self.assertIn("Cat food", html)
         self.assertIn("4 / 10", html)

@@ -1,44 +1,62 @@
-# PetCare Manager — cửa hàng thú cưng
+# PetCare Manager — hướng dẫn kiến trúc và phát triển
 
-Phiên bản hiện hành là ứng dụng quản trị nội bộ chạy trên localhost, dùng Python + Flask + MySQL, với giao diện HTML/CSS. Không dùng Tkinter cho UI. Phần mềm không phải website thương mại điện tử công khai.
+PetCare Manager là ứng dụng web quản lý nhiều cửa hàng trên cùng nền tảng. Stack hiện hành là Python 3.11+, Flask, Jinja2, HTML/CSS/Vanilla JS và MySQL 8.0.16+ (InnoDB, utf8mb4). Dữ liệu nghiệp vụ được phân vùng theo `tenant_id`; role thuộc membership của từng cửa hàng. Không dùng Tkinter hoặc SQLite cho ứng dụng hiện hành.
 
-## Phạm vi
+## Phạm vi nghiệp vụ
 
-- Đăng nhập và phân quyền Admin/Staff, quản lý tài khoản.
-- Khách hàng: thêm, sửa, tìm kiếm và ngừng sử dụng mà vẫn giữ lịch sử.
-- Thú cưng là từng cá thể của cửa hàng để bán, có mã, thông tin, giá, trạng thái và người mua sau khi thanh toán.
-- Sản phẩm có mã, danh mục, giá, tồn kho và nhật ký nhập/điều chỉnh.
-- Hóa đơn POS hai vùng với catalog ảnh/giá/tồn, giỏ hàng và modal thêm nhanh khách hàng; sản phẩm theo số lượng, từng cá thể thú cưng có số lượng 1.
-- Thanh toán quầy theo transaction; tồn và trạng thái thú cưng chỉ thay đổi sau thanh toán.
-- Báo cáo doanh thu theo ngày, kỳ so sánh, bản tin Python, Excel từ snapshot đã ký và bản in PDF qua trình duyệt.
-- Trợ lý tra cứu toàn danh mục trả card hồ sơ; gợi ý nhập kho có công thức từ lượng bán paid 14/30 ngày; tìm ảnh có bộ lọc/giải thích và gợi ý thuộc tính có duyệt.
-- Giao diện tiếng Việt, responsive trên desktop và màn hình thông dụng.
+- Khách hàng, hồ sơ từng cá thể thú cưng, sản phẩm có tồn kho, POS/hóa đơn, nhập hàng, hoàn tiền và báo cáo.
+- Tìm thú cưng bằng ảnh và trợ lý cửa hàng có chế độ trả lời cục bộ; AI tạo sinh/Vision chỉ chạy khi endpoint được cấu hình.
+- Không bao gồm khám bệnh, tiêm phòng, lịch hẹn chăm sóc, dịch vụ spa hoặc lượt dịch vụ. Đặc tả desktop cũ nằm trong `docs/archive/`.
 
-Khám bệnh, tiêm phòng, lịch nhắc, lịch hẹn chăm sóc, dịch vụ spa và lượt dịch vụ đã ra khỏi phạm vi. Mô tả desktop cũ được lưu ở docs/archive/.
+## Cấu trúc và ranh giới module
 
-## Cấu trúc
+- `petcare/app_factory.py`: composition root, tạo Flask app và đăng ký blueprint. `petcare/__init__.py` và `petcare/app.py` giữ export tương thích.
+- `petcare/app_configuration.py`: kiểm tra cấu hình runtime/production và thiết lập giới hạn tiến trình.
+- `petcare/app_hooks.py`: CSRF, tải phiên, locale, giới hạn xử lý ảnh, security headers, error handlers và Jinja helpers.
+- `petcare/routes/`: xử lý HTTP, CSRF, render/redirect và gọi service; không đặt truy vấn nghiệp vụ trực tiếp trong route.
+- `petcare/services/`: xác thực, quyền, quy tắc nghiệp vụ và transaction. Các service nhận tenant context rõ ràng; `services/actors.py` tải lại membership/role từ MySQL.
+- `petcare/repositories/`: câu lệnh MySQL có tham số; repository không commit transaction.
+- `petcare/database/`: kết nối/pool MySQL, schema, migration cộng thêm, preflight schema readiness, seed và công cụ vận hành.
+- `petcare/templates/`: HTML/Jinja; `petcare/static/`: CSS và JavaScript thuần. Design tokens ở `static/css/tokens.css`; component/layout ở `app.css`; motion ở `motion.css`.
+- `catalog_intent.py` và `assistant_local.py` tách nhận diện truy vấn/lọc danh mục khỏi renderer câu trả lời. `assistant_service.py` điều phối context và endpoint AI, đồng thời giữ các import facade tương thích.
+- `tests/`: unit, web, JavaScript và integration test cần MySQL test database riêng.
 
-- run.py: chạy Flask ở 127.0.0.1:5055.
-- petcare/__init__.py: app factory, đăng ký blueprint và CSRF.
-- petcare/config.py: cấu hình từ môi trường/.env.
-- petcare/auth.py, security.py: session, phân quyền và băm mật khẩu.
-- petcare/database/: kết nối MySQL, schema, initialize và seed.
-- petcare/routes/: auth, dashboard, users, customers, pets, products, invoices, reports.
-- petcare/services/: xác thực dữ liệu, quyền và transaction.
-- petcare/repositories/: truy vấn MySQL tham số hóa.
-- petcare/templates/: HTML/Jinja; petcare/static/: CSS/JS.
-- tests/: unit, web và test tích hợp MySQL có cấu hình DB test riêng.
+## Luồng request và phân quyền
+
+Route nhận request và bảo vệ thao tác ghi bằng POST + CSRF. Service xác thực actor và membership, áp dụng quy tắc nghiệp vụ rồi điều phối transaction. Repository chỉ thực hiện SQL đã tham số hóa; tenant scope không được lấy từ client làm căn cứ quyền. Authentication tải lại role/membership từ MySQL cho request hiện tại.
+
+Các invariant cần giữ:
+
+- Mọi đọc/ghi nghiệp vụ giới hạn đúng tenant; composite foreign keys cũng ngăn tham chiếu chéo tenant.
+- Giá và tổng hóa đơn được xác nhận phía server bằng `Decimal`; hóa đơn giữ snapshot tiền tệ/tên/giá.
+- Hóa đơn chưa thanh toán không trừ tồn. Thanh toán khóa dữ liệu, cập nhật tồn, movement và trạng thái thú cưng trong cùng transaction.
+- Hoàn tiền ghi sổ điều chỉnh riêng và cập nhật kho/trạng thái theo disposition trong cùng transaction. Lỗi giữa luồng phải rollback toàn bộ.
+- Repository không gọi `commit()`; service là nơi sở hữu commit/rollback.
+- Không reset/xóa database đang dùng để phát triển. Migration thay đổi schema chỉ chạy chủ động sau khi sao lưu; test MySQL phải trỏ đến database riêng có hậu tố `_test`.
 
 ## Chạy local
 
-1. Cài Python 3.11+, MySQL 8.0.16+ và tạo một database/user local riêng tên petcare_shop_dev.
-2. Tạo venv, cài requirements, sao chép .env.example thành .env và điền kết nối DB local cùng SECRET_KEY.
-3. Khởi tạo schema bằng python -m petcare.database.initialize.
-4. Tạo dữ liệu demo bằng python -m petcare.database.seed trên `_dev`/`_test`; chạy lại khi chuẩn bị để làm mới ngày mẫu và bù ảnh thiếu, không trừ kho lặp. Schema có 20 bảng; seed chuẩn có 12 khách, 22 sản phẩm, 74 thú cưng, 68 ảnh và 7 hóa đơn.
-5. Chạy python run.py và mở http://127.0.0.1:5055.
+1. Tạo virtual environment, cài `requirements.txt` cùng constraints `requirements.lock`, sao chép `.env.example` thành `.env` và đặt secret riêng.
+2. Tạo database MySQL phát triển riêng, ví dụ `petcare_shop_dev`, với user ứng dụng có quyền đúng database.
+3. Khởi tạo schema: `python -m petcare.database.initialize`.
+4. Tạo dữ liệu demo tùy chọn: `python -m petcare.database.seed` (chỉ `_dev`/`_test`). Không dùng seed demo với dữ liệu thật.
+5. Chạy web: `python run.py`; mở `http://127.0.0.1:5055`.
+6. Chạy worker cần dùng trong terminal riêng: `python -m petcare.services.tenant_export_worker_cli`; thêm `python -m petcare.services.mail_worker` nếu cấu hình SMTP.
 
-Chi tiết từng hệ điều hành và cách nghiệm thu nằm trong README.md. Không đưa .env, database dump cá nhân hoặc dữ liệu thật lên Git.
+Thành viên mới nên làm theo hướng dẫn đầy đủ theo hệ điều hành, Docker, MySQL, backup/restore và biến môi trường trong `README.md`. Không đưa `.env`, credential, DB dump hoặc dữ liệu khách thật vào Git.
 
-## Tổng duyệt nhanh Phase 4
+## Kiểm tra
 
-Giữ `python run.py` chạy, rồi ở terminal thứ hai gọi `python run.py prepare-demo` (hoặc thêm `--json`). Lệnh có ngân sách 4,7 giây, kiểm đúng server/MySQL và chỉ làm mới timestamp của marker demo đã thu; exit 0 mới xác nhận sẵn sàng. Seed đầy đủ thực hiện trước đó. Theo [DEMO_SCRIPT.md](DEMO_SCRIPT.md) để trình bày; xem [ma trận nghiệm thu](docs/phase4_acceptance.md).
+```sh
+python -m compileall -q run.py main.py petcare tests
+python -m unittest discover -s tests -v
+node --test tests/js/*.test.cjs
+```
+
+Kiểm thử tích hợp MySQL chỉ được tính khi cấu hình database `_test` cô lập và MySQL hoạt động. Không thay MySQL bằng SQLite/mock rồi kết luận đã nghiệm thu tích hợp thật.
+
+## Skills và UI
+
+Skills đã pin và hướng dẫn cách dùng nằm trong `.agents/skills/`, `skills-lock.json` và `docs/skills.md`. Skills là tài liệu hướng dẫn, không phải dependency chạy ứng dụng. Giữ Flask/Jinja/Vanilla JS/MySQL; không chép ví dụ đòi React, Tailwind hoặc SQLite vào runtime.
+
+Design System ở `design-system/petcare-manager/MASTER.md`. Duy trì một bộ token ngữ nghĩa, dùng icon SVG hiện có, bảo đảm responsive/accessibility, không phụ thuộc CDN, và tôn trọng `prefers-reduced-motion`.

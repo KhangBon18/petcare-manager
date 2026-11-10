@@ -19,6 +19,7 @@ def index():
             request.args.get("start"),
             request.args.get("end"),
             request.args.get("period"),
+            tenant_id=g.tenant_id,
         )
     except (ServiceError, ValueError, OverflowError) as exc:
         return render_template("reports/error.html", message=translate(str(exc))), 400

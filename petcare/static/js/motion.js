@@ -54,8 +54,8 @@
         active.add(animation);
         list.forEach(node => owners.set(node, animation));
       }
-      api.reveal = nodes => play(nodes, {y: 8, opacity: 0.72}, {
-        y: 0, opacity: 1, stagger: {amount: 0.12},
+      api.reveal = nodes => play(nodes, {y: 8}, {
+        y: 0, stagger: {amount: 0.12},
       });
       api.feedback = nodes => play(nodes, {scale: 0.97}, {scale: 1, duration: 0.2});
       root.classList.add("motion-ready");
@@ -81,8 +81,8 @@
               const list = targets(document.querySelectorAll(selector));
               if (list.length) {
                 list.forEach(node => owners.set(node, entrance));
-                entrance.fromTo(list, {y, opacity: 0.72}, {
-                  y: 0, opacity: 1, stagger: {amount: 0.14},
+                entrance.fromTo(list, {y}, {
+                  y: 0, stagger: {amount: 0.14},
                 }, position);
               }
             });

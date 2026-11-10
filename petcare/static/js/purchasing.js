@@ -1,4 +1,24 @@
 (() => {
+  const receiveForm = document.querySelector('[data-purchase-receive-form]');
+  if (receiveForm) {
+    const fillRemaining = receiveForm.querySelector('[data-fill-remaining]');
+    const feedback = receiveForm.querySelector('[data-receive-feedback]');
+    fillRemaining?.addEventListener('click', () => {
+      let units = 0;
+      receiveForm.querySelectorAll('input[name="quantity[]"]').forEach((input) => {
+        if (input.disabled) return;
+        const remaining = Number(input.max || 0);
+        input.value = String(remaining);
+        units += remaining;
+      });
+      if (feedback) {
+        feedback.textContent = document.documentElement.lang === 'en'
+          ? `Filled ${units} remaining unit${units === 1 ? '' : 's'}. Review before confirming.`
+          : `Đã điền ${units.toLocaleString('vi-VN')} đơn vị còn thiếu. Hãy kiểm tra trước khi xác nhận.`;
+      }
+    });
+  }
+
   const form = document.querySelector('[data-purchase-form]');
   if (!form) return;
 

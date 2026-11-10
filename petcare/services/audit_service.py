@@ -55,9 +55,9 @@ ENTITY_LABELS = {
 }
 
 
-def list_events(actor_id, page="1"):
+def list_events(actor_id, page="1", tenant_id=None):
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         total = audit_repo.count_events(connection)
         _current, offset, pagination = page_window(page, total)
         items = audit_repo.list_events(connection, pagination["page_size"], offset)

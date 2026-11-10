@@ -57,6 +57,16 @@ class RuntimeConnectionPoolTests(unittest.TestCase):
         )
         cursor.close.assert_called_once_with()
 
+    def test_tenant_context_setter_uses_a_bound_parameter(self):
+        connection = MagicMock()
+
+        database_connection.set_tenant_context(connection, 17)
+
+        connection.cursor.return_value.execute.assert_called_once_with(
+            "SET @petcare_tenant_id = %s", (17,)
+        )
+        connection.cursor.return_value.close.assert_called_once_with()
+
     def test_tls_trust_bundle_rotation_creates_a_new_pool(self):
         pools = [MagicMock(), MagicMock()]
         first_config = {"host": "db.internal", "ssl_ca": "/run/secrets/old-ca.pem"}

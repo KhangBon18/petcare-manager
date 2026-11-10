@@ -3,6 +3,15 @@
 from petcare.repositories.base import execute, fetch_one
 
 
+def create_public_signup(connection, name, slug, currency_code, timezone_name):
+    return execute(
+        connection,
+        "INSERT INTO tenants (name, slug, status, default_currency, timezone) "
+        "VALUES (%s, %s, 'active', %s, %s)",
+        (name, slug, currency_code, timezone_name),
+    )[0]
+
+
 def get_for_update(connection, tenant_id):
     return fetch_one(
         connection,

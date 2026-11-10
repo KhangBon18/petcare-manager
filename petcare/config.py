@@ -70,8 +70,11 @@ class Config:
     AI_API_BASE_URL = os.getenv("AI_API_BASE_URL", "").strip()
     AI_API_KEY = os.getenv("AI_API_KEY", "")
     AI_MODEL = os.getenv("AI_MODEL", "").strip()
+    AI_REASONING_EFFORT = os.getenv("AI_REASONING_EFFORT", "").strip().lower()
     AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "15"))
+    AI_VISION_MAX_RETRIES = int(os.getenv("AI_VISION_MAX_RETRIES", "1"))
     AI_VISION_ENABLED = os.getenv("AI_VISION_ENABLED", "0") == "1"
+    AI_TEST_ALLOW_LOOPBACK_PROVIDER = os.getenv("AI_TEST_ALLOW_LOOPBACK_PROVIDER", "0") == "1"
     ASSISTANT_RATE_LIMIT_PER_MINUTE = int(os.getenv("ASSISTANT_RATE_LIMIT_PER_MINUTE", "20"))
     ASSISTANT_IP_RATE_LIMIT_PER_MINUTE = int(os.getenv("ASSISTANT_IP_RATE_LIMIT_PER_MINUTE", "120"))
     VISION_RATE_LIMIT_PER_MINUTE = int(os.getenv("VISION_RATE_LIMIT_PER_MINUTE", "8"))

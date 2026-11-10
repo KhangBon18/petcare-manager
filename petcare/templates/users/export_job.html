@@ -5,12 +5,18 @@
   <div>
     <a class="back-link" href="{{ url_for('users.export_current_store') }}">← {{ t('Xuất dữ liệu') }}</a>
     <span class="eyebrow">{{ t('BẢN XUẤT RIÊNG TƯ') }}</span>
-    <h1>{{ t('Đang xử lý yêu cầu') }}</h1>
+    <h1>
+      {% if job.expired %}{{ t('Bản xuất đã hết hạn') }}
+      {% elif job.status == 'pending' %}{{ t('Yêu cầu đang chờ') }}
+      {% elif job.status == 'ready' %}{{ t('Bản xuất đã sẵn sàng') }}
+      {% elif job.status == 'failed' %}{{ t('Không thể tạo bản xuất') }}
+      {% else %}{{ t('Đang xử lý yêu cầu') }}{% endif %}
+    </h1>
     <p>{{ t('Yêu cầu') }} #{{ job.id }} · {{ t('Cửa hàng') }} {{ g.tenant.name }}</p>
   </div>
 </div>
 
-<section class="panel form-card" aria-labelledby="export-job-title">
+<section class="panel form-card export-job-card" aria-labelledby="export-job-title">
   <div class="section-heading">
     <div>
       <h2 id="export-job-title">{{ t('Trạng thái bản xuất') }}</h2>
@@ -19,10 +25,18 @@
         {% elif job.status == 'pending' %}{{ t('Yêu cầu đang chờ worker xử lý.') }}
         {% elif job.status == 'processing' %}{{ t('Đang đóng gói dữ liệu và ảnh của cửa hàng. Bạn có thể để trang này mở; tiến độ sẽ tự cập nhật.') }}
         {% elif job.status == 'ready' %}{{ t('Bản xuất đã sẵn sàng. Hãy tải về trước thời hạn lưu trữ.') }}
+        {% elif job.last_error_code == 'requester_access_revoked' %}{{ t('Quyền quản trị đã thay đổi; hãy đăng nhập lại với quyền phù hợp rồi tạo yêu cầu mới.') }}
+        {% elif job.last_error_code == 'passphrase_unavailable' %}{{ t('Hệ thống không thể mở passphrase đang chờ. Hãy tạo yêu cầu xuất mới với passphrase mới.') }}
+        {% elif job.last_error_code == 'export_job_expired' %}{{ t('Yêu cầu xử lý đã hết thời gian chờ. Hãy tạo yêu cầu xuất mới.') }}
         {% else %}{{ t('Không thể tạo bản xuất. Hãy yêu cầu tạo lại hoặc liên hệ quản trị hệ thống.') }}
         {% endif %}
       </p>
       <span class="loading-indicator" data-export-indicator {% if job.status not in ('pending', 'processing') or job.expired %}hidden{% endif %}>{{ 'Đang theo dõi tiến độ…' if locale == 'vi' else 'Tracking progress…' }}</span>
+      <dl class="export-job-facts">
+        <div><dt>{{ t('Tạo lúc') }}</dt><dd>{{ format_datetime(job.created_at) }}</dd></div>
+        <div><dt>{{ t('Số lần thử') }}</dt><dd>{{ format_number(job.attempt_count) }}</dd></div>
+        {% if job.status == 'ready' and job.expires_at %}<div><dt>{{ t('Hạn tải xuống') }}</dt><dd>{{ format_datetime(job.expires_at) }}</dd></div>{% endif %}
+      </dl>
     </div>
   </div>
   <div class="form-actions">
@@ -39,6 +53,7 @@
 <div data-export-job
      data-status-url="{{ url_for('users.export_job_status', job_id=job.id) }}"
      data-initial-status="{{ 'expired' if job.expired else job.status }}"
+     aria-busy="{{ 'true' if job.status in ('pending', 'processing') and not job.expired else 'false' }}"
      {% if job.status in ('pending', 'processing') and not job.expired %}data-poll="true"{% endif %}></div>
 {% endblock %}
 {% block scripts %}<script src="{{ url_for('static', filename='js/export-job.js') }}" defer></script>{% endblock %}

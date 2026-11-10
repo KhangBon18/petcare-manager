@@ -20,6 +20,7 @@ def settings():
                 g.user["id"],
                 request.form.get("name", ""),
                 request.form.get("timezone", ""),
+                tenant_id=g.tenant_id,
             )
             if result["status"] == "unchanged":
                 flash("Cài đặt cửa hàng chưa thay đổi.", "info")

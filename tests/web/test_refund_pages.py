@@ -104,6 +104,7 @@ class RefundPageTests(TestCase):
             11,
             ANY,
             [{"invoice_item_id": "31", "quantity": "1", "disposition": "quarantine"}],
+            tenant_id=4,
         )
         self.assertEqual(refund.call_args.args[2]["method"], "bank_transfer")
 

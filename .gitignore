@@ -18,3 +18,4 @@ demo_exports/
 backups/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+tests/a11y/node_modules/

@@ -13,6 +13,7 @@ def index():
     listing = customer_service.list_customers(
         g.user["id"], request.args.get("q", ""),
         request.args.get("all") == "1", page=request.args.get("page", "1"),
+        tenant_id=g.actor_context.tenant_id,
     )
     return render_template(
         "customers/index.html",
@@ -28,7 +29,10 @@ def index():
 def detail(customer_id):
     try:
         profile = customer_service.get_customer_profile(
-            g.user["id"], customer_id, page=request.args.get("page", "1")
+            g.user["id"], customer_id,
+            page=request.args.get("page", "1"),
+            pet_page=request.args.get("pet_page", "1"),
+            tenant_id=g.actor_context.tenant_id,
         )
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -43,7 +47,9 @@ def create():
     form_error = None
     if request.method == "POST":
         try:
-            customer_service.create_customer(g.user["id"], request.form)
+            customer_service.create_customer(
+                g.user["id"], request.form, tenant_id=g.actor_context.tenant_id
+            )
             flash("Đã thêm khách hàng.", "success")
             return redirect(url_for("customers.index"))
         except ServiceError as exc:
@@ -62,13 +68,18 @@ def edit(customer_id):
     errors = {}
     form_error = None
     try:
-        customer = customer_service.get_customer(g.user["id"], customer_id)
+        customer = customer_service.get_customer(
+            g.user["id"], customer_id, tenant_id=g.actor_context.tenant_id
+        )
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("customers.index"))
     if request.method == "POST":
         try:
-            customer_service.update_customer(g.user["id"], customer_id, request.form)
+            customer_service.update_customer(
+                g.user["id"], customer_id, request.form,
+                tenant_id=g.actor_context.tenant_id,
+            )
             flash("Đã cập nhật khách hàng.", "success")
             return redirect(url_for("customers.index"))
         except ServiceError as exc:
@@ -85,7 +96,9 @@ def edit(customer_id):
 @login_required
 def active(customer_id):
     try:
-        customer_service.set_active(g.user["id"], customer_id, True)
+        customer_service.set_active(
+            g.user["id"], customer_id, True, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã kích hoạt khách hàng.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -96,7 +109,9 @@ def active(customer_id):
 @login_required
 def deactivate(customer_id):
     try:
-        customer_service.set_active(g.user["id"], customer_id, False)
+        customer_service.set_active(
+            g.user["id"], customer_id, False, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã ngừng sử dụng khách hàng; lịch sử hóa đơn được giữ lại.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")

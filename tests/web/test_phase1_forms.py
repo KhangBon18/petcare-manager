@@ -128,6 +128,64 @@ class PhaseOneWebRegressionTests(TestCase):
         self.assertIn("New address</textarea>", html)
         self.assertNotIn('value="Old name"', html)
 
+    def test_pet_create_keeps_submitted_values_after_server_validation_error(self):
+        self.patch(
+            "petcare.routes.pet_routes.pet_service.create_pet",
+            side_effect=ValidationError("Date of birth cannot be in the future."),
+        )
+        response = self.client.post(
+            "/pets/new",
+            data={
+                "code": "E2E-PET-01",
+                "name": "QA Pet Browser",
+                "species": "Cat",
+                "breed": "Test Shorthair",
+                "sex": "female",
+                "birth_date": "2030-01-01",
+                "weight_kg": "3.5",
+                "coat_color": "black and white",
+                "eye_color": "green",
+                "appearance_tags": "synthetic QA profile",
+                "sale_price": "1000000",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        for value in (
+            "E2E-PET-01", "QA Pet Browser", "Cat", "Test Shorthair",
+            "2030-01-01", "3.5", "black and white", "green",
+            "synthetic QA profile", "1000000",
+        ):
+            self.assertIn(value, html)
+        self.assertIn('option value="female" selected', html)
+        self.assertIn("Date of birth cannot be in the future.", html)
+
+    def test_product_create_keeps_submitted_values_after_server_validation_error(self):
+        self.patch(
+            "petcare.routes.product_routes.product_service.create_product",
+            side_effect=ValidationError("Product code already exists."),
+        )
+        response = self.client.post(
+            "/products/new",
+            data={
+                "code": "FOOD-001",
+                "name": "QA Duplicate Product",
+                "category": "QA",
+                "unit_price": "12500",
+                "reorder_level": "5",
+                "description": "Synthetic <duplicate-code> validation",
+                "stock_qty": "7",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        for value in ("FOOD-001", "QA Duplicate Product", "QA", "12500", "5", "7"):
+            self.assertIn(value, html)
+        self.assertIn(
+            "Synthetic &lt;duplicate-code&gt; validation</textarea>", html
+        )
+        self.assertIn("Product code already exists.", html)
+
     def test_invoice_keeps_all_lines_note_and_selections_outside_first_page(self):
         self.invoice_catalog()
         self.patch(
@@ -197,7 +255,7 @@ class PhaseOneWebRegressionTests(TestCase):
         html = response.get_data(as_text=True)
         self.assertIn('value="pet:999" selected', html)
         self.assertNotIn("PET11", html)
-        get_pet.assert_called_once_with(1, "999")
+        get_pet.assert_called_once_with(1, "999", tenant_id=1)
 
     def test_mismatched_post_arrays_keep_every_submitted_row(self):
         self.invoice_catalog()

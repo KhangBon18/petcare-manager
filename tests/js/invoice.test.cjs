@@ -117,6 +117,16 @@ test("resetting lookup selection immediately recalculates the invoice total", ()
   assert.match(h.estimate.textContent, /^0\sVND$/);
 });
 
+test("invalid quantities do not inflate the invoice estimate", () => {
+  const h = harness();
+  h.quantity.value = "0";
+  h.nodes["invoice-lines"].dispatchEvent({type: "input"});
+  assert.match(h.estimate.textContent, /^0\sVND$/);
+  h.quantity.value = "2";
+  h.nodes["invoice-lines"].dispatchEvent({type: "input"});
+  assert.match(h.estimate.textContent, /200\.000/);
+});
+
 test("aborts on the first keystroke and ignores an obsolete decoded response", async () => {
   const h = harness();
   h.input("old"); h.runTimers();

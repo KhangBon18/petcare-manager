@@ -1,6 +1,36 @@
 (() => {
   const english = document.documentElement?.lang === "en";
   const region = document.getElementById("toast-region");
+  const svgNamespace = "http://www.w3.org/2000/svg";
+  const iconShapes = {
+    pets: [
+      ["ellipse", {cx: "12", cy: "15.5", rx: "5.2", ry: "4.1"}],
+      ["ellipse", {cx: "5.7", cy: "10.4", rx: "1.6", ry: "2"}],
+      ["ellipse", {cx: "10", cy: "6.8", rx: "1.6", ry: "2"}],
+      ["ellipse", {cx: "14.3", cy: "6.8", rx: "1.6", ry: "2"}],
+      ["ellipse", {cx: "18.4", cy: "10.4", rx: "1.6", ry: "2"}],
+    ],
+    products: [
+      ["path", {d: "m12 3 8.5 4.5v9L12 21l-8.5-4.5v-9L12 3Z"}],
+      ["path", {d: "m3.8 7.7 8.2 4.5 8.2-4.5M12 12.2V21"}],
+    ],
+  };
+  function createIcon(name, className = "ui-icon") {
+    const shapes = iconShapes[name];
+    if (!shapes) return null;
+    const svg = document.createElementNS(svgNamespace, "svg");
+    for (const [key, value] of Object.entries({
+      class: className, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor",
+      "stroke-width": "1.8", "stroke-linecap": "round", "stroke-linejoin": "round",
+      "aria-hidden": "true", focusable: "false",
+    })) svg.setAttribute(key, value);
+    for (const [tag, attributes] of shapes) {
+      const shape = document.createElementNS(svgNamespace, tag);
+      for (const [key, value] of Object.entries(attributes)) shape.setAttribute(key, value);
+      svg.append(shape);
+    }
+    return svg;
+  }
   function decorateToast(node, category) {
     node.classList.add("toast");
     node.setAttribute("role", category === "error" ? "alert" : "status");
@@ -13,12 +43,16 @@
     window.PetCare?.motion?.reveal([node]);
     if (category === "success") window.setTimeout(() => node.remove(), 6000);
   }
-  window.PetCare = {...window.PetCare, toast(message, category = "success") {
-    if (!region) return;
-    const node = document.createElement("div");
-    node.className = `flash flash-${category}`;
-    node.textContent = message; decorateToast(node, category);
-  }};
+  window.PetCare = {
+    ...window.PetCare,
+    icon: createIcon,
+    toast(message, category = "success") {
+      if (!region) return;
+      const node = document.createElement("div");
+      node.className = `flash flash-${category}`;
+      node.textContent = message; decorateToast(node, category);
+    },
+  };
   if (region) document.querySelectorAll(".flash-stack .flash").forEach(node => {
     const category = ["error", "warning", "success", "info"].find(name => node.classList.contains(`flash-${name}`));
     decorateToast(node, category);
@@ -27,8 +61,9 @@
     if (image.tagName !== "IMG" || !image.closest(".pos-card-image, .cart-item-image")) return;
     image.hidden = true;
     const placeholder = document.createElement("span");
-    placeholder.textContent = "🐾";
-    placeholder.setAttribute("aria-hidden", "true");
+    placeholder.className = "image-fallback-icon";
+    const kind = image.closest(".pos-card")?.dataset.kind || image.parentElement?.dataset.kind;
+    placeholder.append(createIcon(kind === "product" ? "products" : "pets"));
     if (!image.parentElement.querySelector("[data-image-fallback]")) {
       placeholder.dataset.imageFallback = ""; image.parentElement.append(placeholder);
     }
@@ -62,7 +97,8 @@
       if (overflows && !hint) {
         const sectionTitle = region.querySelector("caption")?.textContent.trim()
           || region.closest("section, article")?.querySelector("h2")?.textContent.trim();
-        const regionLabel = sectionTitle ? `${sectionTitle}. ${tableScrollHint}` : tableScrollHint;
+        const contextLabel = sectionTitle || original.label?.trim();
+        const regionLabel = contextLabel ? `${contextLabel}. ${tableScrollHint}` : tableScrollHint;
         hint = document.createElement("p");
         hint.className = "table-scroll-hint";
         hint.id = `table-scroll-hint-${++tableRegionNumber}`;

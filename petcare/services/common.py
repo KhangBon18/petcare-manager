@@ -5,8 +5,8 @@ import re
 
 from flask import g, has_request_context
 
-from petcare.repositories.base import fetch_one
-from petcare.services.exceptions import ForbiddenError, ValidationError
+from petcare.services import actors
+from petcare.services.exceptions import ValidationError
 from petcare.money import CurrencyError, parse_money
 
 
@@ -14,45 +14,15 @@ PAGE_SIZE = 25
 USERNAME_PATTERN = r"[A-Za-z0-9_.-]{3,80}"
 
 
-def require_actor(connection, actor_id, admin=False):
-    tenant = getattr(g, "tenant", None) if has_request_context() else None
-    tenant_id = tenant.get("id") if tenant else None
-    if tenant_id is None:
-        memberships = fetch_one(
-            connection,
-            "SELECT COUNT(*) membership_count FROM tenant_users tu "
-            "JOIN tenants t ON t.id = tu.tenant_id "
-            "WHERE tu.user_id = %s AND tu.active = 1 AND t.status = 'active'",
-            (actor_id,),
-        )
-        if not memberships or memberships["membership_count"] != 1:
-            raise ForbiddenError("Cần chọn cửa hàng hợp lệ trước khi thao tác.")
-        selected = fetch_one(
-            connection,
-            "SELECT tenant_id FROM tenant_users WHERE user_id = %s AND active = 1",
-            (actor_id,),
-        )
-        tenant_id = selected["tenant_id"]
-    user = fetch_one(
-        connection,
-        "SELECT u.id, IF(tu.role = 'staff', 'staff', 'admin') role, t.name tenant_name, "
-        "t.default_currency, t.timezone, "
-        "u.active user_active, tu.active membership_active, tu.tenant_id tenant_id "
-        "FROM users u JOIN tenant_users tu ON tu.user_id = u.id "
-        "JOIN tenants t ON t.id = tu.tenant_id "
-        "WHERE u.id = %s AND tu.tenant_id = %s AND t.status = 'active'",
-        (actor_id, tenant_id),
-    )
-    if not user or not user["user_active"] or not user["membership_active"]:
-        raise ForbiddenError("Tài khoản đã bị khóa hoặc không còn tồn tại.")
-    cursor = connection.cursor()
-    try:
-        cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
-    finally:
-        cursor.close()
-    if admin and user["role"] != "admin":
-        raise ForbiddenError("Chỉ quản trị viên được thực hiện thao tác này.")
-    return user
+def require_actor(connection, actor_id, admin=False, tenant_id=None):
+    if tenant_id is None and has_request_context():
+        context = getattr(g, "actor_context", None)
+        if context is not None:
+            tenant_id = context.tenant_id
+        else:
+            tenant = getattr(g, "tenant", None)
+            tenant_id = tenant.get("id") if tenant else None
+    return actors.require_actor(connection, actor_id, tenant_id, admin=admin)
 
 
 def text_value(value, label, maximum, required=True):

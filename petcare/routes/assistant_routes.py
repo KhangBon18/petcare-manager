@@ -6,6 +6,7 @@ from petcare.services import request_throttle_service
 from petcare.services.exceptions import ServiceError
 from petcare.i18n import translate
 from petcare.money import format_money
+from petcare.timezones import DEFAULT_TIMEZONE, format_tenant_datetime
 
 bp = Blueprint("assistant", __name__, url_prefix="/assistant")
 
@@ -32,7 +33,8 @@ def chat():
         ), 400
     try:
         response = assistant_service.answer(
-            g.user["id"], payload.get("message"), payload.get("history"), locale=g.locale
+            g.user["id"], payload.get("message"), payload.get("history"),
+            locale=g.locale, tenant_id=g.tenant_id,
         )
     except ServiceError as exc:
         return jsonify(error=translate(str(exc))), 400
@@ -43,4 +45,44 @@ def chat():
         item["status_label"] = translate("Đang bán" if item["status"] in {"available", "active"} else "Đã bán" if item["status"] == "sold" else "Đã ngừng")
         filename = item.pop("photo_filename", None)
         item["photo_url"] = url_for("pets.photo" if pet else "products.photo", filename=filename) if filename else None
+    insight = response.get("insight")
+    if isinstance(insight, dict) and insight.get("kind") == "top_products":
+        for item in insight.get("items", []):
+            product_id = item.get("product_id")
+            item["url"] = (
+                url_for("products.detail", product_id=product_id)
+                if isinstance(product_id, int) and not isinstance(product_id, bool) and product_id > 0
+                else None
+            )
+            item["revenue_label"] = format_money(
+                item.get("revenue", 0),
+                insight.get("currency_code", g.tenant["default_currency"]),
+                "en_US" if g.locale == "en" else "vi_VN",
+            )
+    elif isinstance(insight, dict) and insight.get("kind") == "inventory_restock":
+        for item in insight.get("items", []):
+            product_id = item.get("product_id")
+            item["url"] = (
+                url_for("products.detail", product_id=product_id)
+                if isinstance(product_id, int) and not isinstance(product_id, bool) and product_id > 0
+                else None
+            )
+    elif isinstance(insight, dict) and insight.get("kind") == "purchase_status":
+        for item in insight.get("items", []):
+            order_id = item.get("purchase_order_id")
+            item["url"] = (
+                url_for("purchasing.detail", purchase_order_id=order_id)
+                if isinstance(order_id, int) and not isinstance(order_id, bool) and order_id > 0
+                else None
+            )
+            item["amount_label"] = format_money(
+                item.get("total_amount", 0), item.get("currency_code", g.tenant["default_currency"]),
+                "en_US" if g.locale == "en" else "vi_VN",
+            )
+            item["created_at_label"] = format_tenant_datetime(
+                item.get("created_at"),
+                (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE),
+                locale=g.locale,
+            )
+    response["mode"] = response.get("mode", "local")
     return jsonify(response)

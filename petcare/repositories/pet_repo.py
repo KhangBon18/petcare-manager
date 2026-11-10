@@ -57,6 +57,16 @@ def has_available_reference_photos(connection):
     ) is not None
 
 
+def count_available_for_image_search(connection):
+    """Return the current tenant's available pet count for an exact-scan decision."""
+    row = fetch_one(
+        connection,
+        "SELECT COUNT(*) AS pet_count FROM pets "
+        "WHERE tenant_id = @petcare_tenant_id AND sale_status = 'available'",
+    )
+    return int(row["pet_count"]) if row else 0
+
+
 def find_available_image_search_candidates(
     connection, visual_hash, max_candidates=MAX_IMAGE_SEARCH_CANDIDATES
 ):
@@ -202,6 +212,32 @@ def get_pet(connection, pet_id, lock=False):
         "WHERE p.id = %s AND p.tenant_id = @petcare_tenant_id" + suffix,
         (pet_id,),
     )
+
+
+def get_pets_by_ids(connection, pet_ids, lock=False):
+    """Read a stable, tenant-scoped pet set for atomic invoice/refund workflows."""
+    pet_ids = sorted(set(pet_ids))
+    if not pet_ids:
+        return []
+    placeholders = ", ".join(["%s"] * len(pet_ids))
+    suffix = " FOR UPDATE" if lock else ""
+    return fetch_all(
+        connection,
+        "SELECT id, sale_status, buyer_id FROM pets "
+        "WHERE tenant_id = @petcare_tenant_id "
+        f"AND id IN ({placeholders}) ORDER BY id{suffix}",
+        tuple(pet_ids),
+    )
+
+
+def mark_sold(connection, pet_id, customer_id):
+    return execute(
+        connection,
+        "UPDATE pets SET sale_status = 'sold', buyer_id = %s, sold_at = NOW() "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND sale_status = 'available'",
+        (customer_id, pet_id),
+    )[1]
 
 
 def has_photo(connection, filename):

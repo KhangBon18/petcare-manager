@@ -4,7 +4,7 @@ import secrets
 
 from flask import current_app
 
-from petcare.database.connection import read_connection, transaction
+from petcare.database.connection import read_connection, set_tenant_context, transaction
 from petcare.i18n import SUPPORTED_LOCALES
 from petcare.repositories import account_token_repo, audit_repo, login_throttle_repo, user_repo
 from petcare.security import hash_password, verify_password
@@ -108,11 +108,7 @@ def record_auth_event(user_id, tenant_id, event_type, summary):
         membership = user_repo.get_active_membership(connection, user_id, tenant_id)
         if not membership:
             return False
-        cursor = connection.cursor()
-        try:
-            cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
-        finally:
-            cursor.close()
+        set_tenant_context(connection, tenant_id)
         audit_repo.add_event(
             connection,
             user_id,
@@ -172,13 +168,13 @@ def store_membership(user_id, slug):
     return membership if membership and membership["active"] else None
 
 
-def list_users(actor_id):
+def list_users(actor_id, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         return user_repo.list_users(connection, actor["tenant_id"])
 
 
-def create_user(actor_id, data):
+def create_user(actor_id, data, tenant_id=None):
     username = username_value(data.get("username"))
     full_name = text_value(data.get("full_name"), "Họ tên", 160)
     role = data.get("role", "staff")
@@ -187,7 +183,7 @@ def create_user(actor_id, data):
     password_hash = password_hash_value(data.get("password", ""))
     try:
         with transaction() as connection:
-            actor = require_actor(connection, actor_id, admin=True)
+            actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             user_id = user_repo.create_user(
                 connection, username, password_hash, full_name, role, actor["tenant_id"]
             )
@@ -202,7 +198,7 @@ def create_user(actor_id, data):
         raise
 
 
-def update_user(actor_id, user_id, data):
+def update_user(actor_id, user_id, data, tenant_id=None):
     full_name = text_value(data.get("full_name"), "Họ tên", 160)
     role = data.get("role", "staff")
     active = data.get("active") == "1"
@@ -212,18 +208,10 @@ def update_user(actor_id, user_id, data):
     password_hash = password_hash_value(password) if password else None
     try:
         with transaction() as connection:
-            actor = require_actor(connection, actor_id, admin=True)
-            cursor = connection.cursor()
-            try:
-                cursor.execute(
-                    "SELECT user_id FROM tenant_users WHERE tenant_id = %s "
-                    "AND role IN ('owner', 'admin') AND active = 1 "
-                    "ORDER BY user_id FOR UPDATE",
-                    (actor["tenant_id"],),
-                )
-                active_admin_ids = {row[0] for row in cursor.fetchall()}
-            finally:
-                cursor.close()
+            actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
+            active_admin_ids = set(
+                user_repo.active_membership_roles_for_update(connection, actor["tenant_id"])
+            )
             user = user_repo.get_by_id_for_update(connection, user_id, actor["tenant_id"])
             if not user:
                 raise ValidationError("Không tìm thấy tài khoản.")
@@ -234,15 +222,7 @@ def update_user(actor_id, user_id, data):
                     "mật khẩu dùng luồng Quên mật khẩu."
                 )
             if password_hash or full_name != user["full_name"]:
-                cursor = connection.cursor()
-                try:
-                    cursor.execute(
-                        "SELECT COUNT(*) FROM tenant_users WHERE user_id = %s",
-                        (user_id,),
-                    )
-                    membership_count = cursor.fetchone()[0]
-                finally:
-                    cursor.close()
+                membership_count = user_repo.count_memberships(connection, user_id)
                 if password_hash and membership_count > 1:
                     raise ForbiddenError(
                         "Tài khoản đang dùng ở nhiều cửa hàng; không thể đổi mật khẩu từ một cửa hàng riêng lẻ."

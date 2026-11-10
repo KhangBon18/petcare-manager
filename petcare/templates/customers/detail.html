@@ -4,7 +4,6 @@
 {% block content %}
 <div class="page-heading compact-heading customer-profile-heading">
   <div>
-    <a class="back-link" href="{{ url_for('customers.index') }}">← {{ t('Khách hàng') }}</a>
     <span class="eyebrow">{{ t('HỒ SƠ KHÁCH HÀNG') }}</span>
     <h1>{{ customer.full_name }}</h1>
     <p>{{ t('Hồ sơ liên hệ và lịch sử mua hàng của khách.') }}</p>
@@ -32,11 +31,37 @@
   </section>
 
   <section class="customer-stat-grid" aria-label="{{ t('Tóm tắt mua hàng') }}">
-    <article class="stat-card stat-blue"><span class="customer-stat-label">{{ t('Tổng hóa đơn') }}</span><strong>{{ format_number(summary.invoice_count) }}</strong><small>{{ t('Bao gồm hóa đơn đã hủy') }}</small></article>
-    <article class="stat-card stat-mint"><span class="customer-stat-label">{{ t('Đã thanh toán') }}</span><strong>{{ format_number(summary.paid_invoice_count) }}</strong><small>{{ t('Giao dịch hoàn tất') }}</small></article>
-    <article class="stat-card stat-peach"><span class="customer-stat-label">{{ t('Chưa thanh toán') }}</span><strong>{{ format_number(summary.unpaid_invoice_count) }}</strong><small>{{ t('Cần theo dõi') }}</small></article>
+    <article class="stat-card"><span class="customer-stat-label">{{ t('Tổng hóa đơn') }}</span><strong>{{ format_number(summary.invoice_count) }}</strong><small>{{ t('Bao gồm hóa đơn đã hủy') }}</small></article>
+    <article class="stat-card"><span class="customer-stat-label">{{ t('Đã thanh toán') }}</span><strong>{{ format_number(summary.paid_invoice_count) }}</strong><small>{{ t('Giao dịch hoàn tất') }}</small></article>
+    <article class="stat-card"><span class="customer-stat-label">{{ t('Chưa thanh toán') }}</span><strong>{{ format_number(summary.unpaid_invoice_count) }}</strong><small>{{ t('Cần theo dõi') }}</small></article>
   </section>
 </div>
+
+<section class="panel customer-pets-panel" aria-labelledby="customer-pets-title">
+  <div class="panel-heading">
+    <div><span class="eyebrow">{{ t('HỒ SƠ LIÊN QUAN') }}</span><h2 id="customer-pets-title">{{ t('Thú cưng đã mua') }}</h2></div>
+    <span class="soft-badge">{{ format_number(pet_pagination.total) }}</span>
+  </div>
+  {% if purchased_pets %}
+  <div class="customer-pet-links">
+    {% for purchased_pet in purchased_pets %}
+    <a class="customer-pet-link" href="{{ url_for('pets.detail', pet_id=purchased_pet.id) }}">
+      <span class="customer-pet-mark" aria-hidden="true">{{ icon('pets') }}</span>
+      <span class="customer-pet-copy"><strong>{{ purchased_pet.name }}</strong><small>{{ purchased_pet.code }} · {{ purchased_pet.breed or purchased_pet.species }}</small></span>
+      <span class="status-pill {{ 'status-sold' if purchased_pet.sale_status == 'sold' else 'status-muted' }}">{{ t('Đã bán') if purchased_pet.sale_status == 'sold' else t('Đã ngừng') }}</span>
+    </a>
+    {% endfor %}
+    <nav class="customer-pets-pagination" aria-label="{{ t('Điều hướng hồ sơ thú cưng') }}">
+      <span>{{ t('Hiển thị') }} {{ pet_pagination.first }}–{{ pet_pagination.last }} {{ t('trong tổng số') }} {{ pet_pagination.total }} {{ t('thú cưng') }}</span>
+      {% if pet_pagination.pages > 1 %}<div class="pagination-actions">
+        {% if pet_pagination.has_previous %}<a rel="prev" href="{{ url_for('customers.detail', customer_id=customer.id, page=request.args.get('page', '1'), pet_page=pet_pagination.page - 1) }}" aria-label="{{ t('Trang thú cưng trước') }}">← {{ t('Trước') }}</a>{% else %}<span class="pagination-disabled">← {{ t('Trước') }}</span>{% endif %}
+        <span class="pagination-current">{{ t('Trang') }} {{ pet_pagination.page }} / {{ pet_pagination.pages }}</span>
+        {% if pet_pagination.has_next %}<a rel="next" href="{{ url_for('customers.detail', customer_id=customer.id, page=request.args.get('page', '1'), pet_page=pet_pagination.page + 1) }}" aria-label="{{ t('Trang thú cưng tiếp theo') }}">{{ t('Tiếp') }} →</a>{% else %}<span class="pagination-disabled">{{ t('Tiếp') }} →</span>{% endif %}
+      </div>{% endif %}
+    </nav>
+  </div>
+  {% else %}<p class="customer-panel-empty">{{ t('Hồ sơ thú cưng sẽ xuất hiện khi khách hàng mua một cá thể qua hóa đơn đã thanh toán.') }}</p>{% endif %}
+</section>
 
 <section class="panel customer-money-panel" aria-labelledby="customer-money-title">
   <div class="panel-heading">

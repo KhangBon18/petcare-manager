@@ -131,6 +131,17 @@ def adjust_stock(connection, product_id, delta):
     )[1]
 
 
+def reserve_stock_for_sale(connection, product_id, quantity):
+    """Atomically decrement stock only while the active tenant item has enough."""
+    return execute(
+        connection,
+        "UPDATE products SET stock_qty = stock_qty - %s "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND active = 1 AND stock_qty >= %s",
+        (quantity, product_id, quantity),
+    )[1]
+
+
 def add_stock_movement(
     connection, product_id, delta, reason, actor_id, invoice_id=None,
     purchase_order_id=None, purchase_order_item_id=None,

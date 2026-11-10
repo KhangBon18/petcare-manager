@@ -44,6 +44,8 @@ class Node {
   }
   querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
   closest(selector) { return this.matches(selector) ? this : this.parent?.closest(selector); }
+  contains(node) { for (let current = node; current; current = current.parent) if (current === this) return true; return false; }
+  requestSubmit() { this.dispatchEvent(new UIEvent("submit", {bubbles: true})); }
   addEventListener(type, callback) { (this.listeners[type] ||= []).push(callback); }
   dispatchEvent(event) {
     if (!event.target) event.target = this;

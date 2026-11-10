@@ -87,7 +87,24 @@ class CustomerProfileWebTests(TestCase):
                     "item_count": 2,
                 }
             ],
+            "purchased_pets": [
+                {
+                    "id": 41,
+                    "code": "PET-041",
+                    "name": "Mochi",
+                    "species": "Mèo",
+                    "breed": "Mèo ta",
+                    "sale_status": "sold",
+                    "sold_at": datetime(2026, 10, 2, 11, 5),
+                    "photo_filename": None,
+                    "total_count": 1,
+                }
+            ],
             "pagination": page,
+            "pet_pagination": {
+                "page": 1, "page_size": 12, "pages": 1, "total": 1,
+                "first": 1, "last": 1, "has_previous": False, "has_next": False,
+            },
         }
 
     def test_customer_detail_renders_history_and_keeps_currency_totals_separate(self):
@@ -105,9 +122,13 @@ class CustomerProfileWebTests(TestCase):
         self.assertIn("VND", html)
         self.assertIn("#000038", html)
         self.assertIn("/invoices/38", html)
+        self.assertIn("/pets/41", html)
+        self.assertIn("Thú cưng đã mua", html)
+        self.assertIn('aria-label="Vị trí hiện tại"', html)
         self.assertIn("/invoices/new?customer_id=7", html)
         self.assertIn("/customers/7?page=2", html)
         self.assertIn("Không quy đổi giữa các loại tiền.", html)
+        self.assertIn("Hiển thị 1–1 trong tổng số 1 thú cưng", html)
 
     def test_profile_pagination_query_is_passed_to_service(self):
         get_profile = patch(
@@ -116,7 +137,29 @@ class CustomerProfileWebTests(TestCase):
         )
         with get_profile as mocked:
             self.client.get("/customers/7?page=2")
-        mocked.assert_called_once_with(1, 7, page="2")
+        mocked.assert_called_once_with(1, 7, page="2", pet_page="1", tenant_id=1)
+
+    def test_purchased_pet_pagination_preserves_invoice_history_page(self):
+        profile = self.profile()
+        profile["pet_pagination"] = {
+            "page": 2, "page_size": 12, "pages": 2, "total": 13,
+            "first": 13, "last": 13, "has_previous": True, "has_next": False,
+        }
+        profile["purchased_pets"] = [
+            {"id": 54, "code": "PET-054", "name": "Luna", "species": "Mèo",
+             "breed": "Mèo ta", "sale_status": "sold", "total_count": 13}
+        ]
+        with patch(
+            "petcare.routes.customer_routes.customer_service.get_customer_profile",
+            return_value=profile,
+        ):
+            response = self.client.get("/customers/7?page=2&pet_page=2")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('href="/customers/7?page=2&amp;pet_page=1"', html)
+        self.assertIn("13–13 trong tổng số 13 thú cưng", html)
+        self.assertIn("Luna", html)
 
     def test_customer_profile_has_english_labels_when_locale_is_english(self):
         self.user["preferred_locale"] = "en"
@@ -130,7 +173,51 @@ class CustomerProfileWebTests(TestCase):
         self.assertIn("CUSTOMER PROFILE", html)
         self.assertIn("Contact information", html)
         self.assertIn("Invoice history", html)
+        self.assertIn("Purchased pets", html)
+        self.assertIn('aria-label="Current location"', html)
         self.assertIn("Currencies are not converted.", html)
+
+    def test_customer_list_renders_mobile_record_actions_and_accessible_breadcrumb(self):
+        listing = {
+            "items": [{
+                "id": 7, "full_name": "Nguyễn An", "phone": "0901234567",
+                "address": "Quận 1", "invoice_count": 3, "active": 1,
+            }],
+            "pagination": {
+                "page": 1, "page_size": 25, "pages": 1, "total": 1,
+                "first": 1, "last": 1, "has_previous": False, "has_next": False,
+            },
+        }
+        with patch(
+            "petcare.routes.customer_routes.customer_service.list_customers",
+            return_value=listing,
+        ):
+            response = self.client.get("/customers/")
+
+        self.assertEqual(response.status_code, 200)
+        html = response.get_data(as_text=True)
+        self.assertIn('aria-label="Vị trí hiện tại"', html)
+        self.assertIn('class="customer-mobile-list"', html)
+        self.assertIn('href="/customers/7"', html)
+        self.assertIn('action="/customers/7/deactivate"', html)
+        self.assertIn("Nguyễn An", html)
+
+    def test_pet_detail_links_back_to_the_recorded_buyer(self):
+        pet = {
+            "id": 21, "code": "PET-021", "name": "Miu", "species": "Mèo",
+            "breed": "Mèo ta", "sex": "unknown", "birth_date": None,
+            "weight_kg": None, "coat_color": "", "eye_color": "",
+            "appearance_tags": "", "sale_price": Decimal("2000000"),
+            "sale_status": "sold", "buyer_id": 7, "buyer_name": "Nguyễn An",
+            "sold_at": datetime(2026, 10, 2, 11, 5), "photo_filename": None,
+        }
+        with patch(
+            "petcare.routes.pet_routes.pet_service.get_pet", return_value=pet
+        ):
+            response = self.client.get("/pets/21")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('href="/customers/7"', response.get_data(as_text=True))
 
     def test_invoice_create_link_prefills_customer_selection(self):
         empty_page = {

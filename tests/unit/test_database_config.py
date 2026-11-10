@@ -140,11 +140,13 @@ class MigrationDatabaseConfigTests(unittest.TestCase):
             patch.object(module, "SCHEMA_PATH", MagicMock(read_text=MagicMock(return_value="CREATE TABLE example (id INT);"))),
             patch.object(module, "migration_transaction", return_value=transaction_context) as transaction,
             patch.object(module, "migrate_tenancy") as migrate,
+            patch.object(module, "_migrate_money_check_constraints") as money_checks,
         ):
             module.initialize_database()
 
         transaction.assert_called_once_with()
         migrate.assert_called_once_with(cursor)
+        money_checks.assert_called_once_with(cursor)
 
 
 if __name__ == "__main__":

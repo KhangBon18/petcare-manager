@@ -85,8 +85,9 @@ class DemoPreflightIntegrationTests(unittest.TestCase):
                         "quantity": "1",
                     }
                 ],
+                tenant_id=tenant,
             )
-            invoice_service.pay_invoice(actor, invoice_id)
+            invoice_service.pay_invoice(actor, invoice_id, tenant_id=tenant)
 
             def snapshot():
                 with get_connection() as connection:

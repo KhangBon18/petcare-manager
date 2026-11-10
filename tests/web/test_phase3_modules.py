@@ -221,6 +221,26 @@ class PhaseThreeWebTests(TestCase):
                 self.client.post("/reports/export.xlsx", json=payload).status_code, 400
             )
 
+    def test_tenant_export_heading_tracks_job_state(self):
+        cases = (
+            ({"status": "pending", "expired": False}, "Yêu cầu đang chờ"),
+            ({"status": "processing", "expired": False}, "Đang xử lý yêu cầu"),
+            ({"status": "ready", "expired": False}, "Bản xuất đã sẵn sàng"),
+            ({"status": "failed", "expired": False}, "Không thể tạo bản xuất"),
+            ({"status": "ready", "expired": True}, "Bản xuất đã hết hạn"),
+        )
+        with patch("petcare.routes.user_routes.tenant_export_service.get_export_job") as get_job:
+            for state, heading in cases:
+                with self.subTest(state=state):
+                    get_job.return_value = {"id": 17, "attempt_count": 1, **state}
+                    response = self.client.get("/users/export/jobs/17")
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn(heading, response.get_data(as_text=True))
+            self.user["preferred_locale"] = "en"
+            get_job.return_value = {"id": 17, "attempt_count": 1, "status": "ready", "expired": False}
+            response = self.client.get("/users/export/jobs/17")
+            self.assertIn("Export ready", response.get_data(as_text=True))
+
     def test_export_and_attribute_suggestion_require_login_and_csrf(self):
         self.app.config["WTF_CSRF_ENABLED"] = True
         self.assertEqual(
@@ -239,9 +259,11 @@ class PhaseThreeWebTests(TestCase):
         service = self.patch(
             "petcare.routes.pet_routes.pet_image_service.suggest_attributes",
             return_value={
+                "status": "uncertain",
                 "suggestions": {"coat_color": "trắng"},
                 "colors": ["trắng"],
                 "mode": "local",
+                "provider_status": "disabled",
                 "warning": None,
             },
         )
@@ -250,6 +272,7 @@ class PhaseThreeWebTests(TestCase):
         )
         self.assertEqual(result.status_code, 200)
         self.assertEqual(result.get_json()["mode"], "local")
+        self.assertEqual(result.get_json()["status"], "uncertain")
         service.assert_called_once()
         self.user["role"] = "staff"
         result = self.client.post(
@@ -258,12 +281,17 @@ class PhaseThreeWebTests(TestCase):
         self.assertEqual(result.status_code, 403)
 
     def test_attribute_suggestion_handles_rate_limit_missing_file_and_busy_slot(self):
-        self.assertEqual(self.client.post("/pets/suggest-attributes").status_code, 400)
+        missing = self.client.post("/pets/suggest-attributes")
+        self.assertEqual(missing.status_code, 400)
+        self.assertEqual(missing.get_json()["status"], "invalid_input")
+        self.assertEqual(missing.get_json()["code"], "missing_file")
         self.patch(
             "petcare.services.request_throttle_service.consume_with_ip_limit",
             return_value=(False, 3),
         )
-        self.assertEqual(self.client.post("/pets/suggest-attributes").status_code, 429)
+        limited = self.client.post("/pets/suggest-attributes")
+        self.assertEqual(limited.status_code, 429)
+        self.assertEqual(limited.get_json()["status"], "rate_limited")
         slots = self.app.extensions["petcare_image_processing_slots"]
         taken = []
         while slots.acquire(blocking=False):
@@ -274,10 +302,33 @@ class PhaseThreeWebTests(TestCase):
             )
             self.assertEqual(result.status_code, 429)
             self.assertIsNotNone(result.get_json())
+            self.assertEqual(result.get_json()["status"], "rate_limited")
             self.assertEqual(result.headers["Retry-After"], "2")
         finally:
             for _ in taken:
                 slots.release()
+
+    def test_attribute_suggestion_returns_safe_structured_invalid_and_processing_errors(self):
+        from petcare.vision.image_features import InvalidImage
+
+        with patch("petcare.routes.pet_routes.read_upload", side_effect=InvalidImage("invalid fixture")):
+            invalid = self.client.post(
+                "/pets/suggest-attributes", data={"photo": (BytesIO(b"bad"), "image.png")}
+            )
+        self.assertEqual(invalid.status_code, 400)
+        self.assertEqual(invalid.get_json()["status"], "invalid_input")
+        self.assertEqual(invalid.get_json()["code"], "invalid_image")
+
+        self.patch(
+            "petcare.routes.pet_routes.pet_image_service.suggest_attributes",
+            side_effect=RuntimeError("sensitive provider detail"),
+        )
+        failed = self.client.post(
+            "/pets/suggest-attributes", data={"photo": (BytesIO(b"image"), "image.png")}
+        )
+        self.assertEqual(failed.status_code, 500)
+        self.assertEqual(failed.get_json()["status"], "processing_error")
+        self.assertNotIn("sensitive provider detail", failed.get_data(as_text=True))
 
     def test_image_filters_forwarded_and_explanations_render_without_inline_styles(
         self,
@@ -319,7 +370,10 @@ class PhaseThreeWebTests(TestCase):
             },
         )
         self.assertEqual(result.status_code, 200)
-        self.assertEqual(service.call_args.kwargs, {"species": "Mèo", "status": "sold"})
+        self.assertEqual(
+            service.call_args.kwargs,
+            {"tenant_id": 1, "species": "Mèo", "status": "sold"},
+        )
         page = result.get_data(as_text=True)
         self.assertIn("Màu sắc 95/100", page)
         self.assertIn("Cấu trúc 85/100", page)

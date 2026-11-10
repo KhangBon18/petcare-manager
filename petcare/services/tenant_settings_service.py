@@ -7,7 +7,7 @@ from petcare.services.exceptions import ForbiddenError, ValidationError
 from petcare.timezones import TimezoneError, normalize_timezone_name
 
 
-def update_store_profile(actor_id, name, timezone_name):
+def update_store_profile(actor_id, name, timezone_name, tenant_id=None):
     name = text_value(name, "Tên cửa hàng", 160)
     try:
         timezone_name = normalize_timezone_name(timezone_name)
@@ -15,7 +15,7 @@ def update_store_profile(actor_id, name, timezone_name):
         raise ValidationError(str(exc)) from exc
 
     with transaction() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         tenant = tenant_repo.get_for_update(connection, actor["tenant_id"])
         if not tenant or tenant["status"] != "active":
             raise ForbiddenError("Cửa hàng không còn hoạt động.")

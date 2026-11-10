@@ -4,8 +4,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#F5F7F6">
   <title>{% block title %}PetCare Manager{% endblock %} · {{ t('Cửa hàng thú cưng') }}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   {% block head %}{% endblock %}
@@ -76,7 +78,7 @@
         <button class="button button-light button-small" type="submit">{{ t('Đổi') }}</button>
       </form>
       {% endif %}
-      <a class="user-chip user-chip-link" href="{{ url_for('account.settings') }}" aria-label="{{ t('Cài đặt tài khoản của') }} {{ g.user.full_name }}"><span class="avatar">{{ g.user.full_name[:1]|upper }}</span><span><strong>{{ g.user.full_name }}</strong><small>{{ t('Quản trị viên') if g.user.role == 'admin' else t('Nhân viên') }}</small></span></a>
+      <a class="user-chip user-chip-link" href="{{ url_for('account.settings') }}" title="{{ t('Cài đặt tài khoản') }}"><span class="avatar" aria-hidden="true">{{ g.user.full_name[:1]|upper }}</span><span><strong>{{ g.user.full_name }}</strong><small>{{ t('Quản trị viên') if g.user.role == 'admin' else t('Nhân viên') }}</small></span></a>
       {% if g.user.role == 'admin' %}<details class="mobile-admin-link mobile-admin-menu" data-mobile-menu><summary>{{ icon('team') }}<span>{{ 'Quản trị' if locale == 'vi' else 'Admin' }}</span></summary><nav aria-label="{{ 'Quản trị' if locale == 'vi' else 'Administration' }}"><a href="{{ url_for('store.settings') }}">{{ t('Cài đặt cửa hàng') }}</a><a href="{{ url_for('users.index') }}">{{ t('Tài khoản') }}</a><a href="{{ url_for('purchasing.index') }}">{{ t('Nhập hàng') }}</a><a href="{{ url_for('purchasing.suppliers_index') }}">{{ t('Nhà cung cấp') }}</a><a href="{{ url_for('audit.index') }}">{{ t('Nhật ký hoạt động') }}</a></nav></details>{% endif %}
       <form action="{{ url_for('auth.logout') }}" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -87,16 +89,29 @@
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
       {% endwith %}
+      {% include "partials/breadcrumbs.html" %}
       {% block content %}{% endblock %}
     </section>
     <footer class="app-footer">PetCare Manager <span>•</span> {{ t('Quản lý cửa hàng thú cưng') }}</footer>
   </main>
 </div>
-<button class="assistant-launcher" id="assistant-launcher" type="button" aria-label="{{ t('Mở trợ lý AI') }}" aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button>
+<button class="assistant-launcher" id="assistant-launcher" type="button" aria-label="{{ t('Hỏi trợ lý') }}" aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button>
 <aside class="assistant-panel" id="assistant-panel" aria-label="{{ t('Trợ lý PetCare') }}" hidden>
   <header class="assistant-header"><div><span class="assistant-avatar">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý AI PetCare') }}</strong><small>{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('AI tạo sinh đang bật') }}{% else %}{{ t('Tra cứu cục bộ · AI tạo sinh chưa kết nối') }}{% endif %}</small></span></div><div class="assistant-header-actions"><button class="assistant-clear" id="assistant-clear" type="button" aria-label="{{ t('Xóa cuộc trò chuyện') }}" title="{{ t('Xóa cuộc trò chuyện') }}">{{ icon('refresh') }}</button><button class="assistant-close" id="assistant-close" type="button" aria-label="{{ t('Đóng trợ lý') }}">×</button></div></header>
   <p class="assistant-privacy">{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('Câu hỏi, tối đa 8 tin nhắn gần nhất và dữ liệu cửa hàng liên quan được gửi tới endpoint AI đã cấu hình; dữ liệu có thể gồm tên/giá sản phẩm hoặc tên/đặc điểm thú cưng. Hồ sơ khách hàng không tự gửi; thông tin bạn nhập vào chat vẫn được gửi.') }}{% else %}{{ t('Không gọi endpoint AI bên ngoài; ứng dụng trả lời câu hỏi bằng dữ liệu cửa hàng hiện có.') }}{% endif %}</p>
-  <div class="assistant-messages" id="assistant-messages" aria-live="polite"><div class="assistant-message assistant-message-bot">{{ t('Hỏi về doanh thu, tồn kho, sản phẩm hoặc thú cưng đang bán. Câu trả lời cục bộ lấy từ dữ liệu MySQL; muốn chat tạo sinh, hãy cấu hình endpoint AI.') }}</div><div class="assistant-suggestions" data-assistant-suggestions aria-label="{{ t('Câu hỏi gợi ý') }}"><button type="button" data-assistant-prompt="{{ t('Tìm mèo lông trắng đang bán') }}">{{ t('Mèo lông trắng') }}</button><button type="button" data-assistant-prompt="{{ t('Sản phẩm nào sắp hết?') }}">{{ t('Tồn kho thấp') }}</button><button type="button" data-assistant-prompt="{{ t('Doanh thu hôm nay?') }}">{{ t('Doanh thu hôm nay') }}</button><button type="button" data-assistant-prompt="{{ t('Hướng dẫn lập hóa đơn') }}">{{ t('Cách lập hóa đơn') }}</button></div><a class="assistant-quick-link" href="{{ url_for('pets.find_similar') }}">{{ icon('search') }} {{ t('Mở tìm thú cưng bằng ảnh') }}</a></div>
+  <div class="assistant-messages" id="assistant-messages" aria-live="polite">
+    <div class="assistant-message assistant-message-bot">{{ t('Hỏi về doanh thu, tồn kho, sản phẩm hoặc thú cưng đang bán. Câu trả lời cục bộ lấy từ dữ liệu MySQL; muốn chat tạo sinh, hãy cấu hình endpoint AI.') }}</div>
+    <div class="assistant-suggestions" data-assistant-suggestions aria-label="{{ t('Câu hỏi gợi ý') }}">
+      <button type="button" data-assistant-prompt="{{ t('Tìm mèo lông trắng đang bán') }}">{{ t('Mèo lông trắng') }}</button>
+      <button type="button" data-assistant-prompt="{{ t('Sản phẩm nào sắp hết?') }}">{{ t('Tồn kho thấp') }}</button>
+      {% if locale == 'en' %}<button type="button" data-assistant-prompt="Which products need restocking?">Restock suggestions</button>{% else %}<button type="button" data-assistant-prompt="Gợi ý sản phẩm cần nhập thêm">Gợi ý nhập hàng</button>{% endif %}
+      <button type="button" data-assistant-prompt="{{ t('Doanh thu hôm nay?') }}">{{ t('Doanh thu hôm nay') }}</button>
+      <button type="button" data-assistant-prompt="{{ t('Sản phẩm nào bán chạy tuần này?') }}">{{ t('Bán chạy tuần này') }}</button>
+      {% if g.user.role == 'admin' %}{% if locale == 'en' %}<button type="button" data-assistant-prompt="Show purchase order status">Purchase order status</button>{% else %}<button type="button" data-assistant-prompt="Tình trạng đơn nhập?">Trạng thái đơn nhập</button>{% endif %}{% endif %}
+      <button type="button" data-assistant-prompt="{{ t('Hướng dẫn lập hóa đơn') }}">{{ t('Cách lập hóa đơn') }}</button>
+    </div>
+    <a class="assistant-quick-link" href="{{ url_for('pets.find_similar') }}">{{ icon('search') }} {{ t('Mở tìm thú cưng bằng ảnh') }}</a>
+  </div>
   <form class="assistant-form" id="assistant-form" action="{{ url_for('assistant.chat') }}" method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label class="visually-hidden" for="assistant-input">{{ t('Câu hỏi cho trợ lý') }}</label>
@@ -119,9 +134,9 @@
 {% endif %}
 <script src="{{ url_for('static', filename='vendor/gsap/gsap.min.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/motion.js') }}" defer></script>
-{% block scripts %}{% endblock %}
 <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
+{% block scripts %}{% endblock %}
 {% if g.user %}<script src="{{ url_for('static', filename='js/assistant.js') }}" defer></script>{% endif %}
 </body>
 </html>

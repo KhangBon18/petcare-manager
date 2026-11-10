@@ -18,20 +18,6 @@ from petcare.services.exceptions import (
 from petcare.services.mail_templates import ownership_transfer_email
 
 
-def _lock_admin_memberships(connection, tenant_id):
-    cursor = connection.cursor()
-    try:
-        cursor.execute(
-            "SELECT user_id, role FROM tenant_users WHERE tenant_id = %s "
-            "AND role IN ('owner', 'admin') AND active = 1 "
-            "ORDER BY user_id FOR UPDATE",
-            (tenant_id,),
-        )
-        return {row[0]: row[1] for row in cursor.fetchall()}
-    finally:
-        cursor.close()
-
-
 def _locked_accounts(connection, user_ids):
     accounts = {}
     for user_id in sorted(set(user_ids)):
@@ -57,9 +43,9 @@ def _require_active_tenant(connection, tenant_id):
     return tenant
 
 
-def get_page_context(actor_id):
+def get_page_context(actor_id, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         membership = tenant_owner_transfer_repo.membership_role(
             connection, actor["tenant_id"], actor_id
         )
@@ -88,7 +74,7 @@ def get_page_context(actor_id):
         }
 
 
-def initiate_transfer(actor_id, target_user_id, current_password):
+def initiate_transfer(actor_id, target_user_id, current_password, tenant_id=None):
     try:
         target_user_id = int(target_user_id)
     except (TypeError, ValueError) as exc:
@@ -101,9 +87,9 @@ def initiate_transfer(actor_id, target_user_id, current_password):
         raise RateLimitError("Bạn đã thử bàn giao quá nhiều lần. Vui lòng thử lại sau.", retry_after)
 
     with transaction() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         tenant = _require_active_tenant(connection, actor["tenant_id"])
-        roles = _lock_admin_memberships(connection, tenant["id"])
+        roles = user_repo.active_membership_roles_for_update(connection, tenant["id"])
         if roles.get(actor_id) != "owner":
             raise ForbiddenError("Chỉ chủ cửa hàng hiện tại mới có thể khởi tạo bàn giao.")
         if roles.get(target_user_id) != "admin":
@@ -159,15 +145,15 @@ def initiate_transfer(actor_id, target_user_id, current_password):
     return {"id": transfer["id"], "expires_at": transfer["expires_at"], "email_queued": email_queued}
 
 
-def cancel_transfer(actor_id, transfer_id, current_password):
+def cancel_transfer(actor_id, transfer_id, current_password, tenant_id=None):
     allowed, retry_after = request_throttle_service.consume(actor_id, "tenant_owner_transfer")
     if not allowed:
         raise RateLimitError("Bạn đã thử bàn giao quá nhiều lần. Vui lòng thử lại sau.", retry_after)
 
     with transaction() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         tenant = _require_active_tenant(connection, actor["tenant_id"])
-        roles = _lock_admin_memberships(connection, tenant["id"])
+        roles = user_repo.active_membership_roles_for_update(connection, tenant["id"])
         if roles.get(actor_id) != "owner":
             raise ForbiddenError("Chỉ chủ cửa hàng mới có thể thu hồi yêu cầu bàn giao.")
         transfer = tenant_owner_transfer_repo.open_for_update(
@@ -194,15 +180,15 @@ def cancel_transfer(actor_id, transfer_id, current_password):
         )
 
 
-def accept_transfer(actor_id, transfer_id, current_password):
+def accept_transfer(actor_id, transfer_id, current_password, tenant_id=None):
     allowed, retry_after = request_throttle_service.consume(actor_id, "tenant_owner_transfer")
     if not allowed:
         raise RateLimitError("Bạn đã thử bàn giao quá nhiều lần. Vui lòng thử lại sau.", retry_after)
 
     with transaction() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         tenant = _require_active_tenant(connection, actor["tenant_id"])
-        roles = _lock_admin_memberships(connection, tenant["id"])
+        roles = user_repo.active_membership_roles_for_update(connection, tenant["id"])
         transfer = tenant_owner_transfer_repo.open_for_update(
             connection, tenant["id"], transfer_id
         )

@@ -1,0 +1,71 @@
+/* Shared design tokens for PetCare Manager. */
+
+:root {
+  /* Primitive palette: pet-shop greens with neutral, high-contrast surfaces. */
+  --primitive-forest-800: #1f624f;
+  --primitive-forest-700: #287a62;
+  --primitive-forest-100: #e8f3ed;
+  --primitive-ink: #202d2a;
+  --primitive-muted: #58665e;
+  --primitive-border: #e2e9e5;
+  --primitive-canvas: #f5f7f6;
+  --primitive-surface: #fff;
+  --primitive-amber-800: #80511f;
+  --primitive-amber-100: #fff2dd;
+  --primitive-red-800: #9a4c47;
+  --primitive-red-100: #fff0ed;
+  --primitive-green-800: #326b49;
+  --primitive-green-100: #e5f5ea;
+
+  /* Semantic tokens used by shared UI components. */
+  --color-brand: var(--primitive-forest-700);
+  --color-brand-strong: var(--primitive-forest-800);
+  --color-brand-soft: var(--primitive-forest-100);
+  --color-ink: var(--primitive-ink);
+  --color-ink-strong: #34463f;
+  --color-muted: var(--primitive-muted);
+  --color-border: var(--primitive-border);
+  --color-border-subtle: #edf1ee;
+  --color-border-danger: #efd9d5;
+  --color-border-danger-strong: #d8aaa3;
+  --color-separator: #9aa9a1;
+  --color-canvas: var(--primitive-canvas);
+  --color-surface: var(--primitive-surface);
+  --color-surface-hover: #f9fcfa;
+  --color-warning: var(--primitive-amber-800);
+  --color-warning-soft: var(--primitive-amber-100);
+  --color-danger: var(--primitive-red-800);
+  --color-danger-soft: var(--primitive-red-100);
+  --color-positive: var(--primitive-green-800);
+  --color-positive-soft: var(--primitive-green-100);
+  --color-focus-ring: rgba(40, 122, 98, .35);
+
+  /* Existing component aliases remain stable while screens adopt semantics. */
+  --ink: var(--color-ink);
+  --muted: var(--color-muted);
+  --line: var(--color-border);
+  --paper: var(--color-surface);
+  --canvas: var(--color-canvas);
+  --mint: var(--color-brand-soft);
+  --shadow: 0 8px 24px rgba(25, 54, 43, .045);
+  --font-ui: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --green: var(--color-brand);
+  --green-dark: var(--color-brand-strong);
+  --green-soft: var(--color-brand-soft);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --motion-fast: 140ms;
+  --motion-standard: 180ms;
+  --ease-standard: cubic-bezier(.2, .8, .2, 1);
+  font-family: var(--font-ui);
+  color-scheme: light;
+  color: var(--ink);
+  background: var(--canvas);
+}

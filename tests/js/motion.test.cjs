@@ -72,9 +72,20 @@ test("entrance bounds card work and chart stagger, never tweens business values"
   for (const step of entrance.steps) {
     assert.equal(step.from.textContent,undefined); assert.equal(step.to.value,undefined);
     assert.equal(step.to.width,undefined); assert.equal(step.to.height,undefined);
+    assert.equal(step.from.opacity,undefined); assert.equal(step.to.opacity,undefined);
   }
   assert.equal(h.heading.textContent,"2.250.000 VND"); assert.equal(Node.active,h.input);
   entrance.vars.onComplete(); assert.equal(entrance.restored,true);
+});
+
+test("content reveal preserves full text contrast while moving into place", () => {
+  const h = harness({error:true});
+  h.motion.reveal([h.heading]);
+  const animation = h.animations[0];
+  assert.equal(animation.from.opacity,undefined);
+  assert.equal(animation.vars.opacity,undefined);
+  assert.equal(animation.from.y,8);
+  assert.equal(animation.vars.y,0);
 });
 
 test("server-validation page does not move the focused form or its heading", () => {

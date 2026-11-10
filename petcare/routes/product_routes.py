@@ -16,6 +16,7 @@ def index():
     listing = product_service.list_products(
         g.user["id"], request.args.get("q", ""),
         request.args.get("all") == "1", page=request.args.get("page", "1"),
+        tenant_id=g.actor_context.tenant_id,
     )
     return render_template(
         "products/index.html",
@@ -23,7 +24,7 @@ def index():
         pagination=listing["pagination"],
         search=request.args.get("q", ""),
         include_inactive=request.args.get("all") == "1",
-        restock=restock_service.recommendations(g.user["id"]),
+        restock=restock_service.recommendations(g.user["id"], tenant_id=g.actor_context.tenant_id),
     )
 
 
@@ -31,11 +32,13 @@ def index():
 @login_required
 def detail(product_id):
     try:
-        product = product_service.get_product(g.user["id"], product_id)
+        product = product_service.get_product(
+            g.user["id"], product_id, tenant_id=g.actor_context.tenant_id
+        )
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("products.index"))
-    suggestions = restock_service.recommendations(g.user["id"])
+    suggestions = restock_service.recommendations(g.user["id"], tenant_id=g.actor_context.tenant_id)
     return render_template("products/detail.html", product=product,
                            suggestion=next((row for row in suggestions if row["id"] == product_id), None))
 
@@ -45,38 +48,54 @@ def detail(product_id):
 def create():
     if request.method == "POST":
         try:
-            product_service.create_product(g.user["id"], request.form, request.files.get("photo"))
+            product_service.create_product(
+                g.user["id"], request.form, request.files.get("photo"),
+                tenant_id=g.actor_context.tenant_id,
+            )
             flash("Đã tạo sản phẩm.", "success")
             return redirect(url_for("products.index"))
         except ServiceError as exc:
             flash(str(exc), "error")
-    return render_template("products/form.html", product=None)
+    return render_template(
+        "products/form.html",
+        product=None,
+        form_data=request.form if request.method == "POST" else {},
+    )
 
 
 @bp.route("/<int:product_id>/edit", methods=["GET", "POST"])
 @admin_required
 def edit(product_id):
     try:
-        product = product_service.get_product(g.user["id"], product_id)
+        product = product_service.get_product(
+            g.user["id"], product_id, tenant_id=g.actor_context.tenant_id
+        )
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("products.index"))
     if request.method == "POST":
         try:
             product_service.update_product(
-                g.user["id"], product_id, request.form, request.files.get("photo")
+                g.user["id"], product_id, request.form, request.files.get("photo"),
+                tenant_id=g.actor_context.tenant_id,
             )
             flash("Đã cập nhật thông tin sản phẩm.", "success")
             return redirect(url_for("products.index"))
         except ServiceError as exc:
             flash(str(exc), "error")
-    return render_template("products/form.html", product=product)
+    return render_template(
+        "products/form.html",
+        product=product,
+        form_data=request.form if request.method == "POST" else {},
+    )
 
 
 @bp.get("/photo/<filename>")
 @login_required
 def photo(filename):
-    if not product_service.owns_photo(g.user["id"], filename):
+    if not product_service.owns_photo(
+        g.user["id"], filename, tenant_id=g.actor_context.tenant_id
+    ):
         abort(404)
     try:
         image = get_media_storage(current_app.config, "products").read(filename)
@@ -91,7 +110,9 @@ def photo(filename):
 @admin_required
 def stock(product_id):
     try:
-        product_service.adjust_stock(g.user["id"], product_id, request.form)
+        product_service.adjust_stock(
+            g.user["id"], product_id, request.form, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã ghi nhận điều chỉnh tồn kho.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -102,7 +123,9 @@ def stock(product_id):
 @admin_required
 def active(product_id):
     try:
-        product_service.set_active(g.user["id"], product_id, True)
+        product_service.set_active(
+            g.user["id"], product_id, True, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã kích hoạt sản phẩm.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -113,7 +136,9 @@ def active(product_id):
 @admin_required
 def deactivate(product_id):
     try:
-        product_service.set_active(g.user["id"], product_id, False)
+        product_service.set_active(
+            g.user["id"], product_id, False, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã ngừng bán sản phẩm; lịch sử giao dịch được giữ lại.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")

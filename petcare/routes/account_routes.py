@@ -60,6 +60,7 @@ def update_profile():
             g.user["id"],
             request.form.get("current_password", ""),
             request.form.get("full_name", ""),
+            tenant_id=g.tenant_id,
         )
         if result["status"] == "unchanged":
             flash("Tên hiển thị hiện tại chưa thay đổi.", "info")

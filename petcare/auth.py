@@ -5,6 +5,7 @@ from flask import abort, flash, g, redirect, request, session, url_for
 
 from petcare.i18n import SUPPORTED_LOCALES
 from petcare.services.auth_service import load_active_user
+from petcare.services.actors import ActorContext
 
 
 def _safe_next_url(target):
@@ -23,6 +24,7 @@ def load_current_user():
     }:
         g.user = None
         g.tenant = None
+        g.actor_context = None
         return
     user_id = session.get("user_id")
     tenant_id = session.get("tenant_id")
@@ -40,10 +42,12 @@ def load_current_user():
     if g.user:
         g.tenant = g.user.pop("tenant")
         g.tenant_id = g.tenant["id"]
+        g.actor_context = ActorContext(g.user["id"], g.tenant_id)
         session["tenant_id"] = g.tenant_id
     else:
         g.tenant = None
         g.tenant_id = None
+        g.actor_context = None
 
 
 def login_required(view):

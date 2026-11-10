@@ -6,6 +6,19 @@
 
 Khám bệnh, tiêm phòng, lịch hẹn chăm sóc và dịch vụ spa thuộc phiên bản desktop cũ; bản đặc tả cũ được lưu trong docs/archive/. Không chuyển dữ liệu clinic sang dữ liệu hàng hóa.
 
+Design tokens, hướng dẫn layout desktop/mobile và trạng thái component được ghi tại [Design System PetCare Manager](design-system/petcare-manager/MASTER.md). Quy tắc dùng skill trong repo nằm tại [docs/skills.md](docs/skills.md); tổng quan ranh giới module tại [docs/architecture.md](docs/architecture.md).
+
+## Cấu trúc ứng dụng
+
+- `run.py` chạy Flask local ở 127.0.0.1:5055; `wsgi.py` cung cấp `wsgi:app` cho Gunicorn.
+- `petcare/app_factory.py` tạo app và đăng ký blueprint; `petcare/__init__.py` và `petcare/app.py` giữ import tương thích.
+- `petcare/app_configuration.py` kiểm tra runtime/production config; `petcare/app_hooks.py` đăng ký CSRF, request lifecycle, security headers, error handlers và Jinja helpers.
+- `petcare/routes/` xử lý HTTP; `petcare/services/` xác thực, quyền, nghiệp vụ và transaction; `petcare/repositories/` giữ SQL MySQL tham số hóa, không tự commit.
+- `petcare/database/` chứa kết nối/pool MySQL, schema/migration, readiness, seed và công cụ vận hành.
+- `petcare/services/catalog_intent.py`, `assistant_local.py`, `assistant_service.py` tách lọc truy vấn, câu trả lời cục bộ và điều phối trợ lý.
+- `petcare/templates/` dùng Jinja; `petcare/static/css/tokens.css`, `app.css`, `motion.css` và `static/js/` là frontend thuần, không cần build.
+- `tests/` có unit, web, JavaScript và test tích hợp cần MySQL database `_test` riêng.
+
 ## Yêu cầu
 
 - Python 3.11 trở lên (Pillow 13 đã bỏ hỗ trợ Python 3.10).
@@ -25,7 +38,7 @@ Tại thư mục gốc repo:
 
 2. Cài thư viện:
 
-   python -m pip install -r requirements.txt
+   python -m pip install -r requirements.txt -c requirements.lock
 
 3. Tạo file cấu hình local:
 
@@ -71,7 +84,7 @@ Tại thư mục gốc repo:
 
    py -m venv .venv
    .venv\Scripts\Activate.ps1
-   python -m pip install -r requirements.txt
+   python -m pip install -r requirements.txt -c requirements.lock
 
 2. Sao chép .env.example thành .env. Cập nhật thông tin kết nối MySQL và SECRET_KEY bằng trình soạn thảo.
 
@@ -172,7 +185,7 @@ Seed idempotent tạo dữ liệu hoàn toàn tổng hợp trong store `main`, c
 
 Chỉ chạy `python -m petcare.database.seed` trên database tên kết thúc bằng `_dev` hoặc `_test`. Khi chuẩn bị dữ liệu trước buổi demo, chạy lại seed để đưa đúng 7 hóa đơn có marker demo về mốc ngày tương đối (hôm nay và các ngày trước); ngày của stock movement đi cùng được cập nhật trong cùng transaction. Hóa đơn demo đã thanh toán không bị thanh toán lại/trừ kho lần nữa; hóa đơn demo đã hủy được giữ nguyên. Seed bổ sung ảnh mẫu khi hồ sơ tương ứng thiếu ảnh hoặc file ảnh đã mất, giữ ảnh hợp lệ và các trường hồ sơ đã chỉnh sửa. Sản phẩm, khách hàng và mật khẩu hiện có không bị ghi đè; tổng số bản ghi có thể lớn hơn bộ seed chuẩn do giữ dữ liệu cũ.
 
-Database phát triển `petcare_shop_dev` hiện có **20 bảng** và giữ nguyên dữ liệu demo. Source hiện có migration cộng dồn cho nhà cung cấp/đơn nhập và sổ trả hàng/hoàn tiền; schema sẽ có 25 bảng sau khi chạy `python -m petcare.database.initialize`. Lệnh bổ sung bảng/cột/index/FK, không xóa bảng hay dữ liệu; database local chưa chạy migration P1.2/P1.3 nên vẫn ở 20 bảng cho tới khi chủ dự án chủ động áp dụng. Sau nghiệm thu Phase 2 ngày 2026-10-25, database local có 14 khách hàng (gồm dữ liệu giữ lại), 22 sản phẩm, 74 thú cưng, 68 ảnh thú cưng và 7 hóa đơn demo đã thanh toán. Bộ seed chuẩn trên database mới có 12 khách mẫu. Dashboard hiển thị doanh thu thuần; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
+Database phát triển `petcare_shop_dev` hiện có **20 bảng** và giữ nguyên dữ liệu demo. Source có migration cộng dồn cho nhà cung cấp/đơn nhập, sổ trả hàng/hoàn tiền và request ledger chống nhận hàng lặp; schema hiện hành sẽ có 26 bảng sau khi chạy `python -m petcare.database.initialize`. Lệnh bổ sung bảng/cột/index/FK, không xóa bảng hay dữ liệu; database local chưa chạy migrations purchasing/refund nên vẫn ở 20 bảng cho tới khi chủ dự án chủ động áp dụng. Sau nghiệm thu Phase 2 ngày 2026-10-25, database local có 14 khách hàng (gồm dữ liệu giữ lại), 22 sản phẩm, 74 thú cưng, 68 ảnh thú cưng và 7 hóa đơn demo đã thanh toán. Bộ seed chuẩn trên database mới có 12 khách mẫu. Dashboard hiển thị doanh thu thuần; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
 
 Để dùng database mới với dữ liệu thật: tạo database riêng, cấu hình `.env`, chạy `python -m petcare.database.initialize`, rồi chạy `python -m petcare.database.create_admin`. Lệnh tạo admin yêu cầu xác nhận đúng tên database, nhập mật khẩu qua prompt ẩn và chỉ hoạt động khi database chưa có tài khoản. Sau đó đăng nhập, tạo nhân viên trong **Tài khoản**, rồi nhập danh mục và khách hàng thật. Không chạy seed demo trên database thật. Mật khẩu được băm PBKDF2-HMAC-SHA256; ứng dụng không lưu mật khẩu rõ.
 

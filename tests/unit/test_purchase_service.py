@@ -24,6 +24,16 @@ class PurchaseServiceTests(TestCase):
         )
         patcher.start()
         self.addCleanup(patcher.stop)
+        for target, return_value in (
+            ("purchase_repo.find_receipt_request", None),
+            ("purchase_repo.create_receipt_request", 1),
+        ):
+            patcher = patch(
+                f"petcare.services.purchase_service.{target}",
+                return_value=return_value,
+            )
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def test_supplier_validation_normalizes_optional_contact_fields(self):
         values = purchase_service._supplier_data({
@@ -76,10 +86,11 @@ class PurchaseServiceTests(TestCase):
                     {"product_id": "3", "quantity": "4", "unit_cost": "1250"},
                     {"product_id": "7", "quantity": "2", "unit_cost": "500"},
                 ],
+                tenant_id=4,
             )
 
         self.assertEqual(order_id, 31)
-        actor.assert_called_once_with(self.connection, 9, admin=True)
+        actor.assert_called_once_with(self.connection, 9, admin=True, tenant_id=4)
         get_supplier.assert_called_once_with(self.connection, 5, lock=True)
         get_products.assert_called_once_with(self.connection, [3, 7], lock=True, active_only=True)
         create_order.assert_called_once_with(

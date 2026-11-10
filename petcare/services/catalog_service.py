@@ -1,18 +1,18 @@
 """Deterministic filters and database-backed assistant cards; no LLM-generated SQL."""
 
+import re
+
 from petcare.repositories import catalog_repo
 from petcare.services.assistant_query import catalog_filters
+from petcare.services.catalog_intent import (
+    _PRODUCT_STOPWORDS,
+    _normalize,
+    _product_intent,
+    pet_filter_spec,
+)
 
 
 def lookup(connection, question, intent):
-    from petcare.services.assistant_service import (
-        _normalize,
-        pet_filter_spec,
-        _PRODUCT_STOPWORDS,
-        _product_intent,
-    )
-    import re
-
     if intent == "pet":
         spec = pet_filter_spec(question)
         kind = "pet"

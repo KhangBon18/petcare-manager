@@ -62,6 +62,7 @@ class RefundServiceTests(TestCase):
             11,
             {"request_key": REQUEST_KEY, "method": "cash", "note": "Checked at counter", **values},
             lines,
+            tenant_id=4,
         )
 
     def test_partial_product_refund_restocks_and_links_inventory_ledger(self):
@@ -83,7 +84,7 @@ class RefundServiceTests(TestCase):
             }])
 
         self.assertEqual(result, {"status": "refunded", "refund_id": 18})
-        actor.assert_called_once_with(self.connection, 9, admin=True)
+        actor.assert_called_once_with(self.connection, 9, admin=True, tenant_id=4)
         get_invoice.assert_called_once_with(self.connection, 11, lock=True)
         get_key.assert_called_once_with(self.connection, REQUEST_KEY)
         get_items.assert_called_once_with(self.connection, 11)
@@ -139,7 +140,7 @@ class RefundServiceTests(TestCase):
                 self._request([{
                     "invoice_item_id": "101", "quantity": "1", "disposition": "resell",
                 }])
-        actor.assert_called_once_with(self.connection, 9, admin=True)
+        actor.assert_called_once_with(self.connection, 9, admin=True, tenant_id=4)
         get_invoice.assert_not_called()
 
     def test_returned_pet_changes_status_only_after_customer_ownership_is_checked(self):
@@ -158,7 +159,7 @@ class RefundServiceTests(TestCase):
         with (
             patch("petcare.services.refund_service.product_repo.get_products_by_ids", return_value=[]),
             patch(
-                "petcare.services.refund_service.fetch_all",
+                "petcare.services.refund_service.pet_repo.get_pets_by_ids",
                 return_value=[{"id": 29, "sale_status": "sold", "buyer_id": 7}],
             ) as lock_pets,
             patch("petcare.services.refund_service.refund_repo.create_refund", return_value=21),
@@ -171,8 +172,7 @@ class RefundServiceTests(TestCase):
             }])
         self.assertEqual(result["status"], "refunded")
         lock_pets.assert_called_once()
-        self.assertIn("ORDER BY id FOR UPDATE", lock_pets.call_args.args[1])
-        self.assertEqual(lock_pets.call_args.args[2], (29,))
+        lock_pets.assert_called_once_with(self.connection, [29], lock=True)
         return_pet.assert_called_once_with(self.connection, 29, 7, "inactive")
 
     def test_invalid_key_and_zero_refund_are_rejected(self):

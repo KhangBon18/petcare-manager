@@ -7,8 +7,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 RUN groupadd --system petcare && useradd --system --gid petcare --home-dir /app petcare
 
-COPY requirements.txt ./requirements.txt
-RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt
+COPY requirements.txt requirements.lock ./
+RUN python -m pip install --upgrade pip && python -m pip install -r requirements.txt -c requirements.lock
 
 COPY --chown=petcare:petcare . .
 RUN mkdir -p /app/instance/pet-images /app/instance/product-images \

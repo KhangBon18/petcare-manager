@@ -4,530 +4,61 @@ from __future__ import annotations
 
 import json
 import re
-import unicodedata
 from datetime import timedelta
 
 from flask import current_app
 
 from petcare.ai import client as ai_client
 from petcare.database.connection import read_connection
-from petcare.money import format_money
-from petcare.i18n import current_locale, translate
+from petcare.i18n import current_locale
 from petcare.repositories import assistant_repo
 from petcare.services.common import require_actor, text_value
-from petcare.services.assistant_query import catalog_filters, query_period
+from petcare.services.assistant_query import query_period
+from petcare.services.assistant_local import local_answer
+from petcare.services.assistant_local import top_products_answer
+from petcare.services import assistant_capabilities
+from petcare.services import report_service
+from petcare.services.catalog_intent import (
+    _PRODUCT_STOPWORDS,
+    _STOCK_INTENT_PHRASES,
+    _catalog_preview_truncated,
+    _normalize,
+    _pet_search,
+    _product_intent,
+    _product_search,
+    _question_intent,
+    pet_filter_spec,
+)
 from petcare.timezones import tenant_today, utc_window_for_local_day, utc_window_for_local_dates
 
 
-def _normalize(text: str) -> str:
-    folded = unicodedata.normalize("NFD", text.casefold().replace("đ", "d"))
-    return "".join(char for char in folded if unicodedata.category(char) != "Mn")
-
-
-def _money(amount, currency_code, locale="vi") -> str:
-    return format_money(amount, currency_code, "en_US" if locale == "en" else "vi_VN")
-
-
-def _preview_note(total: int, shown: int, locale="vi") -> str:
-    if total <= shown:
-        return ""
-    if locale == "en":
-        return f" (showing the first {shown})"
-    return f" (đang hiển thị {shown} mục đầu tiên)"
-
-
-def _counted(count: int, singular: str, plural: str | None = None) -> str:
-    return f"{count} {singular if count == 1 else (plural or singular + 's')}"
-
-
-def _catalog_preview_truncated(context: dict, catalog: str) -> bool:
-    return bool(context.get("catalog_preview_truncated", {}).get(catalog, False))
-
-
-_PET_STOPWORDS = {
-    "ai", "animal", "animals", "are", "available", "bao", "ban", "breed", "co", "con", "cung",
-    "dang", "danh", "dog", "dogs", "dong", "duoc", "find", "for", "gia", "gi", "hay",
-    "have", "how", "is", "la", "long", "many", "mau", "mat", "much", "nao", "nhieu", "of", "or", "pet", "pets", "sale",
-    "sach", "show", "the", "toi", "thu", "tim", "to", "va", "which", "with", "cho", "meo",
-    "cun", "cat", "cats", "puppy", "puppies", "kitten", "kittens", "feline", "canine", "fur",
-    "coat", "color", "colour", "eye", "eyes", "giong", "khong", "male", "female", "duc", "truc", "cai", "under", "below", "less",
-    "toida", "upto", "budget", "million", "m", "trieu", "tr", "nghin", "ngan", "k",
-}
-_COLOR_WORDS = {
-    "den", "black", "trang", "white", "ivory", "xam", "gray", "grey", "silver", "bac",
-    "nau", "brown", "tan", "socola", "chocolate", "vang", "yellow", "golden", "cam",
-    "orange", "ginger", "kem", "cream", "beige", "xanh", "blue", "green", "la", "duong",
-    "hong", "pink", "amber", "ho", "phach",
-}
-_COAT_COLOR_ALIASES = {
-    "den": ("den", "black"),
-    "trang": ("trang", "white", "ivory"),
-    "xam": ("xam", "gray", "grey", "silver", "bac"),
-    "nau": ("nau", "brown", "tan", "socola", "chocolate"),
-    "vang": ("vang", "yellow", "gold", "golden"),
-    "phach": ("phach", "ho", "amber", "hazel"),
-    "cam": ("cam", "orange", "ginger"),
-    "kem": ("kem", "cream", "beige"),
-    "xanh": ("xanh", "blue", "green"),
-    "hong": ("hong", "pink"),
-}
-_PRODUCT_STOPWORDS = {
-    "bao", "can", "co", "con", "cua", "danh", "gia", "gi", "hang", "kho", "la", "mat",
-    "nao", "nhieu", "san", "sach", "stock", "product", "products", "catalog", "item", "items",
-    "the", "ton", "toi", "tim", "va", "xem", "cho", "duoi", "tren", "loai", "muc", "pham",
-    "active", "all", "are", "any", "at", "below", "biet", "budget", "cost", "costs", "find", "for", "have", "het", "how", "in", "is", "k", "level", "less", "list", "low", "m", "me", "million", "much", "ngan", "nghin", "nguong", "price", "please", "reached", "reorder", "restock", "sap", "show", "tell", "threshold", "toida", "tr", "trieu", "under", "upto", "which",
-}
-_PRODUCT_INTENT_PHRASES = (
-    "san pham", "mat hang", "product", "catalog", "item", "thuc an", "cat food", "dog food",
-    "pate", "phu kien", "do choi", "cham soc", "cat ve sinh", "cat dau nanh",
-    "pet supplies", "cat litter", "litter",
-    "food", "accessory", "accessories", "toy", "toys",
-)
-_STOCK_INTENT_PHRASES = (
-    "ton kho", "sap het", "con bao nhieu", "con may", "inventory", "stock", "low", "restock", "remaining",
-)
-_PET_QUERY_PHRASES = (
-    "thu cung", "dong vat", "con meo", "con cho", "meo nao", "cho nao", "mau long", "mau mat",
-    "breed", "giong", "dog breed", "cat breed", "pets for sale", "available pets",
-)
-
-
-def _product_intent(query: str, raw_query: str | None = None) -> bool:
-    vietnamese_litter = bool(
-        raw_query
-        and re.search(r"\bcát\b", raw_query, re.IGNORECASE)
-        and not re.search(r"\b(mèo|chó|thú cưng)\b", raw_query, re.IGNORECASE)
-    )
-    return vietnamese_litter or any(phrase in query for phrase in _PRODUCT_INTENT_PHRASES)
-
-
-def _pet_intent(query: str, raw_query: str | None = None) -> bool:
-    explicit_pet_query = any(phrase in query for phrase in _PET_QUERY_PHRASES)
-    if _product_intent(query, raw_query) and not explicit_pet_query:
-        return False
-    tokens = set(re.findall(r"[a-z0-9]+", query))
-    vietnamese_dog = bool(raw_query and re.search(r"\bchó\b", raw_query, re.IGNORECASE))
-    unaccented_dog_traits = "cho" in tokens and bool(
-        tokens & (_COLOR_WORDS | {"long", "fur", "coat", "giong", "breed"})
-    )
-    return explicit_pet_query or vietnamese_dog or unaccented_dog_traits or bool(
-        tokens & {"pet", "pets", "animal", "animals", "kitten", "kittens", "puppy", "puppies",
-                  "meo", "dog", "dogs", "cat", "cats", "cun", "feline", "canine", "tho", "rabbit", "hamster"}
-    ) or query.strip() == "cho"
-
-
-def _question_intent(question):
-    """Classify the requested subject independently of its time filters."""
-    query = _normalize(question)
-    if any(phrase in query for phrase in ("doanh thu", "ban duoc", "thu duoc", "revenue", "sales")):
-        return "revenue"
-    if any(phrase in query for phrase in ("tim bang anh", "quet anh", "scan", "camera", "similar image", "photo search")):
-        return "image"
-    if _pet_intent(query, question):
-        return "pet"
-    if any(phrase in query for phrase in _STOCK_INTENT_PHRASES):
-        return "stock"
-    if _product_intent(query, question):
-        return "product"
-    return "other"
-
-
-def pet_filter_spec(question: str) -> dict:
-    """Compile visible traits independently of the catalog or its preview size."""
-    query, price_filters = catalog_filters(_normalize(question))
-    ordered_tokens = re.findall(r"[a-z0-9]+", query)
-    tokens = set(ordered_tokens)
-    species = None
-    if tokens & {"meo", "cat", "cats", "kitten", "kittens", "feline"}:
-        species = "cat"
-    elif tokens & {"dog", "dogs", "puppy", "puppies", "canine", "cun"} or (
-        "cho" in tokens and not query.startswith("cho toi")
+def _top_products_period(question):
+    """Recognize explicit product-sales ranking questions and a fixed period."""
+    query = re.sub(r"[^a-z0-9]+", " ", _normalize(question)).strip()
+    product_term = re.search(r"\b(?:product|products|item|items|san pham|mat hang)\b", query)
+    ranking_term = any(phrase in query for phrase in (
+        "ban chay", "best selling", "best seller", "most sold", "sold the most",
+        "top selling", "top product", "top item",
+    ))
+    if not ranking_term or (not product_term and "ban chay" not in query):
+        return None
+    if re.search(r"\b(?:last week|previous week|tuan truoc)\b", query):
+        return "last_week"
+    if re.search(r"\b(?:last month|previous month|thang truoc)\b", query):
+        return "last_month"
+    if re.search(r"\b(?:today|hom nay)\b", query):
+        return "today"
+    if re.search(r"\b(?:this month|thang nay|monthly)\b", query):
+        return "month"
+    if re.search(r"\b(?:this week|tuan nay|weekly)\b", query):
+        return "week"
+    day_range = re.search(r"\b(?:last|past)\s+(\d+)\s+days\b", query)
+    if (
+        re.search(r"\b(?:yesterday|hom qua|last year|this year|last quarter|previous quarter|quy nay|quy truoc)\b", query)
+        or (day_range and day_range.group(1) != "7")
     ):
-        species = "dog"
-
-    coat_markers = {"long", "coat", "fur"}
-    eye_markers = {"mat", "eye", "eyes"}
-    attribute_markers = coat_markers | eye_markers
-    coat_colors, eye_colors = [], []
-    color_candidates = []
-    for index, token in enumerate(ordered_tokens):
-        aliases = next(
-            (aliases for word, aliases in _COAT_COLOR_ALIASES.items()
-             if token == word or any(_normalize(alias) == token for alias in aliases)),
-            None,
-        )
-        if aliases:
-            color_candidates.append((index, aliases))
-    markers = [
-        (index, "coat" if token in coat_markers else "eye")
-        for index, token in enumerate(ordered_tokens) if token in attribute_markers
-    ]
-
-    def add_color(field, aliases):
-        (eye_colors if field == "eye" else coat_colors).append(aliases)
-
-    assigned = set()
-    # Prefer color words that follow their attribute ("lông trắng", "mắt xanh").
-    for color_index, aliases in color_candidates:
-        previous = next((marker for marker in reversed(markers) if marker[0] < color_index), None)
-        following = next((marker for marker in markers if marker[0] > color_index), None)
-        if previous and color_index - previous[0] <= 2 and (
-            not following or color_index - previous[0] <= following[0] - color_index
-        ):
-            add_color(previous[1], aliases)
-            assigned.add(color_index)
-
-    for color_index, aliases in color_candidates:
-        if color_index in assigned:
-            continue
-        following = next((marker for marker in markers if marker[0] > color_index), None)
-        if following and following[0] - color_index <= 1:
-            target_colors = eye_colors if following[1] == "eye" else coat_colors
-            # In "mèo trắng mắt xanh", the post-marker eye color is the better match;
-            # the preceding bare color stays a coat color.
-            if following[1] != "eye" or not target_colors:
-                add_color(following[1], aliases)
-                assigned.add(color_index)
-        if color_index not in assigned:
-            coat_colors.append(aliases)
-    sex = "male" if tokens & {"male", "duc", "truc"} else (
-        "female" if tokens & {"female", "cai"} else None
-    )
-    # Do not infer meaningful search terms from the bounded preview itself: a
-    # breed absent from the first 250 records must not silently turn into a
-    # broad species-only query.
-    specific_terms = sorted({token for token in tokens
-        if token.isalpha() and token not in _PET_STOPWORDS and token not in _COLOR_WORDS}
-        | set(re.findall(r"\bpet-\d+\b", query)))
-
-    return {"species": species, "sex": sex, "coat_colors": coat_colors,
-            "eye_colors": eye_colors, "terms": specific_terms, "prices": price_filters}
-
-
-def _pet_search(question: str, context: dict) -> tuple[list[dict], bool]:
-    spec = pet_filter_spec(question)
-    species, sex = spec["species"], spec["sex"]
-    coat_colors, eye_colors = spec["coat_colors"], spec["eye_colors"]
-    specific_terms, price_filters = spec["terms"], spec["prices"]
-    pets = context.get("available_pets", [])
-    def matches(pet):
-        pet_species = _normalize(pet.get("species", ""))
-        if species == "cat" and not any(word in pet_species for word in ("meo", "cat", "feline")):
-            return False
-        if species == "dog" and not any(word in pet_species for word in ("cho", "dog", "canine")):
-            return False
-        if sex and pet.get("sex") not in {sex, "unknown", None, ""}:
-            return False
-        if not all(price.matches(pet.get("sale_price")) for price in price_filters):
-            return False
-        for color_field, requested in (("coat_color", coat_colors), ("eye_color", eye_colors)):
-            if requested:
-                color_value = _normalize(pet.get(color_field, ""))
-                if not all(
-                    any(_normalize(alias) in color_value for alias in aliases)
-                    for aliases in requested
-                ):
-                    return False
-        searchable = " ".join(
-            _normalize(pet.get(key, ""))
-            for key in ("name", "breed", "species", "coat_color", "eye_color", "appearance_tags")
-        )
-        return all(term in searchable for term in specific_terms)
-
-    selected = [pet for pet in pets if matches(pet)]
-    narrowed = bool(species or coat_colors or eye_colors or sex or specific_terms or price_filters)
-    return selected, narrowed
-
-
-def _product_search(question: str, context: dict) -> tuple[list[dict], bool]:
-    query, price_filters = catalog_filters(_normalize(question))
-    query_tokens = set(re.findall(r"[a-z0-9]+", query))
-    products = context.get("products", [])
-    # Search terms must come from the question, not from the capped catalog
-    # preview, or a new product name can be silently dropped from the filter.
-    terms = sorted(query_tokens - _PRODUCT_STOPWORDS)
-    if not terms and not price_filters:
-        return products, False
-    return [
-        item for item in products
-        if all(price.matches(item.get("unit_price")) for price in price_filters) and all(
-            term in " ".join(_normalize(item.get(key, "")) for key in ("name", "code", "category"))
-            for term in terms
-        )
-    ], True
-
-
-def local_answer(question: str, context: dict, locale="vi") -> str:
-    query = _normalize(question)
-    intent = _question_intent(question)
-    period = query_period(query)
-    locale = locale if locale in {"vi", "en"} else "vi"
-    english = locale == "en"
-    summary = context["summary"]
-    currency_code = context["currency_code"]
-    low_stock_count = summary.get("low_stock_count", len(context["low_stock"]))
-    if intent == "revenue":
-        if period == "month" and "revenue_month" in summary:
-            amount, period_vi, period_en = summary["revenue_month"], "tháng này", "this month"
-        elif period == "week" and "revenue_week" in summary:
-            amount, period_vi, period_en = summary["revenue_week"], "tuần này", "this week"
-        else:
-            amount, period_vi, period_en = summary["revenue_today"], "hôm nay", "today"
-        if english:
-            revenue_label = "Today's paid revenue" if period_en == "today" else f"Paid revenue for {period_en}"
-            return (
-                f"{revenue_label} is {_money(amount, currency_code, locale)}. "
-                "This includes paid invoices only. Open Reports to choose another date range."
-            )
-        return (
-            f"Doanh thu đã thanh toán {period_vi} là {_money(amount, currency_code)}. "
-            "Con số này chỉ tính hóa đơn đã thanh toán. Mở mục Báo cáo để lọc khoảng ngày khác."
-        )
-    if intent == "image":
-        if english:
-            return (
-                "Open Pets → Find by image, then choose a file or capture one with the laptop camera. "
-                "Local mode ranks saved profile photos by color and composition; it is not a trained "
-                "animal detector. Generative image analysis only runs when a vision endpoint is configured."
-            )
-        return (
-            "Mở Thú cưng → Tìm bằng ảnh, rồi chọn ảnh hoặc bật camera laptop để chụp. "
-            "Chế độ cục bộ xếp hạng ảnh hồ sơ theo màu và bố cục, chưa phải mô hình nhận diện động vật. "
-            "Phân tích ngữ nghĩa chỉ hoạt động khi cửa hàng cấu hình endpoint AI Vision."
-        )
-    pet_intent = intent == "pet"
-    if pet_intent:
-        pets, narrowed = _pet_search(question, context)
-        incomplete = _catalog_preview_truncated(context, "available_pets")
-        if not pets:
-            if narrowed and incomplete:
-                scanned = len(context.get("available_pets", []))
-                if english:
-                    return (
-                        f"No matching pet appeared in the first {scanned} of "
-                        f"{summary['available_pets']} available profiles. The catalog preview is limited, "
-                        "so I can't rule out matches outside it. Check the full Pets list or narrow the filters."
-                    )
-                return (
-                    f"Chưa thấy cá thể khớp trong {scanned} hồ sơ đầu tiên trên tổng số "
-                    f"{summary['available_pets']} thú cưng đang bán. Danh mục trợ lý kiểm tra chưa đầy đủ, "
-                    "nên chưa thể kết luận cửa hàng không có kết quả. Hãy xem toàn bộ danh sách Thú cưng "
-                    "hoặc thu hẹp điều kiện tìm kiếm."
-                )
-            return (
-                "No available pets match those filters. Try a different species, breed, or coat color."
-                if english else
-                "Chưa có thú cưng đang bán khớp các điều kiện này. Thử đổi loài, giống hoặc màu lông nhé."
-            )
-        shown_pets = pets[:8] if narrowed else pets[:12]
-        total = len(pets) if narrowed else summary["available_pets"]
-        if english:
-            rows = "\n".join(
-                f"• {pet['name']} — {pet.get('breed') or 'breed not provided'}; "
-                f"coat {translate(pet.get('coat_color') or 'chưa cập nhật', locale)}; "
-                f"eyes {translate(pet.get('eye_color') or 'chưa cập nhật', locale)}"
-                + (f"; {_money(pet['sale_price'], currency_code, locale)}" if pet.get("sale_price") is not None else "")
-                for pet in shown_pets
-            )
-        else:
-            rows = "\n".join(
-                f"• {pet['name']} — {pet.get('breed') or 'chưa rõ giống'}; "
-                f"lông {pet.get('coat_color') or 'chưa cập nhật'}; mắt {pet.get('eye_color') or 'chưa cập nhật'}"
-                + (f"; {_money(pet['sale_price'], currency_code)}" if pet.get("sale_price") is not None else "")
-                for pet in shown_pets
-            )
-        if english:
-            phrase = _counted(total, "pet") + (" is" if total == 1 else " are")
-            if narrowed and incomplete:
-                return (
-                    f"At least {total} matching pet(s) appeared in the first "
-                    f"{len(context.get('available_pets', []))} profiles; the full matching count may be higher. "
-                    f"Showing {len(shown_pets)}:\n{rows}"
-                )
-            return f"{phrase} available for sale{_preview_note(total, len(shown_pets), locale)}:\n{rows}"
-        if narrowed and incomplete:
-            return (
-                f"Trong phần xem trước có ít nhất {total} thú cưng khớp; trợ lý đã kiểm tra "
-                f"{len(context.get('available_pets', []))} hồ sơ đầu tiên trên tổng số "
-                f"{summary['available_pets']} cá thể. Tổng số khớp có thể cao hơn. "
-                f"Đang hiển thị {len(shown_pets)} mục:\n{rows}"
-            )
-        return (
-            f"Có {total} thú cưng đang sẵn sàng"
-            f"{_preview_note(total, len(shown_pets))}:\n{rows}"
-        )
-    stock_intent = any(phrase in query for phrase in _STOCK_INTENT_PHRASES)
-    if stock_intent and _product_intent(query, question):
-        products, narrowed = _product_search(question, context)
-        incomplete = _catalog_preview_truncated(context, "products")
-        if narrowed:
-            if not products:
-                if incomplete:
-                    scanned = len(context.get("products", []))
-                    if english:
-                        return (
-                            f"No matching product appeared in the first {scanned} of "
-                            f"{summary['active_products']} active products. The catalog preview is limited, "
-                            "so I can't rule out matches outside it. Check the full Products list."
-                        )
-                    return (
-                        f"Chưa thấy sản phẩm khớp trong {scanned} sản phẩm đầu tiên trên tổng số "
-                        f"{summary['active_products']} sản phẩm đang hoạt động. Danh mục trợ lý kiểm tra "
-                        "chưa đầy đủ nên chưa thể kết luận không có kết quả; hãy xem toàn bộ danh sách Sản phẩm."
-                    )
-                return (
-                    "No active catalog item matches that stock query."
-                    if english else "Không có sản phẩm đang hoạt động khớp từ khóa tồn kho này."
-                )
-            shown_products = products[:10]
-            rows = "; ".join(
-                f"{item['name']}: {item['stock_qty']} left (reorder at {item['reorder_level']})"
-                if english else
-                f"{item['name']} còn {item['stock_qty']} (ngưỡng bổ sung {item['reorder_level']})"
-                for item in shown_products
-            )
-            count_note = _preview_note(len(products), len(shown_products), locale)
-            if incomplete:
-                count_note = (
-                    f" (at least {len(products)} matches in the first "
-                    f"{len(context.get('products', []))} products; more may match)"
-                    if english else
-                    f" (ít nhất {len(products)} kết quả trong {len(context.get('products', []))} sản phẩm đầu tiên; có thể còn kết quả khác)"
-                )
-            return (
-                f"Stock for {len(products)} matching product(s){count_note}: {rows}."
-                if english else f"Tồn kho của {len(products)} sản phẩm khớp từ khóa{count_note}: {rows}."
-            )
-    if stock_intent:
-        if not low_stock_count:
-            if english:
-                return (
-                    f"There are {summary['active_products']} active products; none has reached "
-                    "its configured reorder level."
-                )
-            return (
-                f"Cửa hàng có {summary['active_products']} sản phẩm đang hoạt động; "
-                "chưa có sản phẩm nào chạm ngưỡng bổ sung riêng đã cài đặt."
-            )
-        shown_stock = context["low_stock"][:12]
-        if english:
-            rows = "; ".join(
-                f"{item['name']}: {item['stock_qty']} left (code {item['code']})"
-                for item in shown_stock
-            )
-        else:
-            rows = "; ".join(
-                f"{item['name']} còn {item['stock_qty']} (mã {item['code']})"
-                for item in shown_stock
-            )
-        if english:
-            phrase = _counted(low_stock_count, "product")
-            verb = " is" if low_stock_count == 1 else " are"
-            return (
-                f"{phrase}{verb} at or below the reorder level"
-                f"{_preview_note(low_stock_count, len(shown_stock), locale)}: {rows}."
-            )
-        return (
-            f"Có {low_stock_count} sản phẩm ở ngưỡng tồn thấp"
-            f"{_preview_note(low_stock_count, len(shown_stock))}: {rows}."
-        )
-    if _product_intent(query, question):
-        products, narrowed = _product_search(question, context)
-        incomplete = _catalog_preview_truncated(context, "products")
-        if not products:
-            if narrowed and incomplete:
-                scanned = len(context.get("products", []))
-                if english:
-                    return (
-                        f"No matching product appeared in the first {scanned} of "
-                        f"{summary['active_products']} active products. The catalog preview is limited, "
-                        "so I can't rule out matches outside it. Check the full Products list or refine the search."
-                    )
-                return (
-                    f"Chưa thấy sản phẩm khớp trong {scanned} sản phẩm đầu tiên trên tổng số "
-                    f"{summary['active_products']} sản phẩm đang hoạt động. Danh mục trợ lý kiểm tra "
-                    "chưa đầy đủ nên chưa thể kết luận không có kết quả; hãy xem toàn bộ danh sách "
-                    "Sản phẩm hoặc thu hẹp từ khóa."
-                )
-            return "There are no active products in the catalog." if english else "Hiện chưa có sản phẩm nào đang hoạt động trong danh mục."
-        shown_products = products[:10] if narrowed else products[:20]
-        if english:
-            rows = "; ".join(
-                f"{item['name']} ({item['category']}, stock {item['stock_qty']}, "
-                f"price {_money(item['unit_price'], currency_code, locale)})"
-                for item in shown_products
-            )
-        else:
-            rows = "; ".join(
-                f"{item['name']} ({item['category']}, tồn {item['stock_qty']}, "
-                f"giá {_money(item['unit_price'], currency_code)})"
-                for item in shown_products
-            )
-        total = len(products) if narrowed else summary["active_products"]
-        if english:
-            if narrowed and incomplete:
-                return (
-                    f"At least {total} matching product(s) appeared in the first "
-                    f"{len(context.get('products', []))} products; the full matching count may be higher. "
-                    f"Showing {len(shown_products)}: {rows}."
-                )
-            phrase = _counted(total, "product") + (" is" if total == 1 else " are")
-            return f"{phrase} active{_preview_note(total, len(shown_products), locale)}: {rows}."
-        if narrowed and incomplete:
-            return (
-                f"Trong phần xem trước có ít nhất {total} sản phẩm khớp; trợ lý đã kiểm tra "
-                f"{len(context.get('products', []))} sản phẩm đầu tiên trên tổng số "
-                f"{summary['active_products']} sản phẩm đang hoạt động. Tổng số khớp có thể cao hơn. "
-                f"Đang hiển thị {len(shown_products)} mục: {rows}."
-            )
-        return (
-            f"Có {total} sản phẩm đang hoạt động"
-            f"{_preview_note(total, len(shown_products))}: {rows}."
-        )
-    if any(word in query for word in ("khach hang", "khach mua", "customer", "buyer", "client")):
-        if english:
-            return f"There are {_counted(summary['active_customers'], 'active customer')}."
-        return f"Cửa hàng hiện có {summary['active_customers']} khách hàng đang hoạt động."
-    if any(word in query for word in ("thanh toan", "hoa don", "ban hang", "lap hoa don", "invoice", "payment", "checkout", "sell")):
-        if english:
-            return (
-                "Create an invoice from Invoices. A new invoice does not change stock; "
-                "inventory and pet sale status update only after payment is confirmed."
-            )
-        return (
-            "Bạn có thể lập hóa đơn từ mục Hóa đơn. Hóa đơn mới chưa trừ tồn; "
-            "chỉ khi xác nhận thanh toán, hệ thống mới cập nhật kho và đánh dấu thú cưng đã bán."
-        )
-    if any(phrase in query for phrase in ("tong quan", "tat ca", "so luoc", "cua hang co gi", "overview", "summary", "everything", "store")):
-        if english:
-            customers = _counted(summary['active_customers'], "active customer")
-            products = _counted(summary['active_products'], "active product")
-            pets = _counted(summary['available_pets'], "available pet")
-            low_stock = _counted(low_stock_count, "product")
-            return (
-                f"Store overview: {customers}, {products}, {pets}, "
-                f"and {low_stock} at low stock. Today's paid revenue is "
-                f"{_money(summary['revenue_today'], currency_code, locale)}. "
-                "These figures are for the selected store. Ask about any item for more detail."
-            )
-        return (
-            f"Tổng quan cửa hàng: {summary['active_customers']} khách hàng đang hoạt động, "
-            f"{summary['active_products']} sản phẩm đang bán, "
-            f"{summary['available_pets']} thú cưng sẵn sàng bán và "
-            f"{low_stock_count} sản phẩm ở ngưỡng tồn thấp. "
-            f"Doanh thu đã thanh toán hôm nay là {_money(summary['revenue_today'], currency_code)}. "
-            "Số liệu thuộc cửa hàng đang chọn; bạn có thể hỏi riêng từng mục để xem chi tiết."
-        )
-    if english:
-        return (
-            "I can check your store overview, today's paid revenue, low-stock products, "
-            "the product catalog, pets for sale, and invoice steps. What would you like to check?"
-        )
-    return (
-        "Mình có thể tra cứu tổng quan cửa hàng, doanh thu hôm nay (hóa đơn đã thanh toán), "
-        "sản phẩm tồn thấp, danh mục sản phẩm, thú cưng đang bán và hướng dẫn lập hóa đơn. "
-        "Bạn muốn kiểm tra mục nào?"
-    )
+        return "unsupported"
+    return "7d"
 
 
 def _safe_history(history):
@@ -619,14 +150,53 @@ def _provider_context(question: str, context: dict) -> dict:
     return payload
 
 
-def answer(actor_id, raw_question, history=None, locale=None):
+def answer(actor_id, raw_question, history=None, locale=None, tenant_id=None):
     question = text_value(raw_question, "Câu hỏi", 1000)
     locale = locale if locale in {"vi", "en"} else current_locale()
     locale = locale if locale in {"vi", "en"} else "vi"
+    top_period = _top_products_period(question)
+    capability_kind = assistant_capabilities.classify(question)
+    if top_period is not None and capability_kind is not None:
+        return assistant_capabilities._clarification("ambiguous", locale)
+    if top_period == "unsupported":
+        return {
+            "reply": (
+                "Hãy chọn hôm nay, 7 ngày gần nhất, tuần này/tuần trước hoặc tháng này/tháng trước để xem thứ hạng."
+                if locale == "vi" else
+                "Choose today, the last 7 days, this/last week, or this/last month for a sales ranking."
+            ),
+            "mode": "local",
+            "status": "clarification",
+        }
+    if top_period:
+        insight = report_service.top_products_for_period(
+            actor_id, top_period, tenant_id=tenant_id
+        )
+        api_insight = {
+            "kind": "top_products",
+            "period": insight["period"],
+            "start_date": insight["start_date"].isoformat(),
+            "end_date": insight["end_date"].isoformat(),
+            "currency_code": insight["currency_code"],
+            "items": [
+                {**item, "revenue": str(item["revenue"])}
+                for item in insight["items"]
+            ],
+        }
+        return {
+            "reply": top_products_answer(insight, locale),
+            "mode": "local",
+            "insight": api_insight,
+        }
+    capability_response = assistant_capabilities.answer(
+        actor_id, question, locale=locale, tenant_id=tenant_id
+    )
+    if capability_response is not None:
+        return capability_response
     query = _normalize(question)
     period = query_period(query)
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         today = tenant_today(actor["timezone"])
         day_start_utc, day_end_utc = utc_window_for_local_day(today, actor["timezone"])
         period_windows = {}
@@ -651,7 +221,6 @@ def answer(actor_id, raw_question, history=None, locale=None):
             from petcare.services.catalog_service import lookup
             catalog_result = lookup(connection, question, intent)
             context["catalog_result"] = catalog_result
-
 
     extra = {"catalog": catalog_result, "currency_code": actor["default_currency"]} if catalog_result else {}
     if ai_client.is_configured():

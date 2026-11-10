@@ -12,6 +12,7 @@ REFUNDS_SCHEMA_PATH = Path(__file__).with_name("refunds.sql")
 UTC_DATETIME_MIGRATION = "datetime_storage_utc_v1"
 PURCHASING_MIGRATION = "purchasing_orders_v1"
 REFUNDS_MIGRATION = "invoice_refunds_v1"
+PURCHASE_RECEIPTS_MIGRATION = "purchase_receipt_idempotency_v1"
 
 
 def migrate_datetime_storage_to_utc(cursor):
@@ -191,6 +192,73 @@ def _migrate_invoice_refunds(cursor):
         "ON DUPLICATE KEY UPDATE version = VALUES(version)",
         (REFUNDS_MIGRATION,),
     )
+
+
+def _migrate_purchase_receipt_idempotency(cursor):
+    """Record the additive request-fingerprint table migration."""
+    cursor.execute(
+        "INSERT INTO schema_migrations (version) VALUES (%s) "
+        "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+        (PURCHASE_RECEIPTS_MIGRATION,),
+    )
+
+
+def _normalize_check_clause(value):
+    return "".join(
+        character for character in str(value).lower()
+        if character.isalnum() or character == "_"
+    )
+
+
+def _migrate_money_check_constraints(cursor):
+    """Ensure legacy checks protect the current Decimal money columns."""
+    constraints = (
+        (
+            "products", "chk_products_price", "unit_price >= 0",
+            "SELECT COUNT(*) FROM products WHERE unit_price < 0",
+            "ALTER TABLE products DROP CHECK chk_products_price",
+            "ALTER TABLE products ADD CONSTRAINT chk_products_price CHECK (unit_price >= 0)",
+        ),
+        (
+            "pets", "chk_pets_price", "sale_price >= 0",
+            "SELECT COUNT(*) FROM pets WHERE sale_price < 0",
+            "ALTER TABLE pets DROP CHECK chk_pets_price",
+            "ALTER TABLE pets ADD CONSTRAINT chk_pets_price CHECK (sale_price >= 0)",
+        ),
+        (
+            "invoice_items", "chk_invoice_item_total", "line_total = unit_price * quantity",
+            "SELECT COUNT(*) FROM invoice_items WHERE line_total <> unit_price * quantity",
+            "ALTER TABLE invoice_items DROP CHECK chk_invoice_item_total",
+            "ALTER TABLE invoice_items ADD CONSTRAINT chk_invoice_item_total "
+            "CHECK (line_total = unit_price * quantity)",
+        ),
+    )
+    replacements = []
+    for table_name, constraint_name, expected, invalid_sql, drop_sql, add_sql in constraints:
+        cursor.execute(
+            "SELECT cc.check_clause FROM information_schema.check_constraints cc "
+            "JOIN information_schema.table_constraints tc "
+            "ON tc.constraint_schema = cc.constraint_schema "
+            "AND tc.constraint_name = cc.constraint_name "
+            "WHERE tc.constraint_schema = DATABASE() AND tc.table_name = %s "
+            "AND tc.constraint_name = %s AND tc.constraint_type = 'CHECK'",
+            (table_name, constraint_name),
+        )
+        row = cursor.fetchone()
+        if row and _normalize_check_clause(row[0]) == _normalize_check_clause(expected):
+            continue
+        cursor.execute(invalid_sql)
+        if cursor.fetchone()[0]:
+            raise RuntimeError(
+                f"Cannot install {constraint_name}: existing rows violate the current money rule."
+            )
+        replacements.append((drop_sql if row else None, add_sql))
+
+    # Validate every target before the first ALTER; MySQL DDL auto-commits.
+    for drop_sql, add_sql in replacements:
+        if drop_sql:
+            cursor.execute(drop_sql)
+        cursor.execute(add_sql)
 
 
 def initialize_database():
@@ -434,6 +502,7 @@ def initialize_database():
                 "UPDATE invoice_items SET line_total = line_total_vnd "
                 "WHERE line_total = 0 AND line_total_vnd > 0"
             )
+            _migrate_money_check_constraints(cursor)
             migrate_datetime_storage_to_utc(cursor)
             migrate_tenancy(cursor)
             purchasing_statements = [
@@ -445,6 +514,7 @@ def initialize_database():
                 cursor.execute(statement)
             _migrate_purchasing_stock_links(cursor)
             _migrate_invoice_refunds(cursor)
+            _migrate_purchase_receipt_idempotency(cursor)
         finally:
             cursor.close()
 

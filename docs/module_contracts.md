@@ -40,7 +40,7 @@
 ## AssistantService và PetImageService
 
 - `answer(actor_id, question, history)`: yêu cầu người dùng đang active; context chỉ gồm số liệu cửa hàng, tồn kho, danh mục sản phẩm và thuộc tính thú cưng; dùng bộ trả lời local hoặc endpoint đã cấu hình.
-- `search_similar(actor_id, image_bytes)`: chỉ lấy thú cưng available; xác thực/chuẩn hóa ảnh, xếp hạng theo descriptor hồ sơ và metadata; model vision chỉ được gọi khi endpoint có cấu hình và `AI_VISION_ENABLED=1`.
+- `search_similar(actor_id, image_bytes)`: mặc định chỉ lấy thú cưng available; xác thực/chuẩn hóa ảnh, quét chính xác catalog đến 5.000 cá thể rồi xếp hạng bằng descriptor + thuộc tính. Catalog lớn dùng LSH. Vision tùy chọn đọc loài/giống/đặc điểm và đối chiếu synonym Việt/Anh khi endpoint có cấu hình cùng `AI_VISION_ENABLED=1`; luôn trả kết quả gợi ý, không khẳng định nhận diện.
 - Ảnh chuẩn hóa được lưu bằng UUID có tiền tố tenant cho upload mới qua backend local/S3-compatible; object S3 được đặt dưới namespace cửa hàng. Tên UUID cũ vẫn đọc được. MySQL giữ descriptor để tìm; photo route xác thực quyền tenant và khớp namespace trước khi đọc. Thay ảnh cập nhật DB trước khi dọn file cũ; dọn ảnh cũ chỉ khi DB xác nhận không còn bản ghi nào tham chiếu.
 
 ## Repository và transaction

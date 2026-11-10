@@ -97,6 +97,28 @@ def list_customer_invoices_page(connection, customer_id, limit=25, offset=0):
     )
 
 
+def count_customer_pets(connection, customer_id):
+    row = fetch_one(
+        connection,
+        "SELECT COUNT(*) AS total FROM pets "
+        "WHERE tenant_id = @petcare_tenant_id AND buyer_id = %s",
+        (customer_id,),
+    )
+    return int(row["total"] if row else 0)
+
+
+def list_customer_pets(connection, customer_id, limit=12, offset=0):
+    """List recently purchased pet records linked by the existing buyer relation."""
+    return fetch_all(
+        connection,
+        "SELECT p.id, p.code, p.name, p.species, p.breed, p.sale_status, "
+        "p.sold_at, COUNT(*) OVER() total_count "
+        "FROM pets p WHERE p.tenant_id = @petcare_tenant_id AND p.buyer_id = %s "
+        "ORDER BY p.sold_at DESC, p.id DESC LIMIT %s OFFSET %s",
+        (customer_id, limit, offset),
+    )
+
+
 def create_customer(connection, full_name, phone, address):
     return execute(
         connection,

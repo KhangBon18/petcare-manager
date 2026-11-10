@@ -2,9 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from petcare.database.connection import read_connection, transaction
-from petcare.repositories import audit_repo, customer_repo, invoice_repo, refund_repo
-from petcare.repositories.base import fetch_all, fetch_one
-from petcare.repositories.product_repo import add_stock_movement
+from petcare.repositories import audit_repo, customer_repo, invoice_repo, pet_repo, product_repo, refund_repo
 from petcare.services.common import (
     integer_value,
     page_window,
@@ -15,12 +13,12 @@ from petcare.services.common import (
 from petcare.services.exceptions import ConflictError, NotFoundError, ValidationError
 
 
-def list_invoices(actor_id, search="", status="", page=None):
+def list_invoices(actor_id, search="", status="", page=None, tenant_id=None):
     if status not in ("", "unpaid", "paid", "cancelled"):
         status = ""
     search = (search or "").strip()[:120]
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         if page is not None:
             total = invoice_repo.count_invoices(connection, search, status)
             _current_page, offset, pagination = page_window(page, total)
@@ -33,10 +31,10 @@ def list_invoices(actor_id, search="", status="", page=None):
         return invoice_repo.list_invoices(connection, search, status)
 
 
-def get_invoice(actor_id, invoice_id):
+def get_invoice(actor_id, invoice_id, tenant_id=None):
     invoice_id = positive_id(invoice_id, "Hóa đơn")
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         invoice = invoice_repo.get_invoice(connection, invoice_id)
         items = invoice_repo.list_items(connection, invoice_id) if invoice else []
         refunds = refund_repo.list_invoice_refunds(connection, invoice_id) if invoice and invoice["status"] == "paid" else []
@@ -94,7 +92,7 @@ def _normalize_items(raw_items):
     return products, sorted(pets)
 
 
-def create_invoice(actor_id, data, raw_items):
+def create_invoice(actor_id, data, raw_items, tenant_id=None):
     errors = {}
     try:
         customer_id = positive_id(data.get("customer_id"), "Khách hàng")
@@ -118,19 +116,14 @@ def create_invoice(actor_id, data, raw_items):
         )
 
     with transaction() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         customer = customer_repo.get_customer(connection, customer_id)
         if not customer or not customer["active"]:
             raise ValidationError("Khách hàng không tồn tại hoặc đã ngừng sử dụng.", field="customer_id")
         lines = []
         total = Decimal("0")
         for product_id, quantity in sorted(product_quantities.items()):
-            product = fetch_one(
-                connection,
-                "SELECT id, code, name, unit_price, stock_qty, active "
-                "FROM products WHERE id = %s AND tenant_id = @petcare_tenant_id",
-                (product_id,),
-            )
+            product = product_repo.get_product(connection, product_id)
             if not product or not product["active"]:
                 raise ValidationError("Sản phẩm không còn được bán.", field=line_field("product", product_id))
             if product["stock_qty"] < quantity:
@@ -148,12 +141,7 @@ def create_invoice(actor_id, data, raw_items):
             })
             total += line_total
         for pet_id in pet_ids:
-            pet = fetch_one(
-                connection,
-                "SELECT id, code, name, sale_price, sale_status FROM pets "
-                "WHERE id = %s AND tenant_id = @petcare_tenant_id",
-                (pet_id,),
-            )
+            pet = pet_repo.get_pet(connection, pet_id)
             if not pet or pet["sale_status"] != "available":
                 raise ValidationError("Thú cưng đã chọn không còn sẵn sàng để bán.", field=line_field("pet", pet_id))
             line_total = Decimal(pet["sale_price"])
@@ -184,10 +172,10 @@ def create_invoice(actor_id, data, raw_items):
         return invoice_id
 
 
-def pay_invoice(actor_id, invoice_id):
+def pay_invoice(actor_id, invoice_id, tenant_id=None):
     invoice_id = positive_id(invoice_id, "Hóa đơn")
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         invoice = invoice_repo.get_invoice(connection, invoice_id, lock=True)
         if not invoice:
             raise NotFoundError("Không tìm thấy hóa đơn.")
@@ -206,12 +194,8 @@ def pay_invoice(actor_id, invoice_id):
             else:
                 pet_ids.append(item["pet_id"])
         if quantities:
-            placeholders = ",".join(["%s"] * len(quantities))
-            products = fetch_all(
-                connection,
-                "SELECT id, name, stock_qty, active FROM products "
-                f"WHERE tenant_id = @petcare_tenant_id AND id IN ({placeholders}) ORDER BY id FOR UPDATE",
-                tuple(sorted(quantities)),
+            products = product_repo.get_products_by_ids(
+                connection, quantities, lock=True
             )
             by_id = {product["id"]: product for product in products}
             for product_id, quantity in sorted(quantities.items()):
@@ -223,19 +207,9 @@ def pay_invoice(actor_id, invoice_id):
                         f"Tồn kho {product['name']} đã thay đổi; chưa thu tiền."
                     )
             for product_id, quantity in sorted(quantities.items()):
-                cursor = connection.cursor()
-                try:
-                    cursor.execute(
-                        "UPDATE products SET stock_qty = stock_qty - %s "
-                        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
-                        "AND active = 1 AND stock_qty >= %s",
-                        (quantity, product_id, quantity),
-                    )
-                    if cursor.rowcount != 1:
-                        raise ConflictError("Tồn kho vừa thay đổi; vui lòng tải lại hóa đơn.")
-                finally:
-                    cursor.close()
-                add_stock_movement(
+                if product_repo.reserve_stock_for_sale(connection, product_id, quantity) != 1:
+                    raise ConflictError("Tồn kho vừa thay đổi; vui lòng tải lại hóa đơn.")
+                product_repo.add_stock_movement(
                     connection,
                     product_id,
                     -quantity,
@@ -244,29 +218,13 @@ def pay_invoice(actor_id, invoice_id):
                     invoice_id,
                 )
         if pet_ids:
-            placeholders = ",".join(["%s"] * len(pet_ids))
-            pets = fetch_all(
-                connection,
-                "SELECT id, sale_status FROM pets WHERE tenant_id = @petcare_tenant_id AND id IN "
-                f"({placeholders}) ORDER BY id FOR UPDATE",
-                tuple(sorted(pet_ids)),
-            )
+            pets = pet_repo.get_pets_by_ids(connection, pet_ids, lock=True)
             by_id = {pet["id"]: pet for pet in pets}
             if any(by_id.get(pet_id, {}).get("sale_status") != "available" for pet_id in pet_ids):
                 raise ConflictError("Một cá thể thú cưng đã được bán.")
             for pet_id in sorted(pet_ids):
-                cursor = connection.cursor()
-                try:
-                    cursor.execute(
-                        "UPDATE pets SET sale_status = 'sold', buyer_id = %s, sold_at = NOW() "
-                        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
-                        "AND sale_status = 'available'",
-                        (invoice["customer_id"], pet_id),
-                    )
-                    if cursor.rowcount != 1:
-                        raise ConflictError("Thú cưng vừa được bán ở giao dịch khác.")
-                finally:
-                    cursor.close()
+                if pet_repo.mark_sold(connection, pet_id, invoice["customer_id"]) != 1:
+                    raise ConflictError("Thú cưng vừa được bán ở giao dịch khác.")
         if invoice_repo.update_paid(connection, invoice_id) != 1:
             raise ConflictError("Không thể cập nhật trạng thái thanh toán.")
         audit_repo.add_event(
@@ -282,10 +240,10 @@ def pay_invoice(actor_id, invoice_id):
     return "paid"
 
 
-def cancel_invoice(actor_id, invoice_id):
+def cancel_invoice(actor_id, invoice_id, tenant_id=None):
     invoice_id = positive_id(invoice_id, "Hóa đơn")
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         invoice = invoice_repo.get_invoice(connection, invoice_id, lock=True)
         if not invoice:
             raise NotFoundError("Không tìm thấy hóa đơn.")

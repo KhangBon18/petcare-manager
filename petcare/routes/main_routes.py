@@ -18,5 +18,5 @@ def home():
 def dashboard():
     return render_template(
         "dashboard.html",
-        metrics=report_service.dashboard(g.user["id"]),
+        metrics=report_service.dashboard(g.user["id"], tenant_id=g.tenant_id),
     )

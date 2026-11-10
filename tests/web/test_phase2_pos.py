@@ -47,6 +47,10 @@ class POSWebRegressionTests(TestCase):
         self.assertIn('/products/photo/t1-', html)
         self.assertIn('/pets/photo/t1-', html)
         self.assertIn('id="quick-customer-dialog"', html)
+        self.assertIn('class="pos-mobile-cart" href="#pos-order"', html)
+        self.assertIn('data-pos-mobile-count', html)
+        self.assertIn('data-pos-mobile-total', html)
+        self.assertIn('id="pos-order" tabindex="-1"', html)
         self.assertIn('/static/js/pos.js', html)
         self.assertIn("style-src 'self'", response.headers["Content-Security-Policy"])
         self.assertNotIn('style="', html)
@@ -73,7 +77,7 @@ class POSWebRegressionTests(TestCase):
         self.assertEqual(response.status_code, 201)
         self.assertEqual(set(response.get_json()["customer"]), {"id", "full_name", "phone"})
         self.assertEqual(create.call_args.args[0], 1)
-        get.assert_called_once_with(1, 77)
+        get.assert_called_once_with(1, 77, tenant_id=1)
 
     def test_quick_customer_validates_payload_and_requires_login(self):
         for payload in [[], 42, "wrong", {"full_name": [], "phone": {}}]:

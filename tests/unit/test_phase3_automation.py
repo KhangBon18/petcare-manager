@@ -493,6 +493,7 @@ class ImageSuggestionTests(unittest.TestCase):
                     "shape": "nhỏ",
                 },
                 None,
+                "used",
             ),
         ):
             result = pet_image_service.suggest_attributes(1, self.image)
@@ -500,6 +501,34 @@ class ImageSuggestionTests(unittest.TestCase):
         self.assertEqual(len(result["suggestions"]["eye_color"]), 60)
         self.assertNotIn("breed", result["suggestions"])
         self.assertEqual(result["mode"], "vision")
+
+    def test_vision_breed_and_fine_grained_traits_are_offered_for_review(self):
+        with self.app.app_context(), patch.object(
+            pet_image_service, "read_connection", self.connection
+        ), patch.object(pet_image_service, "require_actor"), patch.object(
+            pet_image_service,
+            "_analysis_from_model",
+            return_value=(
+                {
+                    "species": "Mèo",
+                    "breed": "Mèo Anh lông ngắn",
+                    "coat_color": "xám",
+                    "coat_pattern": "mướp",
+                    "coat_length": "ngắn",
+                    "size": "nhỏ",
+                    "eye_color": "vàng",
+                    "shape": "mặt tròn",
+                },
+                None,
+                "used",
+            ),
+        ):
+            result = pet_image_service.suggest_attributes(1, self.image)
+
+        self.assertEqual(result["suggestions"]["breed"], "Mèo Anh lông ngắn")
+        self.assertIn("mướp", result["suggestions"]["appearance_tags"])
+        self.assertIn("ngắn", result["suggestions"]["appearance_tags"])
+        self.assertIn("nhỏ", result["suggestions"]["appearance_tags"])
 
     def test_identical_image_explains_color_and_structure(self):
         descriptor = describe_image(self.image)

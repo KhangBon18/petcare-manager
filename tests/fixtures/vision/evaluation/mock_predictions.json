@@ -1,0 +1,29 @@
+{
+  "prediction_source": "deterministic_loopback_mock_fixture",
+  "predictions": [
+    {
+      "sample_id": "synthetic-cat-black-001",
+      "values": {"species": "cat", "coat_color": "black"},
+      "output_valid": true,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "estimated_cost_usd": null,
+      "initial_error": false,
+      "recovered": false,
+      "attempt_count": 1
+    },
+    {
+      "sample_id": "synthetic-dog-brown-001",
+      "values": {"species": "dog", "coat_color": "brown"},
+      "output_valid": true,
+      "latency_ms": null,
+      "input_tokens": null,
+      "output_tokens": null,
+      "estimated_cost_usd": null,
+      "initial_error": false,
+      "recovered": false,
+      "attempt_count": 1
+    }
+  ]
+}

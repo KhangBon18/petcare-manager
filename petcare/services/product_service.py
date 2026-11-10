@@ -18,10 +18,10 @@ from petcare.vision.media_storage import get_media_storage, media_tenant_id
 MAX_STOCK_QTY = 2_147_483_647
 
 
-def list_products(actor_id, search="", include_inactive=False, page=None):
+def list_products(actor_id, search="", include_inactive=False, page=None, tenant_id=None):
     search = (search or "").strip()[:120]
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         if page is not None:
             total = product_repo.count_products(connection, search, include_inactive)
             _current_page, offset, pagination = page_window(page, total)
@@ -36,10 +36,10 @@ def list_products(actor_id, search="", include_inactive=False, page=None):
         )
 
 
-def get_product(actor_id, product_id):
+def get_product(actor_id, product_id, tenant_id=None):
     product_id = positive_id(product_id, "Sản phẩm")
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         product = product_repo.get_product(connection, product_id)
         history = product_repo.stock_history(connection, product_id) if product else []
     if not product:
@@ -48,9 +48,9 @@ def get_product(actor_id, product_id):
     return product
 
 
-def owns_photo(actor_id, filename):
+def owns_photo(actor_id, filename, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         try:
             scoped_tenant_id = media_tenant_id(filename)
         except ValueError:
@@ -75,11 +75,11 @@ def _catalog_data(data, currency_code):
     }
 
 
-def _store_photo(actor_id, image_upload):
+def _store_photo(actor_id, image_upload, tenant_id=None):
     if not image_upload or not getattr(image_upload, "filename", ""):
         return None
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
     tenant_id = actor["tenant_id"]
     return store_product_photo(
         image_upload,
@@ -89,9 +89,9 @@ def _store_photo(actor_id, image_upload):
     )
 
 
-def create_product(actor_id, data, image_upload=None):
+def create_product(actor_id, data, image_upload=None, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
     product = _catalog_data(data, actor["default_currency"])
     product["legacy_unit_price_vnd"] = (
         int(product["unit_price"]) if actor["default_currency"] == "VND" else 0
@@ -99,10 +99,10 @@ def create_product(actor_id, data, image_upload=None):
     stock = integer_value(data.get("stock_qty", "0"), "Tồn đầu", 0, 2_000_000_000)
     stored = None
     try:
-        stored = _store_photo(actor_id, image_upload)
+        stored = _store_photo(actor_id, image_upload, tenant_id=tenant_id)
         product["photo_filename"] = stored.filename if stored else None
         with transaction() as connection:
-            require_actor(connection, actor_id, admin=True)
+            require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             product_id = product_repo.create_product(
                 connection,
                 product["code"], product["name"], product["category"],
@@ -128,10 +128,10 @@ def create_product(actor_id, data, image_upload=None):
         raise
 
 
-def update_product(actor_id, product_id, data, image_upload=None):
+def update_product(actor_id, product_id, data, image_upload=None, tenant_id=None):
     product_id = positive_id(product_id, "Sản phẩm")
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
     product = _catalog_data(data, actor["default_currency"])
     product["legacy_unit_price_vnd"] = (
         int(product["unit_price"]) if actor["default_currency"] == "VND" else 0
@@ -139,9 +139,9 @@ def update_product(actor_id, product_id, data, image_upload=None):
     stored = None
     current = None
     try:
-        stored = _store_photo(actor_id, image_upload)
+        stored = _store_photo(actor_id, image_upload, tenant_id=tenant_id)
         with transaction() as connection:
-            require_actor(connection, actor_id, admin=True)
+            require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             current = product_repo.get_product(connection, product_id, lock=True)
             if not current:
                 raise NotFoundError("Không tìm thấy sản phẩm.")
@@ -189,10 +189,10 @@ def update_product(actor_id, product_id, data, image_upload=None):
             current_app.logger.exception("Could not clean up an unreferenced product image")
 
 
-def set_active(actor_id, product_id, active):
+def set_active(actor_id, product_id, active, tenant_id=None):
     product_id = positive_id(product_id, "Sản phẩm")
     with transaction() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         product = product_repo.get_product(connection, product_id, lock=True)
         if not product:
             raise NotFoundError("Không tìm thấy sản phẩm.")
@@ -208,14 +208,14 @@ def set_active(actor_id, product_id, active):
         )
 
 
-def adjust_stock(actor_id, product_id, data):
+def adjust_stock(actor_id, product_id, data, tenant_id=None):
     product_id = positive_id(product_id, "Sản phẩm")
     delta = integer_value(data.get("quantity_delta"), "Số lượng điều chỉnh", -2_000_000_000, 2_000_000_000)
     if delta == 0:
         raise ValidationError("Số lượng điều chỉnh không được bằng 0.")
     reason = text_value(data.get("reason"), "Lý do", 255)
     with transaction() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         product = product_repo.get_product(connection, product_id, lock=True)
         if not product:
             raise NotFoundError("Không tìm thấy sản phẩm.")

@@ -1,0 +1,7 @@
+{
+  "name": "petcare-vision-accessibility-audit",
+  "private": true,
+  "devDependencies": {
+    "axe-core": "4.14.0"
+  }
+}

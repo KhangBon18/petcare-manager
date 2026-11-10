@@ -10,7 +10,7 @@ import time
 from cryptography.fernet import InvalidToken
 from flask import current_app
 
-from petcare.database.connection import transaction
+from petcare.database.connection import set_tenant_context, transaction
 from petcare.database.export_tenant import export_tenant
 from petcare.repositories import audit_repo, tenant_export_repo
 from petcare.services.tenant_export_service import _fernet
@@ -51,24 +51,6 @@ def _renew_until_stopped(app, job, stop_event, lost_lease, worker_heartbeat=None
             app.logger.warning("Tenant export lease renewal failed (job_id=%s)", job["id"])
 
 
-def _membership_is_active_admin(connection, job):
-    cursor = connection.cursor()
-    try:
-        cursor.execute(
-            "SELECT 1 FROM tenant_export_jobs j JOIN tenants t ON t.id = j.tenant_id "
-            "JOIN tenant_users tu ON tu.tenant_id = j.tenant_id AND tu.user_id = j.requested_by "
-            "JOIN users u ON u.id = j.requested_by "
-            "WHERE j.id = %s AND j.tenant_id = %s AND j.requested_by = %s "
-            "AND j.status = 'processing' AND j.artifact_key = %s "
-            "AND t.status = 'active' AND tu.active = 1 "
-            "AND tu.role IN ('owner', 'admin') AND u.active = 1",
-            (job["id"], job["tenant_id"], job["requested_by"], job["artifact_key"]),
-        )
-        return cursor.fetchone() is not None
-    finally:
-        cursor.close()
-
-
 def _complete(job, result, artifact_size):
     payload = json.dumps(
         {"format": "petcare-tenant-export-v1", "tables": result["tables"],
@@ -76,7 +58,7 @@ def _complete(job, result, artifact_size):
         ensure_ascii=False, separators=(",", ":"),
     )
     with transaction() as connection:
-        if not _membership_is_active_admin(connection, job):
+        if not tenant_export_repo.requester_has_active_admin_access(connection, job):
             tenant_export_repo.mark_failed(
                 connection, job, "requester_access_revoked", 0, retryable=False
             )
@@ -90,11 +72,7 @@ def _complete(job, result, artifact_size):
         )
         if not updated:
             return False
-        cursor = connection.cursor()
-        try:
-            cursor.execute("SET @petcare_tenant_id = %s", (job["tenant_id"],))
-        finally:
-            cursor.close()
+        set_tenant_context(connection, job["tenant_id"])
         audit_repo.add_event(
             connection,
             job["requested_by"],

@@ -4,7 +4,7 @@
 {% set errors = errors|default({}) %}
 {% block title %}{{ t('Sửa khách hàng') if customer else t('Thêm khách hàng') }}{% endblock %}
 {% block content %}
-<div class="page-heading compact-heading"><div><a class="back-link" href="{{ url_for('customers.index') }}">← {{ t('Khách hàng') }}</a><span class="eyebrow">{{ t('THÔNG TIN LIÊN HỆ') }}</span><h1>{{ t('Chỉnh sửa khách hàng') if customer else t('Thêm khách hàng mới') }}</h1><p>{{ t('Thông tin được lưu để gắn với các hóa đơn của cửa hàng.') }}</p></div></div>
+<div class="page-heading compact-heading"><div><span class="eyebrow">{{ t('THÔNG TIN LIÊN HỆ') }}</span><h1>{{ t('Chỉnh sửa khách hàng') if customer else t('Thêm khách hàng mới') }}</h1><p>{{ t('Thông tin được lưu để gắn với các hóa đơn của cửa hàng.') }}</p></div></div>
 <section class="form-card panel"><form method="post" class="form-stack">
 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 {{ error_summary(form_error|default(None)) }}

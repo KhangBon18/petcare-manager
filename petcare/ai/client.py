@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import base64
+import ipaddress
 import json
+import socket
+import ssl
+import time
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -13,6 +17,15 @@ from flask import current_app
 
 class AIProviderError(RuntimeError):
     """Raised when a configured model endpoint cannot complete a request."""
+
+    def __init__(self, message: str, *, retryable: bool = False, status_code: int | None = None):
+        super().__init__(message)
+        self.retryable = retryable
+        self.status_code = status_code
+
+
+MAX_REQUEST_BYTES = 8 * 1024 * 1024
+RETRYABLE_HTTP_STATUSES = {408, 500, 502, 503, 504}
 
 
 def is_configured() -> bool:
@@ -60,6 +73,11 @@ def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
     if not is_configured():
         raise AIProviderError("Chưa cấu hình mô hình AI.")
 
+    url = _completion_url()
+    _enforce_test_provider_guard(url)
+    if image_bytes is not None and len(image_bytes) > MAX_REQUEST_BYTES:
+        raise AIProviderError("Ảnh gửi tới mô hình AI vượt giới hạn yêu cầu.")
+
     request_messages = messages
     if image_bytes is not None:
         encoded = base64.b64encode(image_bytes).decode("ascii")
@@ -70,17 +88,30 @@ def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
         ]
         request_messages = [*messages[:-1], last]
 
-    body = json.dumps({
-        "model": current_app.config["AI_MODEL"],
-        "messages": request_messages,
-        "temperature": 0.2,
-        "max_tokens": 700,
-    }).encode("utf-8")
+    try:
+        request_body = {
+            "model": current_app.config["AI_MODEL"],
+            "messages": request_messages,
+            "temperature": 0.2,
+        }
+        reasoning_effort = str(current_app.config.get("AI_REASONING_EFFORT", "") or "").strip().lower()
+        if reasoning_effort:
+            if reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
+                raise AIProviderError("AI_REASONING_EFFORT configuration is invalid.")
+            request_body["reasoning_effort"] = reasoning_effort
+            request_body["max_completion_tokens"] = 700
+        else:
+            request_body["max_tokens"] = 700
+        body = json.dumps(request_body).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise AIProviderError("Yêu cầu AI không đúng định dạng.") from exc
+    if len(body) > MAX_REQUEST_BYTES:
+        raise AIProviderError("Yêu cầu AI vượt giới hạn dung lượng cho phép.")
     headers = {"Content-Type": "application/json", "Accept": "application/json"}
     api_key = current_app.config.get("AI_API_KEY", "").strip()
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    request = Request(_completion_url(), data=body, headers=headers, method="POST")
+    request = Request(url, data=body, headers=headers, method="POST")
 
     class NoRedirectHandler(HTTPRedirectHandler):
         def redirect_request(self, req, fp, code, msg, headers, new_url):
@@ -93,11 +124,23 @@ def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
             raw_payload = response.read(max_response_bytes + 1)
             if len(raw_payload) > max_response_bytes:
                 raise AIProviderError("Mô hình AI trả về dữ liệu vượt giới hạn cho phép.")
-            payload = json.loads(raw_payload.decode("utf-8"))
-    except AIProviderError:
-        raise
-    except (HTTPError, URLError, TimeoutError, OSError, ValueError, json.JSONDecodeError) as exc:
-        raise AIProviderError("Không kết nối được mô hình AI đã cấu hình.") from exc
+    except HTTPError as exc:
+        raise AIProviderError(
+            "Không kết nối được mô hình AI đã cấu hình.",
+            retryable=exc.code in RETRYABLE_HTTP_STATUSES,
+            status_code=exc.code,
+        ) from exc
+    except URLError as exc:
+        retryable = not isinstance(exc.reason, ssl.SSLError)
+        raise AIProviderError(
+            "Không kết nối được mô hình AI đã cấu hình.", retryable=retryable
+        ) from exc
+    except (TimeoutError, socket.timeout, OSError) as exc:
+        raise AIProviderError("Không kết nối được mô hình AI đã cấu hình.", retryable=True) from exc
+    try:
+        payload = json.loads(raw_payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AIProviderError("Mô hình AI trả về JSON không hợp lệ.") from exc
 
     try:
         content = payload["choices"][0]["message"]["content"]
@@ -108,3 +151,30 @@ def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
     if not isinstance(content, str) or not content.strip():
         raise AIProviderError("Mô hình AI chưa trả lời nội dung.")
     return content.strip()[:4000]
+
+
+def complete_vision(messages: list[dict], image_bytes: bytes) -> str:
+    """Vision-only bounded retry; never retries malformed output or HTTP 4xx."""
+    configured_retries = int(current_app.config.get("AI_VISION_MAX_RETRIES", 1))
+    retries = min(max(configured_retries, 0), 1)
+    for attempt in range(retries + 1):
+        try:
+            return complete(messages, image_bytes=image_bytes)
+        except AIProviderError as exc:
+            if not exc.retryable or attempt >= retries:
+                raise
+            time.sleep(0.1 * (attempt + 1))
+    raise AIProviderError("Không kết nối được mô hình ảnh đã cấu hình.")
+
+
+def _enforce_test_provider_guard(url: str) -> None:
+    """Block all external provider egress in tests; allow explicit literal loopback only."""
+    if current_app.config.get("APP_ENV") != "test":
+        return
+    parsed = urlparse(url)
+    try:
+        loopback = ipaddress.ip_address(parsed.hostname or "").is_loopback
+    except ValueError:
+        loopback = False
+    if not (loopback and current_app.config.get("AI_TEST_ALLOW_LOOPBACK_PROVIDER")):
+        raise AIProviderError("AI provider requests are disabled in tests except to an explicitly enabled loopback mock.")

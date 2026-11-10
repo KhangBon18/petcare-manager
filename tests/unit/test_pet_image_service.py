@@ -1,3 +1,4 @@
+import json
 import unittest
 from contextlib import contextmanager
 from types import SimpleNamespace
@@ -5,6 +6,7 @@ from unittest.mock import patch
 
 from flask import Flask
 
+from petcare.services.exceptions import ForbiddenError
 from petcare.services import pet_image_service
 
 
@@ -19,10 +21,11 @@ class PetImageServiceTests(unittest.TestCase):
         ), patch(
             "petcare.services.pet_image_service.ai_client.complete", return_value="{not json}"
         ):
-            analysis, warning = pet_image_service._analysis_from_model(b"image")
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
 
         self.assertIsNone(analysis)
         self.assertIn("JSON không hợp lệ", warning)
+        self.assertEqual(status, "invalid_output")
 
     def test_empty_model_analysis_is_not_reported_as_success(self):
         with self.app.app_context(), patch(
@@ -30,19 +33,166 @@ class PetImageServiceTests(unittest.TestCase):
         ), patch(
             "petcare.services.pet_image_service.ai_client.complete", return_value='{"species":""}'
         ):
-            analysis, warning = pet_image_service._analysis_from_model(b"image")
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
 
         self.assertIsNone(analysis)
         self.assertIn("chưa trả về đặc điểm", warning)
+        self.assertEqual(status, "ambiguous")
+
+    def test_model_analysis_keeps_supported_visual_traits_and_discards_wrong_types(self):
+        payload = (
+            '{"species":"cat","breed":"Maine Coon","coat_color":"gray",'
+            '"coat_pattern":"tabby","coat_length":"long-haired",'
+            '"eye_color":"green","size":"large","shape":7,"unknown":"x"}'
+        )
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.ai_client.is_configured", return_value=True
+        ), patch(
+            "petcare.services.pet_image_service.ai_client.complete", return_value=payload
+        ):
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
+
+        self.assertIn("bỏ qua", warning)
+        self.assertEqual(status, "partial")
+        self.assertEqual(analysis["breed"], "Maine Coon")
+        self.assertEqual(analysis["coat_length"], "long-haired")
+        self.assertNotIn("shape", analysis)
+        self.assertNotIn("unknown", analysis)
+
+    def test_model_output_is_bounded_and_does_not_expose_uncontracted_fields(self):
+        payload = json.dumps({
+            "species": "  cat\n\u202e" + "x" * 100,
+            "coat_color": "black",
+            "confidence": 0.999,
+            "url": "https://untrusted.example/",
+            "actions": ["save"],
+        })
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.ai_client.is_configured", return_value=True
+        ), patch(
+            "petcare.services.pet_image_service.ai_client.complete", return_value=payload
+        ):
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
+
+        self.assertEqual(status, "used")
+        self.assertIsNone(warning)
+        self.assertEqual(analysis["species"], "cat " + "x" * 76)
+        self.assertLessEqual(len(analysis["species"]), 80)
+        self.assertNotIn("confidence", analysis)
+        self.assertNotIn("url", analysis)
+        self.assertNotIn("actions", analysis)
+
+    def test_explicit_unknown_values_are_treated_as_abstentions(self):
+        payload = json.dumps({"species": "không rõ", "breed": "Unknown", "coat_color": "black"}, ensure_ascii=False)
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.ai_client.is_configured", return_value=True
+        ), patch(
+            "petcare.services.pet_image_service.ai_client.complete", return_value=payload
+        ):
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
+
+        self.assertEqual(status, "used")
+        self.assertIsNone(warning)
+        self.assertEqual(analysis, {"coat_color": "black"})
+
+    def test_disabled_provider_is_reported_without_calling_client(self):
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.ai_client.is_configured", return_value=True
+        ), patch(
+            "petcare.services.pet_image_service.ai_client.complete"
+        ) as complete:
+            self.app.config["AI_VISION_ENABLED"] = False
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
+
+        self.assertIsNone(analysis)
+        self.assertIsNone(warning)
+        self.assertEqual(status, "disabled")
+        complete.assert_not_called()
+
+    def test_provider_unavailability_is_distinguished_for_local_fallback(self):
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.ai_client.is_configured", return_value=True
+        ), patch(
+            "petcare.services.pet_image_service.ai_client.complete",
+            side_effect=pet_image_service.ai_client.AIProviderError("private endpoint detail"),
+        ):
+            analysis, warning, status = pet_image_service._analysis_from_model(b"image")
+
+        self.assertIsNone(analysis)
+        self.assertEqual(status, "unavailable")
+        self.assertIn("Không kết nối", warning)
+        self.assertNotIn("private endpoint detail", warning)
+
+    def test_invalid_actor_is_rejected_before_remote_vision_is_called(self):
+        @contextmanager
+        def fake_connection():
+            yield object()
+
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.read_connection", fake_connection
+        ), patch(
+            "petcare.services.pet_image_service.require_actor",
+            side_effect=ForbiddenError("inactive actor"),
+        ), patch(
+            "petcare.services.pet_image_service._analysis_from_model"
+        ) as analysis:
+            with self.assertRaises(ForbiddenError):
+                pet_image_service.search_similar(999, b"private image")
+
+        analysis.assert_not_called()
 
     def test_shape_and_pattern_share_one_appearance_field_weight(self):
         score = pet_image_service._metadata_score(
-            {"appearance_tags": "lông ngắn"},
-            {"coat_pattern": "lông ngắn", "shape": "dáng nhỏ"},
+            {"appearance_tags": "tabby"},
+            {"coat_pattern": "tabby", "shape": "small"},
             (),
         )
 
         self.assertAlmostEqual(score, 0.5)
+
+    def test_vision_traits_match_english_and_vietnamese_values(self):
+        score = pet_image_service._metadata_score(
+            {
+                "species": "Mèo",
+                "breed": "Mèo Anh lông ngắn",
+                "coat_color": "đen, trắng",
+                "appearance_tags": "lông ngắn, mướp, nhỏ",
+            },
+            {
+                "species": "cat",
+                "breed": "British Shorthair",
+                "coat_color": "black and white",
+                "coat_pattern": "tabby",
+                "coat_length": "short-haired",
+                "size": "small",
+            },
+            (),
+        )
+
+        # Breed names are not assumed to be translations; the remaining visible
+        # traits still produce a strong match when the breed wording differs.
+        self.assertGreaterEqual(score, 0.75)
+
+    def test_blue_and_green_are_distinct_and_color_phrases_are_normalized(self):
+        blue_match = pet_image_service._metadata_score(
+            {"eye_color": "xanh dương"},
+            {"eye_color": "blue"},
+            (),
+        )
+        green_mismatch = pet_image_service._metadata_score(
+            {"eye_color": "xanh lá"},
+            {"eye_color": "blue"},
+            (),
+        )
+
+        self.assertEqual(blue_match, 1.0)
+        self.assertEqual(green_mismatch, 0.0)
+
+    def test_common_shape_and_ear_traits_match_across_languages(self):
+        self.assertEqual(
+            pet_image_service._tokens("round face, folded ears"),
+            pet_image_service._tokens("mặt tròn, tai cụp"),
+        )
 
     def test_english_vision_attributes_match_vietnamese_pet_metadata(self):
         score = pet_image_service._metadata_score(
@@ -86,7 +236,7 @@ class PetImageServiceTests(unittest.TestCase):
             "petcare.services.pet_image_service.describe_image",
             return_value=SimpleNamespace(dominant_colors=(), visual_hash="0123456789abcdef"),
         ), patch(
-            "petcare.services.pet_image_service._analysis_from_model", return_value=(None, None)
+            "petcare.services.pet_image_service._analysis_from_model", return_value=(None, None, "disabled")
         ), patch(
             "petcare.services.pet_image_service.read_connection", fake_connection
         ), patch(
@@ -94,6 +244,9 @@ class PetImageServiceTests(unittest.TestCase):
         ), patch(
             "petcare.services.pet_image_service.pet_repo.has_available_reference_photos",
             return_value=True,
+        ), patch(
+            "petcare.services.pet_image_service.pet_repo.count_available_for_image_search",
+            return_value=6000,
         ), patch(
             "petcare.services.pet_image_service.pet_repo.find_available_image_search_candidates",
             return_value=pets,
@@ -124,7 +277,7 @@ class PetImageServiceTests(unittest.TestCase):
             "petcare.services.pet_image_service.describe_image",
             return_value=SimpleNamespace(dominant_colors=(), visual_hash="0123456789abcdef"),
         ), patch(
-            "petcare.services.pet_image_service._analysis_from_model", return_value=(None, None)
+            "petcare.services.pet_image_service._analysis_from_model", return_value=(None, None, "disabled")
         ), patch(
             "petcare.services.pet_image_service.read_connection", fake_connection
         ), patch(
@@ -132,6 +285,9 @@ class PetImageServiceTests(unittest.TestCase):
         ), patch(
             "petcare.services.pet_image_service.pet_repo.has_available_reference_photos",
             return_value=True,
+        ), patch(
+            "petcare.services.pet_image_service.pet_repo.count_available_for_image_search",
+            return_value=6000,
         ), patch(
             "petcare.services.pet_image_service.pet_repo.find_available_image_search_candidates",
             return_value=None,
@@ -146,6 +302,44 @@ class PetImageServiceTests(unittest.TestCase):
 
         self.assertEqual(result["search_scope"], "full")
         self.assertEqual(result["results"][0]["pet"]["id"], 1)
+
+    def test_small_catalogs_use_exact_scan_to_preserve_image_search_recall(self):
+        pet = {"id": 3, "name": "Mây", "photo_descriptor": {"score": 0.91}}
+
+        @contextmanager
+        def fake_connection():
+            yield object()
+
+        with self.app.app_context(), patch(
+            "petcare.services.pet_image_service.normalize_image_bytes", return_value=b"normalized"
+        ), patch(
+            "petcare.services.pet_image_service.describe_image",
+            return_value=SimpleNamespace(dominant_colors=(), visual_hash="0123456789abcdef"),
+        ), patch(
+            "petcare.services.pet_image_service._analysis_from_model", return_value=(None, None, "disabled")
+        ), patch(
+            "petcare.services.pet_image_service.read_connection", fake_connection
+        ), patch(
+            "petcare.services.pet_image_service.require_actor"
+        ), patch(
+            "petcare.services.pet_image_service.pet_repo.has_available_reference_photos",
+            return_value=True,
+        ), patch(
+            "petcare.services.pet_image_service.pet_repo.count_available_for_image_search",
+            return_value=12,
+        ), patch(
+            "petcare.services.pet_image_service.pet_repo.iter_available_for_image_search",
+            return_value=iter([pet]),
+        ), patch(
+            "petcare.services.pet_image_service.pet_repo.find_available_image_search_candidates"
+        ) as indexed_candidates, patch(
+            "petcare.services.pet_image_service.compare_images_from_json", return_value=0.91
+        ):
+            result = pet_image_service.search_similar(1, b"input")
+
+        indexed_candidates.assert_not_called()
+        self.assertEqual(result["search_scope"], "full")
+        self.assertEqual(result["results"][0]["pet"]["id"], 3)
 
 
 if __name__ == "__main__":

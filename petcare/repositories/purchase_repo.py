@@ -186,6 +186,25 @@ def add_received_quantity(connection, purchase_order_id, item_id, quantity):
     )[1]
 
 
+def find_receipt_request(connection, request_key):
+    return fetch_one(
+        connection,
+        "SELECT purchase_order_id, payload_hash FROM purchase_order_receipt_requests "
+        "WHERE tenant_id = @petcare_tenant_id AND request_key = %s FOR UPDATE",
+        (request_key,),
+    )
+
+
+def create_receipt_request(connection, purchase_order_id, request_key, payload_hash):
+    return execute(
+        connection,
+        "INSERT INTO purchase_order_receipt_requests "
+        "(tenant_id, purchase_order_id, request_key, payload_hash) "
+        "VALUES (@petcare_tenant_id, %s, %s, %s)",
+        (purchase_order_id, request_key, payload_hash),
+    )[0]
+
+
 def set_purchase_order_status(connection, purchase_order_id, status):
     return execute(
         connection,

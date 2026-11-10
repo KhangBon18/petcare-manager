@@ -6,11 +6,11 @@ import secrets
 
 from flask import current_app, url_for
 
-from petcare.database.connection import read_connection, transaction
+from petcare.database.connection import read_connection, set_tenant_context, transaction
 from petcare.email_address import normalize_email
 from petcare.i18n import current_locale
 from petcare.money import CurrencyError, normalize_currency_code
-from petcare.repositories import account_token_repo, audit_repo, user_repo
+from petcare.repositories import account_token_repo, audit_repo, tenant_repo, user_repo
 from petcare.security import hash_password, verify_password
 from petcare.services import request_throttle_service
 from petcare.services.common import password_hash_value, require_actor, text_value
@@ -43,11 +43,7 @@ def _new_token(connection, user_id, purpose, ttl_minutes):
 def _audit_account_event(connection, user_id, event_type, summary, tenant_ids=None):
     tenant_ids = tenant_ids if tenant_ids is not None else user_repo.active_membership_tenant_ids(connection, user_id)
     for tenant_id in tenant_ids:
-        cursor = connection.cursor()
-        try:
-            cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
-        finally:
-            cursor.close()
+        set_tenant_context(connection, tenant_id)
         audit_repo.add_event(
             connection, user_id, event_type, "user", user_id, summary, None
         )
@@ -120,47 +116,32 @@ def create_public_store(
     email_queued = False
     try:
         with transaction() as connection:
-            cursor = connection.cursor()
-            try:
-                cursor.execute(
-                    "INSERT INTO tenants (name, slug, status, default_currency, timezone) "
-                    "VALUES (%s, %s, 'active', %s, %s)",
-                    (store_name, slug, currency_code, timezone_name),
-                )
-                tenant_id = cursor.lastrowid
-                cursor.execute(
-                    "INSERT INTO users (username, email, password_hash, full_name, role) "
-                    "VALUES (%s, %s, %s, %s, 'admin')",
-                    (username, email, password_hash, owner_name),
-                )
-                user_id = cursor.lastrowid
-                cursor.execute(
-                    "INSERT INTO tenant_users "
-                    "(tenant_id, user_id, role, active, email_activation_pending) "
-                    "VALUES (%s, %s, 'owner', 0, 1)",
-                    (tenant_id, user_id),
-                )
-                cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
-                audit_repo.add_event(
-                    connection,
-                    user_id,
-                    "tenant.signup_started",
-                    "tenant",
-                    tenant_id,
-                    "Bắt đầu đăng ký cửa hàng tự phục vụ",
-                    None,
-                )
-                token, token_expires_at = _new_token(connection, user_id, _EMAIL_VERIFY, 24 * 60)
-                email_queued = _queue_token_email(
-                    email,
-                    _EMAIL_VERIFY,
-                    token,
-                    token_expires_at,
-                    connection=connection,
-                    required=True,
-                )
-            finally:
-                cursor.close()
+            tenant_id = tenant_repo.create_public_signup(
+                connection, store_name, slug, currency_code, timezone_name
+            )
+            user_id = user_repo.create_public_owner(
+                connection, username, email, password_hash, owner_name
+            )
+            user_repo.add_pending_owner_membership(connection, tenant_id, user_id)
+            set_tenant_context(connection, tenant_id)
+            audit_repo.add_event(
+                connection,
+                user_id,
+                "tenant.signup_started",
+                "tenant",
+                tenant_id,
+                "Bắt đầu đăng ký cửa hàng tự phục vụ",
+                None,
+            )
+            token, token_expires_at = _new_token(connection, user_id, _EMAIL_VERIFY, 24 * 60)
+            email_queued = _queue_token_email(
+                email,
+                _EMAIL_VERIFY,
+                token,
+                token_expires_at,
+                connection=connection,
+                required=True,
+            )
     except Exception as exc:
         if getattr(exc, "errno", None) in {1062, 1205, 1213}:
             raise ValidationError(
@@ -185,7 +166,7 @@ def set_account_email(actor_id, tenant_id, current_password, raw_email):
     _check_limit(actor_id, "email_verification", "Bạn thao tác quá nhanh. Vui lòng thử lại sau.")
     token = None
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         user = user_repo.get_account_by_id_for_update(connection, actor_id)
         if not user or not verify_password(current_password or "", user["password_hash"]):
             raise ForbiddenError("Mật khẩu hiện tại chưa đúng.")
@@ -220,10 +201,10 @@ def set_account_email(actor_id, tenant_id, current_password, raw_email):
     }
 
 
-def update_account_profile(actor_id, current_password, raw_full_name):
+def update_account_profile(actor_id, current_password, raw_full_name, tenant_id=None):
     full_name = text_value(raw_full_name, "Tên hiển thị", 160)
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         user = user_repo.get_account_by_id_for_update(connection, actor_id)
         if (
             not user

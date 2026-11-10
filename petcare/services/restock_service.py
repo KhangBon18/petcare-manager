@@ -64,7 +64,7 @@ def for_connection(connection, actor):
     )
 
 
-def recommendations(actor_id):
+def recommendations(actor_id, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         return for_connection(connection, actor)

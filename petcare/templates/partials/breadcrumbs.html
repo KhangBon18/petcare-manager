@@ -1,0 +1,46 @@
+{% set endpoint = request.endpoint or '' %}
+{% set blueprint = request.blueprint or '' %}
+{% set section_labels = {
+  'customers': 'Khách hàng', 'pets': 'Thú cưng', 'products': 'Sản phẩm',
+  'invoices': 'Hóa đơn', 'reports': 'Báo cáo', 'purchasing': 'Nhập hàng',
+  'store': 'Cài đặt cửa hàng', 'users': 'Tài khoản', 'audit': 'Nhật ký hoạt động',
+  'account': 'Tài khoản'
+} %}
+{% set section_routes = {
+  'customers': 'customers.index', 'pets': 'pets.index', 'products': 'products.index',
+  'invoices': 'invoices.index', 'reports': 'reports.index', 'purchasing': 'purchasing.index',
+  'store': 'store.settings', 'users': 'users.index', 'audit': 'audit.index',
+  'account': 'account.settings'
+} %}
+{% if endpoint == 'main.dashboard' %}
+<nav class="breadcrumbs" aria-label="{{ t('Vị trí hiện tại') }}"><ol><li aria-current="page">{{ t('Tổng quan') }}</li></ol></nav>
+{% else %}
+<nav class="breadcrumbs" aria-label="{{ t('Vị trí hiện tại') }}">
+  <ol>
+    <li><a href="{{ url_for('main.dashboard') }}">{{ t('Tổng quan') }}</a></li>
+    {% if blueprint in section_labels %}
+      {% if blueprint == 'customers' and endpoint != 'customers.index' %}
+        <li><a href="{{ url_for('customers.index') }}">{{ t(section_labels[blueprint]) }}</a></li>
+        {% if customer is defined and customer %}
+          {% if endpoint == 'customers.detail' %}<li aria-current="page">{{ customer.full_name }}</li>
+          {% elif customer.id is defined %}<li><a href="{{ url_for('customers.detail', customer_id=customer.id) }}">{{ customer.full_name }}</a></li><li aria-current="page">{{ t('Chỉnh sửa khách hàng') }}</li>
+          {% else %}<li aria-current="page">{{ t('Chỉnh sửa khách hàng') }}</li>{% endif %}
+        {% else %}<li aria-current="page">{{ t('Thêm khách hàng') }}</li>{% endif %}
+      {% elif blueprint == 'pets' and endpoint != 'pets.index' %}
+        {% if endpoint == 'pets.find_similar' %}
+          <li><a href="{{ url_for('pets.index') }}">{{ t(section_labels[blueprint]) }}</a></li><li aria-current="page">{{ t('Tìm bằng ảnh') }}</li>
+        {% else %}
+          <li><a href="{{ url_for('pets.index') }}">{{ t(section_labels[blueprint]) }}</a></li>
+          {% if pet is defined and pet %}
+            {% if endpoint == 'pets.detail' %}<li aria-current="page">{{ pet.name }}</li>
+            {% elif pet.id is defined %}<li><a href="{{ url_for('pets.detail', pet_id=pet.id) }}">{{ pet.name }}</a></li><li aria-current="page">{{ t('Chỉnh sửa hồ sơ') }}</li>
+            {% else %}<li aria-current="page">{{ t('Chỉnh sửa hồ sơ') }}</li>{% endif %}
+          {% else %}<li aria-current="page">{{ t('Thêm thú cưng') }}</li>{% endif %}
+        {% endif %}
+      {% else %}<li aria-current="page">{{ t(section_labels[blueprint]) }}</li>{% endif %}
+    {% else %}
+      <li aria-current="page">{{ t('Cửa hàng thú cưng') }}</li>
+    {% endif %}
+  </ol>
+</nav>
+{% endif %}

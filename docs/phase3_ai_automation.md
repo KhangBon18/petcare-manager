@@ -36,10 +36,10 @@ Dashboard ưu tiên tối đa 5 cảnh báo; trang Sản phẩm có danh sách c
 
 ## 3.4. Tìm ảnh và gợi ý thuộc tính
 
-- Bộ lọc loài và available/sold/inactive/tất cả được áp dụng trong truy vấn MySQL trước khi xếp hạng. Lọc tùy chọn dùng scan theo lô; mặc định đang bán giữ đường đi LSH hiện có.
+- Bộ lọc loài và available/sold/inactive/tất cả được áp dụng trong truy vấn MySQL trước khi xếp hạng. Danh mục đến 5.000 cá thể đang bán được quét chính xác theo lô để tránh bỏ sót do LSH; danh mục lớn hơn dùng chỉ mục LSH và giao diện báo rõ phạm vi xếp hạng có thể bỏ sót.
 - Mỗi kết quả có điểm thành phần màu, cấu trúc sáng/tối và thuộc tính; nhãn giải thích tông màu lông trùng hoặc cấu trúc/màu ảnh gần nhau. Đây là xếp hạng tham khảo, không phải xác suất nhận dạng.
 - Khi chọn ảnh ở form thêm/sửa pet, gợi ý xuất hiện tự động qua POST có CSRF, admin-only, giới hạn byte/pixel, quota và semaphore có sẵn. Ảnh phân tích không được lưu thành hồ sơ.
-- Local chỉ ước lượng màu vùng ảnh, có thể gồm nền; không đoán loài/giống/mắt. Khi bật `AI_VISION_ENABLED=1` cùng endpoint/model, Vision gợi ý loài/màu lông/mắt/ngoại hình; lỗi mạng, JSON hỏng hoặc nội dung trống quay về màu local với thông báo.
+- Local chỉ ước lượng màu vùng ảnh, có thể gồm nền; không đoán loài/giống/mắt. Khi bật `AI_VISION_ENABLED=1` cùng endpoint/model, Vision gợi ý loài, giống khi đủ căn cứ, màu/hoa văn/độ dài lông, màu mắt, kích cỡ và dáng; bộ so khớp chuẩn hóa synonym Việt/Anh và đối chiếu với hồ sơ cửa hàng. Lỗi mạng, JSON hỏng hoặc nội dung trống quay về màu local với thông báo.
 - Người dùng bấm **Điền vào trường đang trống** để áp dụng; không ghi đè trường đã nhập. AbortController bỏ yêu cầu cũ khi đổi ảnh. Lưu hồ sơ vẫn qua service validation/transaction hiện có.
 
 ## Nghiệm thu

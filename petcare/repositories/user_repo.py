@@ -48,6 +48,49 @@ def get_account_by_id_for_update(connection, user_id):
     )
 
 
+def get_session_version(connection, user_id):
+    row = fetch_one(connection, "SELECT session_version FROM users WHERE id = %s", (user_id,))
+    return row["session_version"] if row else None
+
+
+def create_public_owner(connection, username, email, password_hash, full_name):
+    return execute(
+        connection,
+        "INSERT INTO users (username, email, password_hash, full_name, role) "
+        "VALUES (%s, %s, %s, %s, 'admin')",
+        (username, email, password_hash, full_name),
+    )[0]
+
+
+def add_pending_owner_membership(connection, tenant_id, user_id):
+    return execute(
+        connection,
+        "INSERT INTO tenant_users "
+        "(tenant_id, user_id, role, active, email_activation_pending) "
+        "VALUES (%s, %s, 'owner', 0, 1)",
+        (tenant_id, user_id),
+    )[1]
+
+
+def active_membership_roles_for_update(connection, tenant_id):
+    rows = fetch_all(
+        connection,
+        "SELECT user_id, role FROM tenant_users WHERE tenant_id = %s "
+        "AND role IN ('owner', 'admin') AND active = 1 ORDER BY user_id FOR UPDATE",
+        (tenant_id,),
+    )
+    return {row["user_id"]: row["role"] for row in rows}
+
+
+def count_memberships(connection, user_id):
+    row = fetch_one(
+        connection,
+        "SELECT COUNT(*) membership_count FROM tenant_users WHERE user_id = %s",
+        (user_id,),
+    )
+    return int(row["membership_count"])
+
+
 def get_verified_account_by_email_for_update(connection, email):
     return fetch_one(
         connection,
@@ -151,6 +194,32 @@ def get_active_membership(connection, user_id, tenant_id):
         "JOIN tenants t ON t.id = tu.tenant_id "
         "WHERE tu.user_id = %s AND tu.tenant_id = %s AND tu.active = 1 "
         "AND u.active = 1 AND t.status = 'active'",
+        (user_id, tenant_id),
+    )
+
+
+def list_active_tenant_ids(connection, user_id):
+    """List active memberships in active stores for legacy single-store sessions."""
+    rows = fetch_all(
+        connection,
+        "SELECT tu.tenant_id tenant_id FROM tenant_users tu "
+        "JOIN tenants t ON t.id = tu.tenant_id "
+        "WHERE tu.user_id = %s AND tu.active = 1 AND t.status = 'active' "
+        "ORDER BY tu.tenant_id",
+        (user_id,),
+    )
+    return [row["tenant_id"] for row in rows]
+
+
+def get_actor_for_tenant(connection, user_id, tenant_id):
+    return fetch_one(
+        connection,
+        "SELECT u.id, IF(tu.role = 'staff', 'staff', 'admin') role, "
+        "t.name tenant_name, t.default_currency, t.timezone, "
+        "u.active user_active, tu.active membership_active, tu.tenant_id tenant_id "
+        "FROM users u JOIN tenant_users tu ON tu.user_id = u.id "
+        "JOIN tenants t ON t.id = tu.tenant_id "
+        "WHERE u.id = %s AND tu.tenant_id = %s AND t.status = 'active'",
         (user_id, tenant_id),
     )
 

@@ -18,8 +18,8 @@ bp = Blueprint("users", __name__, url_prefix="/users")
 def index():
     return render_template(
         "users/index.html",
-        users=auth_service.list_users(g.user["id"]),
-        invitations=tenant_invite_service.list_invitations(g.user["id"]),
+        users=auth_service.list_users(g.user["id"], tenant_id=g.tenant_id),
+        invitations=tenant_invite_service.list_invitations(g.user["id"], tenant_id=g.tenant_id),
         invitation_email_configured=mail_service.is_configured(),
     )
 
@@ -29,7 +29,8 @@ def index():
 def create_invitation():
     try:
         invitation = tenant_invite_service.create_invitation(
-            g.user["id"], request.form.get("email", ""), request.form.get("role", "staff")
+            g.user["id"], request.form.get("email", ""), request.form.get("role", "staff"),
+            tenant_id=g.tenant_id,
         )
         if invitation["email_queued"]:
             flash(
@@ -54,7 +55,9 @@ def create_invitation():
 @admin_required
 def revoke_invitation(invitation_id):
     try:
-        tenant_invite_service.revoke_invitation(g.user["id"], invitation_id)
+        tenant_invite_service.revoke_invitation(
+            g.user["id"], invitation_id, tenant_id=g.tenant_id
+        )
         flash("Đã thu hồi lời mời.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -65,7 +68,9 @@ def revoke_invitation(invitation_id):
 @admin_required
 def ownership():
     try:
-        context = tenant_owner_transfer_service.get_page_context(g.user["id"])
+        context = tenant_owner_transfer_service.get_page_context(
+            g.user["id"], tenant_id=g.tenant_id
+        )
     except ServiceError:
         abort(403)
     response = make_response(render_template("users/ownership.html", **context))
@@ -81,6 +86,7 @@ def start_ownership_transfer():
             g.user["id"],
             request.form.get("target_user_id", ""),
             request.form.get("current_password", ""),
+            tenant_id=g.tenant_id,
         )
         if transfer["email_queued"]:
             flash("Đã gửi thông báo xác nhận tới email đã xác minh của quản trị viên được chọn.", "success")
@@ -102,7 +108,8 @@ def start_ownership_transfer():
 def cancel_ownership_transfer(transfer_id):
     try:
         tenant_owner_transfer_service.cancel_transfer(
-            g.user["id"], transfer_id, request.form.get("current_password", "")
+            g.user["id"], transfer_id, request.form.get("current_password", ""),
+            tenant_id=g.tenant_id,
         )
         flash("Đã thu hồi yêu cầu bàn giao.", "success")
     except RateLimitError as exc:
@@ -123,7 +130,8 @@ def cancel_ownership_transfer(transfer_id):
 def accept_ownership_transfer(transfer_id):
     try:
         tenant_owner_transfer_service.accept_transfer(
-            g.user["id"], transfer_id, request.form.get("current_password", "")
+            g.user["id"], transfer_id, request.form.get("current_password", ""),
+            tenant_id=g.tenant_id,
         )
         flash("Bạn đã nhận bàn giao quyền chủ cửa hàng; người gửi trở thành quản trị viên.", "success")
     except RateLimitError as exc:
@@ -184,7 +192,7 @@ def protect_invitation_token(response):
 def create():
     if request.method == "POST":
         try:
-            auth_service.create_user(g.user["id"], request.form)
+            auth_service.create_user(g.user["id"], request.form, tenant_id=g.tenant_id)
             flash("Đã tạo tài khoản.", "success")
             return redirect(url_for("users.index"))
         except ServiceError as exc:
@@ -196,7 +204,9 @@ def create():
 @admin_required
 def update(user_id):
     try:
-        auth_service.update_user(g.user["id"], user_id, request.form)
+        auth_service.update_user(
+            g.user["id"], user_id, request.form, tenant_id=g.tenant_id
+        )
         flash("Đã cập nhật tài khoản.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -208,7 +218,10 @@ def update(user_id):
 def export_current_store():
     if request.method == "GET":
         response = make_response(render_template(
-            "users/export.html", export_jobs=tenant_export_service.list_export_jobs(g.user["id"])
+            "users/export.html",
+            export_jobs=tenant_export_service.list_export_jobs(
+                g.user["id"], tenant_id=g.tenant_id
+            ),
         ))
         response.headers["Cache-Control"] = "private, no-store, max-age=0"
         return response
@@ -219,6 +232,7 @@ def export_current_store():
             request.form.get("current_password", ""),
             request.form.get("passphrase", ""),
             request.form.get("passphrase_confirmation", ""),
+            tenant_id=g.tenant_id,
         )
         flash("Đã xếp yêu cầu xuất vào hàng đợi. Bạn có thể theo dõi tiến độ tại đây.", "success")
         return redirect(url_for("users.export_job", job_id=job_id))
@@ -245,7 +259,9 @@ def export_current_store():
 @admin_required
 def export_job(job_id):
     try:
-        job = tenant_export_service.get_export_job(g.user["id"], job_id)
+        job = tenant_export_service.get_export_job(
+            g.user["id"], job_id, tenant_id=g.tenant_id
+        )
     except NotFoundError:
         abort(404)
     response = make_response(render_template("users/export_job.html", job=job))
@@ -257,7 +273,9 @@ def export_job(job_id):
 @admin_required
 def export_job_status(job_id):
     try:
-        job = tenant_export_service.get_export_job(g.user["id"], job_id)
+        job = tenant_export_service.get_export_job(
+            g.user["id"], job_id, tenant_id=g.tenant_id
+        )
     except NotFoundError:
         abort(404)
     status = job["status"]
@@ -278,7 +296,9 @@ def export_job_status(job_id):
 @admin_required
 def download_export(job_id):
     try:
-        job = tenant_export_service.get_downloadable_export(g.user["id"], job_id)
+        job = tenant_export_service.get_downloadable_export(
+            g.user["id"], job_id, tenant_id=g.tenant_id
+        )
     except NotFoundError:
         abort(404)
     try:

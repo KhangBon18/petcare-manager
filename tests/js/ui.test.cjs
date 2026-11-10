@@ -90,6 +90,76 @@ test("assistant renders safe actionable catalog cards in local and AI replies", 
   }
 });
 
+test("assistant renders top-product report facts as safe text with an allowlisted record link", async () => {
+  const launcher = el("button", {id:"assistant-launcher"});
+  const input = el("input", {id:"assistant-input", value:"Top products this week"});
+  const form = el("form", {id:"assistant-form", action:"/assistant/chat"},
+    [input, el("button", {attributes:{type:"submit"}})]);
+  const messages = el("div", {id:"assistant-messages"});
+  const root = el("document", {}, [launcher, el("aside", {id:"assistant-panel",hidden:true}, [form,messages])]);
+  const h = run("assistant.js", root); h.window.PetCare = {icon: () => el("span")};
+  launcher.click(); form.dispatchEvent(new UIEvent("submit"));
+  h.requests[0].resolve({ok:true,json:async()=>({
+    reply:"Top products for this week.", mode:"local",
+    insight:{kind:"top_products",period:"week",start_date:"2026-11-09",end_date:"2026-11-10",items:[
+      {name:"<img src=x onerror=bad()>",code:"QA-1",quantity_sold:3,revenue_label:"30,000 VND",url:"/products/23"},
+      {name:"Untrusted URL",code:"QA-2",quantity_sold:2,revenue_label:"20,000 VND",url:"//evil.test/products/24"}
+    ]}
+  })});
+  await settle();
+  const cards=messages.querySelectorAll(".assistant-result-card"); assert.equal(cards.length,1);
+  assert.equal(cards[0].querySelector("strong").textContent,"<img src=x onerror=bad()>");
+  assert.equal(cards[0].querySelector("small").textContent,"QA-1 · 3 sản phẩm bán ròng");
+  assert.equal(cards[0].querySelector("b").textContent,"30,000 VND");
+  assert.equal(cards[0].querySelector("a").href,"/products/23");
+  assert.match(messages.querySelector(".assistant-message-source").textContent,/Báo cáo bán hàng/);
+});
+
+test("assistant renders inventory and purchasing insights with safe text and same-origin links", async () => {
+  const fixtures = [
+    {
+      prompt: "Gợi ý nhập hàng", kind: "inventory_restock", url: "/products/23",
+      item: {product_id:23,name:"<img src=x onerror=bad()>",code:"QA-1",stock_qty:2,reorder_level:3,suggested_qty:9,days_left:"4.0",url:"/products/23"},
+      source: /Service tồn kho chỉ đọc/,
+    },
+    {
+      prompt: "Tình trạng đơn nhập?", kind: "purchase_status", url: "/purchasing/52",
+      item: {purchase_order_id:52,supplier_name:"<script>bad()</script>",status:"partially_received",received_units:2,ordered_units:5,created_at:"2026-11-10 08:30",amount_label:"12.000 VND",url:"/purchasing/52"},
+      source: /Service nhập hàng dành cho quản trị viên/,
+    },
+  ];
+  for (const fixture of fixtures) {
+    const launcher = el("button", {id:"assistant-launcher"});
+    const input = el("input", {id:"assistant-input", value:fixture.prompt});
+    const form = el("form", {id:"assistant-form", action:"/assistant/chat"}, [input,el("button",{attributes:{type:"submit"}})]);
+    const messages = el("div", {id:"assistant-messages"});
+    const root = el("document", {}, [launcher,el("aside",{id:"assistant-panel",hidden:true},[form,messages])]);
+    const h = run("assistant.js",root); h.window.PetCare = {icon: () => el("span")};
+    launcher.click(); form.dispatchEvent(new UIEvent("submit"));
+    h.requests[0].resolve({ok:true,json:async()=>({reply:"Verified facts",mode:"local",insight:{kind:fixture.kind,total:1,target_days:14,status_counts:{ordered:0,partially_received:1,received:0,cancelled:0},items:[{...fixture.item,url:fixture.url}]}})});
+    await settle();
+    const card=messages.querySelector(".assistant-result-card");
+    assert.ok(card);
+    assert.equal(card.querySelector("strong").textContent,fixture.item.name || `Đơn #${fixture.item.purchase_order_id} · ${fixture.item.supplier_name}`);
+    assert.equal(card.querySelector("a").href,fixture.url);
+    assert.match(messages.querySelector(".assistant-message-source").textContent,fixture.source);
+    assert.equal(messages.querySelectorAll("script").length,0);
+  }
+});
+
+test("assistant exposes a keyboard-accessible retry action after a failed request", async () => {
+  const launcher=el("button",{id:"assistant-launcher"});
+  const input=el("input",{id:"assistant-input",value:"Restock suggestions"});
+  const form=el("form",{id:"assistant-form",action:"/assistant/chat"},[input,el("button",{attributes:{type:"submit"}})]);
+  const messages=el("div",{id:"assistant-messages"});
+  const root=el("document",{},[launcher,el("aside",{id:"assistant-panel",hidden:true},[form,messages])]);
+  const h=run("assistant.js",root);launcher.click();form.dispatchEvent(new UIEvent("submit"));
+  h.requests[0].resolve({ok:false,json:async()=>({error:"Temporary failure"})});await settle();
+  const retry=messages.querySelector("[data-assistant-retry]");
+  assert.ok(retry);assert.equal(retry.textContent,"Thử lại");assert.equal(retry.dataset.message,"Restock suggestions");
+  retry.click();assert.equal(h.requests.length,2);assert.equal(JSON.parse(h.requests[1].options.body).message,"Restock suggestions");
+});
+
 test("report export blocks duplicate clicks and unlocks after a failed network response", async () => {
   const button=el("button",{attributes:{type:"submit"},textContent:"Xuất Excel"});
   const form=el("form",{dataset:{reportExport:""},action:"/reports/export.xlsx"},[
@@ -109,8 +179,11 @@ test("photo suggestions discard stale replies and preserve manually entered attr
   const input=el("input",{dataset:{suggestUrl:"/pets/suggest-attributes"},files:[{size:10}]});
   const species=el("input",{value:"Chó đã nhập"}),coat=el("input",{value:""});
   const apply=el("button",{dataset:{attributeApply:""},hidden:true});
+  const retry=el("button",{dataset:{attributeRetry:""},hidden:true});
+  const cancel=el("button",{dataset:{attributeCancel:""},hidden:true});
+  const dismiss=el("button",{dataset:{attributeDismiss:""},hidden:true});
   const status=el("p",{dataset:{attributeStatus:""}}),values=el("div",{dataset:{attributeValues:""}});
-  const panel=el("section",{dataset:{attributePanel:""}},[status,values,apply]);
+  const panel=el("section",{dataset:{attributePanel:""}},[status,values,apply,retry,cancel,dismiss]);
   const form=el("form",{elements:{namedItem:name=>({species,coat_color:coat}[name])}},[
     input,panel,el("input",{attributes:{name:"csrf_token"},value:"token"})]);
   class FormDataMock {append(){}}
@@ -119,8 +192,9 @@ test("photo suggestions discard stale replies and preserve manually entered attr
   assert.equal(h.requests[0].options.signal.aborted,true);
   h.requests[1].resolve({ok:true,json:async()=>({mode:"local",suggestions:{species:"Mèo",coat_color:"trắng"}})});await settle();
   h.requests[0].resolve({ok:true,json:async()=>({mode:"vision",suggestions:{coat_color:"đen"}})});await settle();
+  assert.match(status.textContent,/cục bộ/);
   apply.click();assert.equal(species.value,"Chó đã nhập");assert.equal(coat.value,"trắng");
-  assert.equal(panel.getAttribute("aria-busy"),"false");assert.match(status.textContent,/cục bộ/);
+  assert.equal(panel.getAttribute("aria-busy"),"false");assert.match(status.textContent,/điền/);
 });
 
 

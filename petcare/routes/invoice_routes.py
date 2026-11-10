@@ -17,6 +17,7 @@ def index():
     listing = invoice_service.list_invoices(
         g.user["id"], request.args.get("q", ""), request.args.get("status", ""),
         page=request.args.get("page", "1"),
+        tenant_id=g.tenant_id,
     )
     return render_template(
         "invoices/index.html",
@@ -47,16 +48,22 @@ def create():
                         "item_id": item_id, "quantity": quantity
                     })
                 invoice_id = invoice_service.create_invoice(
-                    g.user["id"], request.form, items
+                    g.user["id"], request.form, items, tenant_id=g.tenant_id
                 )
                 flash("Đã lập hóa đơn chưa thanh toán. Tồn kho sẽ đổi sau khi thu tiền.", "success")
                 return redirect(url_for("invoices.detail", invoice_id=invoice_id))
             except ServiceError as exc:
                 form_error = str(exc)
                 errors = getattr(exc, "field_errors", {})
-    customer_listing = customer_service.list_customers(g.user["id"], page="1")
-    product_listing = product_service.list_products(g.user["id"], page="1")
-    pet_listing = pet_service.list_pets(g.user["id"], status="available", page="1")
+    customer_listing = customer_service.list_customers(
+        g.user["id"], page="1", tenant_id=g.tenant_id
+    )
+    product_listing = product_service.list_products(
+        g.user["id"], page="1", tenant_id=g.tenant_id
+    )
+    pet_listing = pet_service.list_pets(
+        g.user["id"], status="available", page="1", tenant_id=g.tenant_id
+    )
     # Restore selections even when their records are outside the first lookup
     # page. These service calls enforce tenant scope and never trust posted prices.
     selected_customer = (
@@ -69,7 +76,9 @@ def create():
     ):
         try:
             customer_listing["items"].append(
-                customer_service.get_customer(g.user["id"], selected_customer)
+                customer_service.get_customer(
+                    g.user["id"], selected_customer, tenant_id=g.tenant_id
+                )
             )
         except (NotFoundError, ValidationError):
             customer_listing["items"].append({"id": selected_customer, "full_name": "—", "phone": "—"})
@@ -86,7 +95,7 @@ def create():
         if any(str(row["id"]) == item_id for row in listing["items"]):
             continue
         try:
-            listing["items"].append(get_item(g.user["id"], item_id))
+            listing["items"].append(get_item(g.user["id"], item_id, tenant_id=g.tenant_id))
         except (NotFoundError, ValidationError):
             # The original value remains visible as an unavailable option.
             continue
@@ -118,7 +127,8 @@ def create():
 @login_required
 def lookup_customers():
     listing = customer_service.list_customers(
-        g.user["id"], request.args.get("q", ""), page=request.args.get("page", "1")
+        g.user["id"], request.args.get("q", ""), page=request.args.get("page", "1"),
+        tenant_id=g.tenant_id,
     )
     return jsonify(
         items=[
@@ -136,8 +146,12 @@ def quick_customer():
     if not isinstance(payload, dict):
         return jsonify(error=translate("Nội dung gửi lên chưa hợp lệ.")), 400
     try:
-        customer_id = customer_service.create_customer(g.user["id"], payload)
-        customer = customer_service.get_customer(g.user["id"], customer_id)
+        customer_id = customer_service.create_customer(
+            g.user["id"], payload, tenant_id=g.tenant_id
+        )
+        customer = customer_service.get_customer(
+            g.user["id"], customer_id, tenant_id=g.tenant_id
+        )
     except ServiceError as exc:
         return jsonify(
             error=translate(str(exc)),
@@ -151,10 +165,12 @@ def quick_customer():
 def lookup_items():
     search = request.args.get("q", "")
     products = product_service.list_products(
-        g.user["id"], search, page=request.args.get("product_page", "1")
+        g.user["id"], search, page=request.args.get("product_page", "1"),
+        tenant_id=g.tenant_id,
     )
     pets = pet_service.list_pets(
-        g.user["id"], search, "available", page=request.args.get("pet_page", "1")
+        g.user["id"], search, "available", page=request.args.get("pet_page", "1"),
+        tenant_id=g.tenant_id,
     )
     return jsonify(
         products=[
@@ -183,7 +199,9 @@ def lookup_items():
 @login_required
 def detail(invoice_id):
     try:
-        invoice = invoice_service.get_invoice(g.user["id"], invoice_id)
+        invoice = invoice_service.get_invoice(
+            g.user["id"], invoice_id, tenant_id=g.tenant_id
+        )
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("invoices.index"))
@@ -206,7 +224,7 @@ def refund(invoice_id):
     ]
     try:
         result = refund_service.refund_invoice(
-            g.user["id"], invoice_id, request.form, lines
+            g.user["id"], invoice_id, request.form, lines, tenant_id=g.tenant_id
         )
         if result["status"] == "already_recorded":
             flash("Yêu cầu này đã được ghi nhận trước đó; không tạo khoản hoàn trùng.", "info")
@@ -221,7 +239,9 @@ def refund(invoice_id):
 @login_required
 def pay(invoice_id):
     try:
-        result = invoice_service.pay_invoice(g.user["id"], invoice_id)
+        result = invoice_service.pay_invoice(
+            g.user["id"], invoice_id, tenant_id=g.tenant_id
+        )
         if result == "already_paid":
             flash("Hóa đơn đã được thanh toán trước đó; không ghi nhận lần hai.", "info")
         else:
@@ -235,7 +255,9 @@ def pay(invoice_id):
 @login_required
 def cancel(invoice_id):
     try:
-        result = invoice_service.cancel_invoice(g.user["id"], invoice_id)
+        result = invoice_service.cancel_invoice(
+            g.user["id"], invoice_id, tenant_id=g.tenant_id
+        )
         flash(
             "Hóa đơn đã được hủy." if result == "cancelled" else "Hóa đơn này đã hủy.",
             "success",

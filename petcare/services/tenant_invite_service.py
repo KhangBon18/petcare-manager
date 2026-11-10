@@ -6,10 +6,10 @@ import secrets
 
 from flask import current_app, url_for
 
-from petcare.database.connection import read_connection, transaction
+from petcare.database.connection import read_connection, set_tenant_context, transaction
 from petcare.email_address import normalize_email
 from petcare.i18n import current_locale
-from petcare.repositories import audit_repo, invitation_repo
+from petcare.repositories import audit_repo, invitation_repo, user_repo
 from petcare.services import mail_service, request_throttle_service
 from petcare.services.common import require_actor
 from petcare.services.exceptions import ConflictError, NotFoundError, RateLimitError, ValidationError
@@ -27,7 +27,7 @@ def _token_hash(token):
     return hashlib.sha256(token.encode("ascii")).hexdigest()
 
 
-def create_invitation(actor_id, email, role="staff"):
+def create_invitation(actor_id, email, role="staff", tenant_id=None):
     if role not in {"staff", "admin"}:
         raise ValidationError("Vai trò lời mời không hợp lệ.")
     email = normalize_email(email)
@@ -41,7 +41,7 @@ def create_invitation(actor_id, email, role="staff"):
     email_queued = mail_service.is_configured()
     try:
         with transaction() as connection:
-            actor = require_actor(connection, actor_id, admin=True)
+            actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             if invitation_repo.get_open_for_email(connection, actor["tenant_id"], email):
                 raise ConflictError("Email này đã có lời mời đang chờ trong cửa hàng.")
             invitation = invitation_repo.create(
@@ -86,15 +86,15 @@ def create_invitation(actor_id, email, role="staff"):
     }
 
 
-def list_invitations(actor_id):
+def list_invitations(actor_id, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         return invitation_repo.list_for_tenant(connection, actor["tenant_id"])
 
 
-def revoke_invitation(actor_id, invitation_id):
+def revoke_invitation(actor_id, invitation_id, tenant_id=None):
     with transaction() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         changed = invitation_repo.revoke(connection, invitation_id, actor["tenant_id"])
         if not changed:
             raise NotFoundError("Lời mời không còn hiệu lực hoặc không tồn tại.")
@@ -176,11 +176,7 @@ def accept_invitation(token, username, password, full_name=""):
             invitation_repo.add_or_reactivate_membership(
                 connection, invitation["tenant_id"], user_id, invitation["role"]
             )
-            cursor = connection.cursor()
-            try:
-                cursor.execute("SET @petcare_tenant_id = %s", (invitation["tenant_id"],))
-            finally:
-                cursor.close()
+            set_tenant_context(connection, invitation["tenant_id"])
             if not invitation_repo.mark_accepted(
                 connection, invitation["id"], invitation["tenant_id"], user_id
             ):
@@ -190,12 +186,7 @@ def accept_invitation(token, username, password, full_name=""):
                 f"Tham gia cửa hàng qua lời mời với vai trò {invitation['role']}",
                 {"role": invitation["role"]},
             )
-            cursor = connection.cursor()
-            try:
-                cursor.execute("SELECT session_version FROM users WHERE id = %s", (user_id,))
-                session_version = cursor.fetchone()[0]
-            finally:
-                cursor.close()
+            session_version = user_repo.get_session_version(connection, user_id)
     except Exception as exc:
         if getattr(exc, "errno", None) == 1062:
             raise ConflictError("Tên đăng nhập đã được sử dụng.") from exc

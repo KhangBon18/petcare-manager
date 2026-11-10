@@ -5,10 +5,10 @@ from petcare.services.common import page_window, phone_value, positive_id, requi
 from petcare.services.exceptions import NotFoundError, ValidationError
 
 
-def list_customers(actor_id, search="", include_inactive=False, page=None):
+def list_customers(actor_id, search="", include_inactive=False, page=None, tenant_id=None):
     search = (search or "").strip()[:120]
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         if page is not None:
             total = customer_repo.count_customers(connection, search, include_inactive)
             _current_page, offset, pagination = page_window(page, total)
@@ -23,20 +23,20 @@ def list_customers(actor_id, search="", include_inactive=False, page=None):
         )
 
 
-def get_customer(actor_id, customer_id):
+def get_customer(actor_id, customer_id, tenant_id=None):
     customer_id = positive_id(customer_id, "Khách hàng")
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         customer = customer_repo.get_customer(connection, customer_id)
     if not customer:
         raise NotFoundError("Không tìm thấy khách hàng.")
     return customer
 
 
-def get_customer_profile(actor_id, customer_id, page="1"):
+def get_customer_profile(actor_id, customer_id, page="1", pet_page="1", tenant_id=None):
     customer_id = positive_id(customer_id, "Khách hàng")
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         customer = customer_repo.get_customer(connection, customer_id)
         if not customer:
             raise NotFoundError("Không tìm thấy khách hàng.")
@@ -45,6 +45,13 @@ def get_customer_profile(actor_id, customer_id, page="1"):
         currencies = customer_repo.summarize_customer_invoices(connection, customer_id)
         invoices = customer_repo.list_customer_invoices_page(
             connection, customer_id, pagination["page_size"], offset
+        )
+        pet_total = customer_repo.count_customer_pets(connection, customer_id)
+        _pet_current_page, pet_offset, pet_pagination = page_window(
+            pet_page, pet_total, page_size=12
+        )
+        purchased_pets = customer_repo.list_customer_pets(
+            connection, customer_id, pet_pagination["page_size"], pet_offset
         )
 
     summary = {
@@ -61,7 +68,9 @@ def get_customer_profile(actor_id, customer_id, page="1"):
         "customer": customer,
         "summary": summary,
         "invoices": invoices,
+        "purchased_pets": purchased_pets,
         "pagination": pagination,
+        "pet_pagination": pet_pagination,
     }
 
 
@@ -82,10 +91,10 @@ def _customer_data(data):
     return values["full_name"], values["phone"], values["address"]
 
 
-def create_customer(actor_id, data):
+def create_customer(actor_id, data, tenant_id=None):
     full_name, phone, address = _customer_data(data)
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         customer_id = customer_repo.create_customer(connection, full_name, phone, address)
         audit_repo.add_event(
             connection, actor_id, "customer.created", "customer", customer_id,
@@ -94,11 +103,11 @@ def create_customer(actor_id, data):
         return customer_id
 
 
-def update_customer(actor_id, customer_id, data):
+def update_customer(actor_id, customer_id, data, tenant_id=None):
     customer_id = positive_id(customer_id, "Khách hàng")
     full_name, phone, address = _customer_data(data)
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         current = customer_repo.get_customer(connection, customer_id)
         if not current:
             raise NotFoundError("Không tìm thấy khách hàng.")
@@ -117,10 +126,10 @@ def update_customer(actor_id, customer_id, data):
             )
 
 
-def set_active(actor_id, customer_id, active):
+def set_active(actor_id, customer_id, active, tenant_id=None):
     customer_id = positive_id(customer_id, "Khách hàng")
     with transaction() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         customer = customer_repo.get_customer(connection, customer_id)
         if not customer:
             raise NotFoundError("Không tìm thấy khách hàng.")

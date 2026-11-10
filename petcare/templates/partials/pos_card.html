@@ -7,7 +7,7 @@
         data-photo="{{ url_for('products.photo' if kind == 'product' else 'pets.photo', filename=item.photo_filename) if item.photo_filename else '' }}"
         {% if kind == 'product' and item.stock_qty == 0 %}disabled{% endif %}>
   <span class="pos-card-image">
-    {% if item.photo_filename %}<img src="{{ url_for('products.photo' if kind == 'product' else 'pets.photo', filename=item.photo_filename) }}" alt="{{ item.name }}" loading="lazy">{% else %}{{ icon('products' if kind == 'product' else 'pets') }}{% endif %}
+    {% if item.photo_filename %}<img src="{{ url_for('products.photo' if kind == 'product' else 'pets.photo', filename=item.photo_filename) }}" alt="{{ item.name }}" width="640" height="352" loading="lazy" decoding="async">{% else %}{{ icon('products' if kind == 'product' else 'pets') }}{% endif %}
     <span class="pos-kind">{{ t('Sản phẩm') if kind == 'product' else t('Thú cưng') }}</span>
   </span>
   <span class="pos-card-copy"><small>{{ item.code }}</small><strong>{{ item.name }}</strong><b>{{ format_money(price) }}</b>

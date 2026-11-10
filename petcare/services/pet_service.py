@@ -11,12 +11,12 @@ from petcare.vision.photo_storage import remove_pet_photo, store_pet_photo
 from petcare.vision.media_storage import get_media_storage, media_tenant_id
 
 
-def list_pets(actor_id, search="", status="", page=None):
+def list_pets(actor_id, search="", status="", page=None, tenant_id=None):
     if status not in ("", "available", "sold", "inactive"):
         status = ""
     search = (search or "").strip()[:120]
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         if page is not None:
             total = pet_repo.count_pets(connection, search, status)
             _current_page, offset, pagination = page_window(page, total)
@@ -29,19 +29,19 @@ def list_pets(actor_id, search="", status="", page=None):
         return pet_repo.list_pets(connection, search, status)
 
 
-def get_pet(actor_id, pet_id):
+def get_pet(actor_id, pet_id, tenant_id=None):
     pet_id = positive_id(pet_id, "Thú cưng")
     with read_connection() as connection:
-        require_actor(connection, actor_id)
+        require_actor(connection, actor_id, tenant_id=tenant_id)
         pet = pet_repo.get_pet(connection, pet_id)
     if not pet:
         raise NotFoundError("Không tìm thấy thú cưng.")
     return pet
 
 
-def owns_photo(actor_id, filename):
+def owns_photo(actor_id, filename, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         try:
             scoped_tenant_id = media_tenant_id(filename)
         except ValueError:
@@ -84,11 +84,11 @@ def _pet_data(data, currency_code, timezone_name):
     }
 
 
-def _store_upload(actor_id, image_upload):
+def _store_upload(actor_id, image_upload, tenant_id=None):
     if not image_upload or not getattr(image_upload, "filename", ""):
         return None
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
     tenant_id = actor["tenant_id"]
     return store_pet_photo(
         image_upload,
@@ -98,21 +98,21 @@ def _store_upload(actor_id, image_upload):
     )
 
 
-def create_pet(actor_id, data, image_upload=None):
+def create_pet(actor_id, data, image_upload=None, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
     pet = _pet_data(data, actor["default_currency"], actor["timezone"])
     pet["legacy_sale_price_vnd"] = (
         int(pet["sale_price"]) if actor["default_currency"] == "VND" else 0
     )
     stored = None
     try:
-        stored = _store_upload(actor_id, image_upload)
+        stored = _store_upload(actor_id, image_upload, tenant_id=tenant_id)
         if stored:
             pet["photo_filename"] = stored.filename
             pet["photo_descriptor"] = stored.descriptor_json
         with transaction() as connection:
-            require_actor(connection, actor_id, admin=True)
+            require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             pet_id = pet_repo.create_pet(connection, pet)
             audit_repo.add_event(
                 connection, actor_id, "pet.created", "pet", pet_id,
@@ -128,10 +128,10 @@ def create_pet(actor_id, data, image_upload=None):
         raise
 
 
-def update_pet(actor_id, pet_id, data, image_upload=None):
+def update_pet(actor_id, pet_id, data, image_upload=None, tenant_id=None):
     pet_id = positive_id(pet_id, "Thú cưng")
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id, admin=True)
+        actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
     pet = _pet_data(data, actor["default_currency"], actor["timezone"])
     pet["legacy_sale_price_vnd"] = (
         int(pet["sale_price"]) if actor["default_currency"] == "VND" else 0
@@ -139,9 +139,9 @@ def update_pet(actor_id, pet_id, data, image_upload=None):
     stored = None
     current = None
     try:
-        stored = _store_upload(actor_id, image_upload)
+        stored = _store_upload(actor_id, image_upload, tenant_id=tenant_id)
         with transaction() as connection:
-            require_actor(connection, actor_id, admin=True)
+            require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             current = pet_repo.get_pet(connection, pet_id, lock=True)
             if not current:
                 raise NotFoundError("Không tìm thấy thú cưng.")
@@ -188,10 +188,10 @@ def update_pet(actor_id, pet_id, data, image_upload=None):
             current_app.logger.exception("Could not clean up an unreferenced pet image")
 
 
-def set_inactive(actor_id, pet_id, inactive):
+def set_inactive(actor_id, pet_id, inactive, tenant_id=None):
     pet_id = positive_id(pet_id, "Thú cưng")
     with transaction() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         pet = pet_repo.get_pet(connection, pet_id)
         if not pet:
             raise NotFoundError("Không tìm thấy thú cưng.")

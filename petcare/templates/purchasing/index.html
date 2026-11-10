@@ -19,8 +19,8 @@
     <button class="button button-light" type="submit">{{ t('Lọc') }}</button>
     {% if status %}<a class="text-link" href="{{ url_for('purchasing.index') }}">{{ t('Xóa bộ lọc') }}</a>{% endif %}
   </form>
-  <div class="table-scroll" tabindex="0" aria-label="{{ t('Danh sách đơn nhập') }}">
-    <table class="purchase-table"><thead><tr><th>{{ t('ĐƠN NHẬP') }}</th><th>{{ t('NHÀ CUNG CẤP') }}</th><th>{{ t('HÀNG ĐÃ NHẬN') }}</th><th>{{ t('GIÁ TRỊ ĐẶT') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
+  <div class="table-scroll" role="region" tabindex="0" aria-label="{{ t('Danh sách đơn nhập') }}">
+    <table class="purchase-table"><thead><tr><th>{{ t('ĐƠN NHẬP') }}</th><th>{{ t('NHÀ CUNG CẤP') }}</th><th>{{ t('HÀNG ĐÃ NHẬN') }}</th><th>{{ t('GIÁ TRỊ ĐẶT') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th>{{ t('THAO TÁC') }}</th></tr></thead><tbody>
       {% for order in orders %}
       <tr>
         <td><a class="purchase-order-link" href="{{ url_for('purchasing.detail', purchase_order_id=order.id) }}"><strong>#{{ '%06d'|format(order.id) }}</strong><small>{{ format_datetime(order.created_at) }}</small></a></td>
@@ -35,6 +35,26 @@
       {% endfor %}
     </tbody></table>
   </div>
+  <ul class="purchase-mobile-orders" aria-label="{{ t('Danh sách đơn nhập') }}">
+    {% for order in orders %}
+    <li class="purchase-mobile-order">
+      <div class="purchase-mobile-order-heading">
+        <a class="purchase-order-link" href="{{ url_for('purchasing.detail', purchase_order_id=order.id) }}"><strong>#{{ '%06d'|format(order.id) }}</strong><small>{{ format_datetime(order.created_at) }}</small></a>
+        <span class="status-pill purchase-status-{{ order.status }}">{% if order.status == 'ordered' %}{{ t('Đã đặt') }}{% elif order.status == 'partially_received' %}{{ t('Đang nhận dở') }}{% elif order.status == 'received' %}{{ t('Đã nhận đủ') }}{% else %}{{ t('Đã đóng') }}{% endif %}</span>
+      </div>
+      <strong class="purchase-mobile-supplier">{{ order.supplier_name_snapshot }}</strong>
+      <dl class="purchase-mobile-order-metrics">
+        <div><dt>{{ t('Đã nhận') }}</dt><dd>{{ format_number(order.received_units) }} / {{ format_number(order.ordered_units) }}</dd></div>
+        <div><dt>{{ t('Còn thiếu') }}</dt><dd>{% if order.status in ('ordered', 'partially_received') %}{{ format_number(order.ordered_units - order.received_units) }}{% else %}—{% endif %}</dd></div>
+        <div><dt>{{ t('Mặt hàng') }}</dt><dd>{{ format_number(order.item_count) }}</dd></div>
+        <div><dt>{{ t('Giá trị đặt') }}</dt><dd>{{ format_money(order.total_amount, order.currency_code) }}</dd></div>
+      </dl>
+      <a class="button button-light button-small" href="{{ url_for('purchasing.detail', purchase_order_id=order.id) }}">{{ t('Chi tiết') }} →</a>
+    </li>
+    {% else %}
+    <li class="purchase-mobile-order purchase-mobile-empty"><span class="eyebrow">{{ t('ĐƠN NHẬP') }}</span><strong>{{ t('Chưa có đơn nhập nào') }}</strong><small>{{ t('Lập đơn đầu tiên để theo dõi hàng đặt và nhận vào kho.') }}</small><a class="button button-primary button-small" href="{{ url_for('purchasing.create') }}">{{ t('Lập đơn nhập') }}</a></li>
+    {% endfor %}
+  </ul>
   {% include "pagination.html" %}
 </section>
 {% endblock %}

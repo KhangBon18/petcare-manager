@@ -12,12 +12,13 @@ Trình duyệt gửi GET/POST đến Flask. Blueprint kiểm tra phiên, CSRF v�
 
 ## Thành phần
 
-- App factory ở petcare/__init__.py đăng ký CSRF, blueprint tài khoản/xác minh email/khôi phục mật khẩu và error handler; response của phiên đã đăng nhập bị đánh dấu `private, no-store` để trình duyệt không lưu lại dữ liệu tenant sau đăng xuất hoặc chuyển cửa hàng.
+- `petcare/app_factory.py` là composition root; `petcare/__init__.py` và `petcare/app.py` re-export `create_app` để giữ import cũ. `app_configuration.py` kiểm tra runtime/production config; `app_hooks.py` đăng ký CSRF, tải phiên, locale, image throttling, security headers, error handlers và Jinja helpers. Response của phiên đăng nhập là `private, no-store` để trình duyệt không giữ dữ liệu tenant sau đăng xuất hoặc đổi cửa hàng.
 - petcare/auth.py tải user, membership và quyền cửa hàng đang chọn từ MySQL trước mỗi request có đăng nhập. Session có chữ ký lưu user id, tenant id và `session_version`; đổi mật khẩu hoặc khóa/mở lại membership tăng version để thu hồi các cookie phiên cũ.
 - Danh tính gồm tên hiển thị/mật khẩu dùng chung toàn nền tảng, còn role/active thuộc từng membership. Admin cửa hàng không được sửa tên hoặc mật khẩu toàn cục khi user có nhiều membership, kể cả membership đang inactive; chủ tài khoản đổi tên tại `/account/settings` sau re-auth. Tên thay đổi được audit trên membership đang hoạt động mà không lưu giá trị tên vào log.
 - Owner được nhận diện riêng trong danh sách thành viên; màn quản trị cửa hàng không thể khóa hoặc hạ quyền owner. Luồng bàn giao tại `/users/ownership` yêu cầu owner nhập lại mật khẩu, chọn admin đang hoạt động, rồi admin mục tiêu đăng nhập và xác thực lại trong 72 giờ. Khi chấp nhận, membership của người gửi chuyển thành admin và người nhận thành owner trong cùng transaction; yêu cầu có thể bị thu hồi bằng re-auth, ghi audit, giới hạn tần suất và chỉ gửi email thông báo tới địa chỉ đã xác minh. Email không chứa bí mật xác nhận. Owner/admin quản lý tên hiển thị cửa hàng và timezone tenant tại `/store/settings`; slug giữ ổn định, currency không đổi cho đến khi có FX/ledger.
-- petcare/services/ giữ quy tắc nghiệp vụ và transaction.
-- petcare/repositories/ giữ SQL MySQL, không commit.
+- `petcare/services/` giữ quy tắc nghiệp vụ và transaction; `services/actors.py` cung cấp actor context đã xác minh membership. `catalog_intent.py` và `assistant_local.py` tách logic phân loại/lọc khỏi câu trả lời nội bộ; `assistant_service.py` điều phối provider và giữ compatibility exports.
+- `petcare/repositories/` giữ SQL MySQL, không commit.
+- `petcare/database/readiness.py` kiểm tra schema MySQL theo contract chỉ đọc; `petcare/services/ops_metrics_service.py` dựng payload metrics tổng hợp, còn route vẫn bảo vệ endpoint bằng bearer token.
 - `petcare.database.connection` cấp MySQL connections qua pool thread-safe theo process. Mỗi checkout reset về UTC và `@petcare_tenant_id = NULL`; cấu hình pool được giới hạn để ngân sách kết nối có thể tính theo số web/worker process. Production bắt buộc `DB_SSL_CA` và bật xác minh CA lẫn hostname cho app, email worker và migration connections; thay CA tạo pool mới.
 - petcare/templates/ dùng Jinja autoescape mặc định.
 - petcare/static/ chứa CSS/JS local, không phụ thuộc CDN.
@@ -58,3 +59,58 @@ Operator có thể export một cửa hàng qua CLI; admin tự tải export t�
 Trợ lý chạy trong route được bảo vệ đăng nhập; nhánh cục bộ trả lời từ dữ liệu hiện hành theo các nhóm câu hỏi, gồm tổng quan cửa hàng, và cung cấp prompt gợi ý mà không gọi nhà cung cấp AI. Với SaaS, trình duyệt vẫn gửi request tới app server. Nếu cấu hình endpoint, service gửi lịch sử ngắn và context đã lọc. Phân tích ảnh chỉ diễn ra ở endpoint khi `AI_VISION_ENABLED=1`; nếu endpoint lỗi, tìm kiếm tiếp tục với bộ mô tả cục bộ.
 
 Tìm ảnh cục bộ chuẩn hóa ảnh và so sánh histogram HSV toàn ảnh, histogram vùng giữa 60% và lưới xám 16×16 với descriptor trong hồ sơ. Candidate được đọc theo lô tối đa 250 và chỉ top-12 được giữ trong RAM; việc tính điểm vẫn duyệt tuyến tính toàn bộ thú cưng đang bán, nên tenant lớn cần đo tải và có thể cần vector search. Khi không có ảnh tham chiếu, chỉ xếp hạng bảo thủ theo màu/tags; không có detector hoặc embedding đã huấn luyện. Vùng trung tâm giảm ảnh hưởng nền nhưng không cô lập được con vật; lưới cấu trúc toàn khung và điểm xếp hạng không phải confidence nhận dạng. Descriptor cũ được hỗ trợ; operator có thể dry-run rồi rebuild bằng command reindex theo batch.
+
+## Audit architecture snapshot — 2026-11-09
+
+> This section records the repository and runtime observed during the audit. It supplements the existing architecture guide and preserves its earlier content.
+
+### Verified runtime
+
+- Python 3.13.3 on the audit host; project documentation requires Python 3.11+, and CI covers 3.11–3.13. The Docker image uses Python 3.12.
+- Flask 3.1.3, Flask-WTF 1.3.0, MySQL Connector/Python 9.7.0, MySQL Server 8.4.11, Jinja2, Babel, Pillow 13.0.0, XlsxWriter, boto3 and cryptography were installed in a temporary audit virtualenv from requirements.txt.
+- Flask uses server-rendered Jinja templates and vanilla JavaScript. There is no frontend build step or ORM. Repositories issue parameterized MySQL SQL; schema uses InnoDB and tenant-scoped foreign keys.
+- Development entry point: `run.py`, bound to `127.0.0.1:5055` by default. Container entry point: `wsgi:app` under Gunicorn. `main.py` and `petcare/app.py` are compatibility entry points.
+- Configuration is environment-backed through `petcare/config.py` and `.env`. The audit did not print or copy secret values. The local `.env` file is ignored by Git.
+
+### Runtime boundaries
+
+~~~mermaid
+flowchart LR
+  Browser[Browser: Jinja HTML, CSS, vanilla JS] --> Routes[Flask routes + request hooks]
+  Routes --> Services[Services: validation, authorization, transactions]
+  Services --> Repos[Repositories: parameterized MySQL]
+  Repos --> DB[(MySQL 8 / InnoDB)]
+  Services --> Media[Private local media or S3]
+  Services --> AI[Optional chat / vision endpoint]
+  Services --> Outbox[Encrypted mail outbox]
+  Outbox --> MailWorker[Mail worker]
+  Services --> ExportQueue[MySQL tenant export jobs]
+  ExportQueue --> ExportWorker[Export worker + private storage]
+~~~
+
+The observed source boundaries match this model: route modules handle HTTP/rendering and delegate; services validate actors and business rules and own transactions; repositories contain SQL and do not commit. `app_factory.py` registers 15 blueprints. `app_hooks.py` applies CSRF, session loading, locale selection, image request limits, security headers and error handling. The browser receives session-backed identity only; active membership, tenant and role are reloaded from MySQL on authenticated requests.
+
+### Data and workflow invariants
+
+- One shared schema contains tenants, users and tenant memberships. Customer, catalog, invoice, movement, purchase and refund records carry `tenant_id`; composite foreign keys enforce tenant scope in MySQL.
+- Invoice line name, code, currency and price are snapshots. Invoice creation does not reserve stock. Payment locks the invoice/items and relevant catalog rows, then writes inventory movement and paid state in one transaction. Repeated payment is idempotent.
+- Refunds are a separate ledger. The service validates refundable quantities and disposition, updates stock/sale state, and records refund rows atomically.
+- Money uses Python `Decimal` and MySQL `DECIMAL(20,4)`; currency and timezone are tenant settings. Persisted datetimes are UTC; presentation uses the tenant timezone.
+- Customer-facing images are private. Routes check current tenant ownership before returning image bytes. Local filesystem is the default; S3 is opt-in.
+- The assistant has deterministic local answering and catalog search. Provider AI is optional; AI Vision is separately gated. The local visual search ranks stored descriptors by color and composition and is not an animal detector.
+
+### Schema ownership
+
+`petcare/database/schema.sql` creates the base identity, tenancy, auth, audit, customer, catalog, invoice, stock, throttle, worker and export tables. `purchasing.sql` adds suppliers and purchase orders plus a request fingerprint ledger for idempotent receiving; `refunds.sql` adds the refund ledger. `initialize.py` applies additive schema/migration work and `seed.py` is limited to development/test databases. There are no SQLAlchemy models; these SQL files and repository queries are the data model.
+
+### Startup and operational separation
+
+1. Create a Python 3.11+ virtualenv and install `requirements.txt` with `-c requirements.lock`.
+2. Configure a separate MySQL database (development docs use `petcare_shop_dev`), then run `python -m petcare.database.initialize`; seed only synthetic demo data where appropriate.
+3. Run `python run.py` for local development. The Docker image runs Gunicorn. Email and tenant export workers are separate processes.
+4. `/healthz` checks process liveness; `/readyz` checks the schema contract and MySQL; `/workersz` requires fresh email and export worker heartbeats. `/metrics` is off unless configured with a bearer token.
+5. Production settings require HTTPS, verified MySQL TLS, a stable secret and a separate migration account. Compose configuration validation and a local image build passed in Phase 1.5; production container runtime and deployment were not tested.
+
+### Audit-host observation
+
+The configured development database answered read-only queries as MySQL 8.4.11, but had 20 tables and failed the current readiness contract; required purchase/refund tables were absent. The application therefore returned `503` from `/readyz` on that database. A separate `_test` database initialized to 25 tables during the initial audit and passed that version's readiness contract; Phase 1.5 adds one request-ledger table, so the current expected schema has 26 tables. The application and test data were kept separate. No migration, seed or write was run against `petcare_shop_dev`.

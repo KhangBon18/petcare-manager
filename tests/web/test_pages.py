@@ -366,7 +366,8 @@ class WebPageTests(unittest.TestCase):
                 "pets/search_image.html",
                 matches={
                     "results": [], "has_reference_photos": False,
-                    "dominant_colors": ["đen"], "analysis": {"species": "cat"},
+                    "dominant_colors": ["đen"],
+                    "analysis": {"species": "cat", "breed": "Maine Coon", "coat_length": "long-haired"},
                     "warning": None,
                 },
                 phone_capture_enabled=False,
@@ -374,8 +375,9 @@ class WebPageTests(unittest.TestCase):
                 vision_enabled=True,
             )
 
-        self.assertIn("AI Vision + so khớp cục bộ", html)
+        self.assertIn("AI Vision + đối chiếu thuộc tính", html)
         self.assertIn("AI Vision đang bật", html)
+        self.assertIn("Độ dài lông", html)
 
     def test_catalog_edit_forms_render_currency_scaled_input_values_and_steps(self):
         product = SimpleNamespace(
@@ -498,7 +500,7 @@ class WebPageTests(unittest.TestCase):
         foreign_keys = list(REQUIRED_TENANT_FOREIGN_KEYS | REQUIRED_GLOBAL_FOREIGN_KEYS)
         cursor = MagicMock()
         cursor.fetchall.side_effect = [columns, foreign_keys]
-        cursor.fetchone.return_value = (3,)
+        cursor.fetchone.return_value = (4,)
         self.assertTrue(schema_contract_is_ready(cursor))
 
         cursor.fetchall.side_effect = [

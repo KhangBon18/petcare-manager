@@ -1,5 +1,17 @@
 # Kết quả kiểm tra
 
+## Phase 2 — browser E2E và UX fixes — 2026-11-09
+
+- App thật chạy ở localhost trên schema browser QA `_test` riêng; thêm schema tự động `_test` riêng cho suite. Không sửa `petcare_shop_dev`/production; provider email/AI/Vision/S3 không cấu hình.
+- Browser đã xác minh owner/admin + staff login, customer/pet/product forms, local image search, POS invoice pay/cancel (trạng thái nội bộ), supplier + PO create/partial/full/cancel, report filter/XLSX, local assistant, role 403 và một ca cross-tenant isolation. Chi tiết: [browser results](BROWSER_TEST_RESULTS.md).
+- Phát hiện và sửa 3 lỗi P2: pet/product mất input khi server validation lỗi; quantity 0 estimate thành 1; tiền/mobile navigation vỡ chữ ở viewport nhỏ. Bổ sung 2 Python regression tests + 1 JS test, sau đó chạy full suite.
+- **366/366 Python tests PASS**, không báo skip/error, trong 36.2 giây. **27/27 JS tests PASS**.
+- `compileall`, `pip check`, exact Bandit CI gate, `pip-audit -r requirements.lock`, Compose parse, `git diff --check` đều exit 0. Bandit ghi `nosec encountered (B608)` warnings tại suppression hẹp; gate vẫn pass. Trivy chưa chạy.
+- `/healthz=200`, `/readyz=200` trên DB QA tự động; `/workersz=503` vì không có worker; `/metrics=404` vì disabled. Flask log không có 500/traceback; console browser error/warning rỗng.
+- Responsive lấy mẫu 320/390/820/1440 px; keyboard/screen reader/WCAG đầy đủ, Network panel, PDF/print, refund UI, SMTP/provider thật và S3 vẫn chưa kiểm. Dev DB readiness 503 là baseline Phase 1.5; không đo lại hoặc thay schema trong lượt này.
+
+Xem [FULL_E2E_AUDIT.md](FULL_E2E_AUDIT.md), [UX_ISSUES.md](UX_ISSUES.md), [MODULE_COMPLETENESS_MATRIX.md](MODULE_COMPLETENESS_MATRIX.md), [AI_INTEGRATION_AUDIT.md](AI_INTEGRATION_AUDIT.md), [MASTER_UPGRADE_ROADMAP.md](MASTER_UPGRADE_ROADMAP.md).
+
 ## Phase 4 — 2026-10-25
 
 - **283/283 Python tests**, không fail/error/skip: **171 unit, 55 web, 57 MySQL integration**, 32,014 giây; **19/19 JavaScript tests** đạt.

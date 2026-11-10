@@ -63,3 +63,20 @@ CREATE TABLE IF NOT EXISTS purchase_order_items (
     ),
     CONSTRAINT chk_purchase_order_items_cost CHECK (unit_cost >= 0 AND line_total = unit_cost * quantity_ordered)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Stores a request fingerprint so a retried partial-receipt POST cannot be
+-- counted again. Stock movements remain the quantity ledger.
+CREATE TABLE IF NOT EXISTS purchase_order_receipt_requests (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    purchase_order_id BIGINT UNSIGNED NOT NULL,
+    request_key CHAR(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    payload_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_purchase_receipt_requests_tenant_id (tenant_id, id),
+    UNIQUE KEY uq_purchase_receipt_requests_tenant_key (tenant_id, request_key),
+    INDEX idx_purchase_receipt_requests_order (tenant_id, purchase_order_id, created_at, id),
+    CONSTRAINT fk_purchase_receipt_requests_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_purchase_receipt_requests_order FOREIGN KEY (tenant_id, purchase_order_id) REFERENCES purchase_orders(tenant_id, id) ON DELETE RESTRICT,
+    CONSTRAINT chk_purchase_receipt_requests_hash CHECK (payload_hash REGEXP '^[0-9a-f]{64}$')
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -21,9 +21,13 @@
   const results = form.querySelector("[data-pos-results]");
   const search = form.querySelector("[data-pos-search]");
   const status = form.querySelector("[data-pos-status]");
+  const retry = form.querySelector("[data-pos-retry]");
   const skeleton = form.querySelector("[data-pos-skeleton]");
   const empty = form.querySelector("[data-pos-empty]");
   const cartEmpty = form.querySelector("[data-cart-empty]");
+  const mobileCartCount = form.querySelector("[data-pos-mobile-count]");
+  const mobileCartTotal = form.querySelector("[data-pos-mobile-total]");
+  const estimate = document.getElementById("estimate");
   const more = form.querySelector("[data-pos-more]");
   const submit = document.getElementById("invoice-submit");
   const catalog = new Map();
@@ -54,10 +58,16 @@
     info.querySelector("[data-cart-detail]").textContent = item
       ? `${money(item.price)} · ${copy.left} ${item.stock}` : select.value;
     const image = info.querySelector("[data-cart-image]");
+    image.dataset.kind = item?.kind || "pet";
     if (item?.photo && image.dataset.photo !== item.photo) {
-      const img = document.createElement("img"); img.src = item.photo; img.alt = item.name;
+      const img = document.createElement("img"); img.width = 640; img.height = 352;
+      img.src = item.photo; img.alt = item.name;
       image.replaceChildren(img); image.dataset.photo = item.photo;
-    } else if (!item?.photo) image.textContent = item?.kind === "pet" ? "🐾" : "▦";
+    } else if (!item?.photo) {
+      const icon = window.PetCare.icon(item?.kind === "product" ? "products" : "pets");
+      if (icon) image.replaceChildren(icon);
+      delete image.dataset.photo;
+    }
     const quantity = row.querySelector(".quantity-input");
     if (item && select.selectedOptions[0]) select.selectedOptions[0].dataset.price = item.price;
     if (item && !quantity.dataset.serverError) quantity.max = String(item.stock);
@@ -71,6 +81,17 @@
     form.invoiceUI.refresh();
     cartEmpty.hidden = rows.length > 0;
     submit.disabled = rows.length === 0;
+    const itemCount = rows.reduce((total, row) => {
+      const selected = Boolean(row.querySelector(".item-select").value);
+      const quantity = Number(row.querySelector(".quantity-input").value);
+      return selected && Number.isSafeInteger(quantity) && quantity > 0 ? total + quantity : total;
+    }, 0);
+    if (mobileCartCount) {
+      mobileCartCount.textContent = english
+        ? `${itemCount} item${itemCount === 1 ? "" : "s"} in order`
+        : `${itemCount} mặt hàng trong đơn`;
+    }
+    if (mobileCartTotal && estimate) mobileCartTotal.textContent = estimate.textContent;
     results.querySelectorAll("[data-pos-item]").forEach(card => {
       const chosen = quantities.get(card.dataset.selection) || 0;
       const exhausted = Number(card.dataset.stock) <= chosen;
@@ -98,7 +119,10 @@
     if (item.photo) {
       const img = document.createElement("img"); img.src = item.photo; img.alt = item.name; img.loading = "lazy";
       art.append(img);
-    } else { const symbol = document.createElement("span"); symbol.textContent = item.kind === "pet" ? "🐾" : "▦"; art.append(symbol); }
+    } else {
+      const icon = window.PetCare.icon(item.kind === "product" ? "products" : "pets");
+      if (icon) art.append(icon);
+    }
     const kind = document.createElement("span"); kind.className = "pos-kind";
     kind.textContent = item.kind === "pet" ? copy.pet : copy.product; art.append(kind);
     const body = document.createElement("span"); body.className = "pos-card-copy";
@@ -118,6 +142,7 @@
     results.hidden = loading;
     more.disabled = loading;
     more.textContent = loading ? copy.loading : copy.loadMore;
+    if (retry) retry.hidden = true;
     if (loading) { empty.hidden = true; status.textContent = copy.loading; }
   }
 
@@ -158,6 +183,7 @@
     } catch (error) {
       if (controller !== active || active.signal.aborted) return;
       setLoading(false); filterCards(); status.textContent = copy.error;
+      if (retry) retry.hidden = false;
     }
   }
 
@@ -190,6 +216,7 @@
     setLoading(true); timer = setTimeout(() => load(), 250);
   });
   more.addEventListener("click", () => load(true));
+  retry?.addEventListener("click", () => load());
   form.querySelectorAll("[data-pos-filter]").forEach(button => button.addEventListener("click", () => {
     filter = button.dataset.posFilter;
     form.querySelectorAll("[data-pos-filter]").forEach(tab => tab.setAttribute("aria-pressed", String(tab === button)));

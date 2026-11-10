@@ -8,7 +8,7 @@ from petcare.auth import admin_required, login_required
 from petcare.i18n import translate
 from petcare.services import pet_image_service, pet_service
 from petcare.services import request_throttle_service
-from petcare.services.exceptions import ServiceError
+from petcare.services.exceptions import ForbiddenError, ServiceError, ValidationError
 from petcare.services.ui_text import ui_text
 from petcare.vision.image_features import read_upload
 from petcare.vision.media_storage import get_media_storage
@@ -22,6 +22,7 @@ def index():
     listing = pet_service.list_pets(
         g.user["id"], request.args.get("q", ""), request.args.get("status", ""),
         page=request.args.get("page", "1"),
+        tenant_id=g.actor_context.tenant_id,
     )
     return render_template(
         "pets/index.html",
@@ -53,7 +54,9 @@ def find_similar():
                     raise ValueError("Hãy chọn ảnh mèo hoặc thú cưng để tìm kiếm.")
                 image_bytes = read_upload(photo.stream, current_app.config["PET_IMAGE_MAX_BYTES"])
                 filters = {"species": request.form.get("species", ""), "status": request.form.get("status", "available")}
-                matches = pet_image_service.search_similar(g.user["id"], image_bytes, **filters)
+                matches = pet_image_service.search_similar(
+                    g.user["id"], image_bytes, tenant_id=g.actor_context.tenant_id, **filters
+                )
             except (ServiceError, ValueError) as exc:
                 flash(str(exc), "error")
     phone_qr_data = None
@@ -102,21 +105,47 @@ def find_similar():
 def suggest_attributes():
     allowed, retry_after = request_throttle_service.consume_with_ip_limit(g.user["id"], request.remote_addr, "vision")
     if not allowed:
-        return jsonify(error=ui_text("Đã phân tích nhiều ảnh. Hãy thử lại sau.", "Too many image analyses. Try again later.")), 429, {"Retry-After": str(retry_after)}
+        return jsonify(
+            status="rate_limited",
+            code="vision_rate_limit",
+            error=ui_text("Đã phân tích nhiều ảnh. Hãy thử lại sau.", "Too many image analyses. Try again later."),
+        ), 429, {"Retry-After": str(retry_after)}
     try:
         photo = request.files.get("photo")
         if not photo or not photo.filename:
-            return jsonify(error=ui_text("Vui lòng chọn ảnh hồ sơ.", "Please choose a profile photo.")), 400
+            return jsonify(
+                status="invalid_input",
+                code="missing_file",
+                error=ui_text("Vui lòng chọn ảnh hồ sơ.", "Please choose a profile photo."),
+            ), 400
         content = read_upload(photo.stream, current_app.config["PET_IMAGE_MAX_BYTES"])
-        return jsonify(pet_image_service.suggest_attributes(g.user["id"], content))
+        return jsonify(pet_image_service.suggest_attributes(
+            g.user["id"], content, tenant_id=g.actor_context.tenant_id
+        ))
+    except ForbiddenError:
+        return jsonify(
+            status="forbidden",
+            code="forbidden",
+            error=ui_text("Bạn không có quyền phân tích ảnh.", "You are not allowed to analyze this image."),
+        ), 403
     except (ServiceError, ValueError) as exc:
-        return jsonify(error=translate(str(exc))), 400
+        error_status = "invalid_input" if isinstance(exc, (ValidationError, ValueError)) else "processing_error"
+        return jsonify(status=error_status, code="invalid_image", error=translate(str(exc))), 400
+    except Exception as exc:
+        current_app.logger.error(
+            "Pet photo attribute suggestion failed (%s).", type(exc).__name__
+        )
+        return jsonify(
+            status="processing_error",
+            code="vision_processing_failed",
+            error=ui_text("Không xử lý được ảnh. Hãy thử lại hoặc nhập thuộc tính thủ công.", "The image could not be processed. Retry or enter the attributes manually."),
+        ), 500
 
 
 @bp.get("/photo/<filename>")
 @login_required
 def photo(filename):
-    if not pet_service.owns_photo(g.user["id"], filename):
+    if not pet_service.owns_photo(g.user["id"], filename, tenant_id=g.actor_context.tenant_id):
         abort(404)
     try:
         image = get_media_storage(current_app.config, "pets").read(filename)
@@ -131,7 +160,7 @@ def photo(filename):
 @login_required
 def detail(pet_id):
     try:
-        pet = pet_service.get_pet(g.user["id"], pet_id)
+        pet = pet_service.get_pet(g.user["id"], pet_id, tenant_id=g.actor_context.tenant_id)
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("pets.index"))
@@ -143,39 +172,53 @@ def detail(pet_id):
 def create():
     if request.method == "POST":
         try:
-            pet_service.create_pet(g.user["id"], request.form, request.files.get("photo"))
+            pet_service.create_pet(
+                g.user["id"], request.form, request.files.get("photo"),
+                tenant_id=g.actor_context.tenant_id,
+            )
             flash("Đã thêm cá thể thú cưng vào cửa hàng.", "success")
             return redirect(url_for("pets.index"))
         except ServiceError as exc:
             flash(str(exc), "error")
-    return render_template("pets/form.html", pet=None)
+    return render_template(
+        "pets/form.html",
+        pet=None,
+        form_data=request.form if request.method == "POST" else {},
+    )
 
 
 @bp.route("/<int:pet_id>/edit", methods=["GET", "POST"])
 @admin_required
 def edit(pet_id):
     try:
-        pet = pet_service.get_pet(g.user["id"], pet_id)
+        pet = pet_service.get_pet(g.user["id"], pet_id, tenant_id=g.actor_context.tenant_id)
     except ServiceError as exc:
         flash(str(exc), "error")
         return redirect(url_for("pets.index"))
     if request.method == "POST":
         try:
             pet_service.update_pet(
-                g.user["id"], pet_id, request.form, request.files.get("photo")
+                g.user["id"], pet_id, request.form, request.files.get("photo"),
+                tenant_id=g.actor_context.tenant_id,
             )
             flash("Đã cập nhật cá thể thú cưng.", "success")
             return redirect(url_for("pets.detail", pet_id=pet_id))
         except ServiceError as exc:
             flash(str(exc), "error")
-    return render_template("pets/form.html", pet=pet)
+    return render_template(
+        "pets/form.html",
+        pet=pet,
+        form_data=request.form if request.method == "POST" else {},
+    )
 
 
 @bp.post("/<int:pet_id>/deactivate")
 @admin_required
 def deactivate(pet_id):
     try:
-        pet_service.set_inactive(g.user["id"], pet_id, True)
+        pet_service.set_inactive(
+            g.user["id"], pet_id, True, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã ngừng bán cá thể thú cưng.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")
@@ -186,7 +229,9 @@ def deactivate(pet_id):
 @admin_required
 def active(pet_id):
     try:
-        pet_service.set_inactive(g.user["id"], pet_id, False)
+        pet_service.set_inactive(
+            g.user["id"], pet_id, False, tenant_id=g.actor_context.tenant_id
+        )
         flash("Đã đưa cá thể trở lại danh sách bán.", "success")
     except ServiceError as exc:
         flash(str(exc), "error")

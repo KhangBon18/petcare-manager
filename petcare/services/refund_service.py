@@ -5,7 +5,6 @@ from uuid import UUID
 
 from petcare.database.connection import transaction
 from petcare.repositories import audit_repo, invoice_repo, pet_repo, refund_repo
-from petcare.repositories.base import fetch_all
 from petcare.repositories import product_repo
 from petcare.services.common import integer_value, positive_id, require_actor, text_value
 from petcare.services.exceptions import ConflictError, NotFoundError, ValidationError
@@ -54,7 +53,7 @@ def _normalize_lines(raw_lines):
     return normalized
 
 
-def refund_invoice(actor_id, invoice_id, data, raw_lines):
+def refund_invoice(actor_id, invoice_id, data, raw_lines, tenant_id=None):
     """Record a partial/full return without changing the paid invoice itself.
 
     ``resell`` returns stock or a pet to the available catalog, ``quarantine``
@@ -71,7 +70,7 @@ def refund_invoice(actor_id, invoice_id, data, raw_lines):
 
     try:
         with transaction() as connection:
-            actor = require_actor(connection, actor_id, admin=True)
+            actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             invoice = invoice_repo.get_invoice(connection, invoice_id, lock=True)
             if not invoice:
                 raise NotFoundError("Không tìm thấy hóa đơn.")
@@ -130,16 +129,7 @@ def refund_invoice(actor_id, invoice_id, data, raw_lines):
             })
             pets = []
             if pet_ids:
-                # B608 reviewed: only the placeholder count varies; IDs come
-                # from the locked invoice snapshot and stay bound parameters.
-                marks = ",".join(["%s"] * len(pet_ids))
-                pets = fetch_all(
-                    connection,
-                    "SELECT id, sale_status, buyer_id FROM pets "  # nosec B608
-                    f"WHERE tenant_id = @petcare_tenant_id AND id IN ({marks}) "
-                    "ORDER BY id FOR UPDATE",
-                    tuple(pet_ids),
-                )
+                pets = pet_repo.get_pets_by_ids(connection, pet_ids, lock=True)
             pet_by_id = {pet["id"]: pet for pet in pets}
             for pet_id in pet_ids:
                 pet = pet_by_id.get(pet_id)

@@ -50,17 +50,97 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt -c requirements.lock
       - name: Audit Python dependencies
         run: |
           python -m pip install pip-audit
-          pip-audit -r requirements.txt
+          pip-audit -r requirements.lock
       - name: Validate Compose configuration
         run: docker compose config --quiet
       - name: Run unit, web and MySQL integration tests
         run: python -m unittest discover -s tests -v
       - name: Run JavaScript form and lookup regressions
         run: node --test tests/js/*.test.cjs
+
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_ENV: test
+      APP_PORT: "5060"
+      PUBLIC_BASE_URL: http://127.0.0.1:5060
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_NAME: petcare_ci_browser_test
+      DB_USER: petcare_browser
+      DB_PASSWORD: petcare-ci-browser-password
+      SECRET_KEY: ci-only-browser-smoke-secret-not-used-for-deployment-0123456789
+      COOKIE_SECURE: "0"
+      LAN_ACCESS_ENABLED: "0"
+      PETCARE_TEST_DB_NAME: petcare_ci_browser_test
+      PLAYWRIGHT_ARTIFACT_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts
+      PET_IMAGE_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/pet-images
+      PRODUCT_IMAGE_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/product-images
+      TENANT_EXPORT_DIR: ${{ runner.temp }}/petcare-phase35-browser-artifacts/exports
+      MEDIA_STORAGE_BACKEND: local
+      TENANT_EXPORT_STORAGE_BACKEND: local
+      AI_API_BASE_URL: ""
+      AI_API_KEY: ""
+      AI_MODEL: ""
+      MAIL_HOST: ""
+      OPS_METRICS_TOKEN: ""
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: petcare_ci_browser_test
+          MYSQL_USER: petcare_browser
+          MYSQL_PASSWORD: petcare-ci-browser-password
+          MYSQL_ROOT_PASSWORD: petcare-ci-browser-root-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=petcare-ci-browser-root-password --silent"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=20
+          --health-start-period=15s
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements.lock
+            requirements-browser.lock
+      - name: Install runtime and browser dependencies
+        run: python -m pip install -r requirements.txt -c requirements.lock -r requirements-browser.lock
+      - name: Install pinned axe accessibility rules
+        run: npm ci --prefix tests/a11y
+      - name: Audit axe accessibility dependencies
+        run: npm audit --prefix tests/a11y
+      - name: Audit browser dependencies
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements-browser.lock
+      - name: Check installed package consistency
+        run: python -m pip check
+      - name: Install Chromium and system packages
+        run: python -m playwright install --with-deps chromium
+      - name: Run isolated Playwright browser smoke
+        run: python scripts/browser_smoke/run_smoke.py
+      - name: Upload screenshots, traces, logs, and result summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: phase35-browser-smoke-${{ github.run_id }}
+          path: ${{ runner.temp }}/petcare-phase35-browser-artifacts
+          if-no-files-found: warn
+          retention-days: 7
 
   source-security:
     runs-on: ubuntu-latest

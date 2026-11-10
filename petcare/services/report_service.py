@@ -45,9 +45,9 @@ def _period(start, end, timezone_name):
     return start_date, end_date, start_at_utc, end_at_utc
 
 
-def dashboard(actor_id):
+def dashboard(actor_id, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         today = tenant_today(actor["timezone"])
         start_at_utc, end_at_utc = utc_window_for_local_day(today, actor["timezone"])
         metrics = report_repo.dashboard(connection, start_at_utc, end_at_utc)
@@ -78,9 +78,9 @@ def dashboard(actor_id):
         return metrics
 
 
-def report(actor_id, start=None, end=None, period=None):
+def report(actor_id, start=None, end=None, period=None, tenant_id=None):
     with read_connection() as connection:
-        actor = require_actor(connection, actor_id)
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         if period:
             today = tenant_today(actor["timezone"])
             starts = {
@@ -95,6 +95,61 @@ def report(actor_id, start=None, end=None, period=None):
                 )
             start, end = starts[period].isoformat(), today.isoformat()
         return _report(connection, actor, start, end)
+
+
+def top_products_for_period(actor_id, period="7d", tenant_id=None):
+    """Return a small, tenant-scoped product sales ranking for a fixed period."""
+    with read_connection() as connection:
+        actor = require_actor(connection, actor_id, tenant_id=tenant_id)
+        today = tenant_today(actor["timezone"])
+        week_start = today - timedelta(days=today.weekday())
+        last_month_end = today.replace(day=1) - timedelta(days=1)
+        starts = {
+            "today": today,
+            "7d": today - timedelta(days=6),
+            "week": week_start,
+            "last_week": week_start - timedelta(days=7),
+            "month": today.replace(day=1),
+            "last_month": last_month_end.replace(day=1),
+        }
+        if not isinstance(period, str) or period not in starts:
+            raise ValidationError(
+                ui_text("Kỳ báo cáo không hợp lệ.", "The report period is invalid.")
+            )
+        start_date = starts[period]
+        end_date = (
+            week_start - timedelta(days=1) if period == "last_week" else
+            last_month_end if period == "last_month" else today
+        )
+        start_at, end_at = utc_window_for_local_dates(
+            start_date, end_date + timedelta(days=1), actor["timezone"]
+        )
+        rows = report_repo.top_products(connection, start_at, end_at)
+
+    # The report query is already ordered and capped at ten rows. Omit items
+    # with no net units sold so refund-only activity is not presented as a sale.
+    items = []
+    for row in rows:
+        quantity_sold = int(row["quantity_sold"] or 0)
+        product_id = row.get("product_id")
+        if quantity_sold <= 0 or not isinstance(product_id, int) or isinstance(product_id, bool):
+            continue
+        items.append({
+            "product_id": product_id,
+            "code": str(row.get("code") or ""),
+            "name": str(row.get("name") or ""),
+            "quantity_sold": quantity_sold,
+            "revenue": row.get("revenue") or Decimal(0),
+        })
+        if len(items) == 5:
+            break
+    return {
+        "period": period,
+        "start_date": start_date,
+        "end_date": end_date,
+        "currency_code": actor["default_currency"],
+        "items": items,
+    }
 
 
 def _report(connection, actor, start, end):

@@ -10,6 +10,10 @@
 {% block content %}
 <div class="page-heading pos-page-heading"><div><span class="eyebrow">{{ t('HÓA ĐƠN MỚI') }}</span><h1>{{ t('Lập hóa đơn') }}</h1></div><a class="back-link" href="{{ url_for('invoices.index') }}">← {{ t('Hóa đơn') }}</a></div>
 <form method="post" class="invoice-builder pos-builder" id="invoice-form" data-pos="true" data-currency="{{ currency_code }}" data-currency-precision="{{ currency_precision(currency_code) }}" data-locale="{{ locale }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<a class="pos-mobile-cart" href="#pos-order">
+  <span class="pos-mobile-cart-copy"><span data-pos-mobile-count aria-live="polite">{{ '0 mặt hàng trong đơn' if locale == 'vi' else '0 items in order' }}</span><strong data-pos-mobile-total>{{ format_money(0, currency_code) }}</strong></span>
+  <span class="pos-mobile-cart-action">{{ 'Xem đơn hàng' if locale == 'vi' else 'View order' }} <span aria-hidden="true">→</span></span>
+</a>
 <section class="panel pos-catalog" aria-labelledby="catalog-title">
   <div class="panel-heading"><div><span class="eyebrow">{{ 'CHỌN MẶT HÀNG' if locale == 'vi' else 'PRODUCT CATALOG' }}</span><h2 id="catalog-title">{{ 'Bán hàng tại quầy' if locale == 'vi' else 'Point of sale' }}</h2></div><span class="soft-badge">{{ products|length + pets|length }} {{ t('lựa chọn') }}</span></div>
   <div class="pos-toolbar">
@@ -17,6 +21,7 @@
     <div class="pos-filters" role="group" aria-label="{{ t('Mặt hàng') }}"><button type="button" data-pos-filter="all" aria-pressed="true">{{ 'Tất cả' if locale == 'vi' else 'All' }}</button><button type="button" data-pos-filter="product" aria-pressed="false">{{ t('Sản phẩm') }}</button><button type="button" data-pos-filter="pet" aria-pressed="false">{{ t('Thú cưng') }}</button></div>
   </div>
   <p class="pos-status" data-pos-status role="status" aria-live="polite">{{ 'Chạm mặt hàng để thêm vào đơn. Chọn lại sản phẩm để tăng số lượng.' if locale == 'vi' else 'Select an item to add it. Select a product again to increase its quantity.' }}</p>
+  <button class="button button-light button-small pos-retry" type="button" data-pos-retry hidden>{{ t('Thử lại') }}</button>
   <div class="pos-skeleton" data-pos-skeleton hidden aria-hidden="true">{% for n in range(6) %}<span></span>{% endfor %}</div>
   <div class="pos-catalog-grid" data-pos-results>
     {% for product in products %}{{ pos_card(product, 'product') }}{% endfor %}
@@ -25,7 +30,7 @@
   <div class="empty-state" data-pos-empty {% if products or pets %}hidden{% endif %}>{{ icon('search', 'empty-icon') }}<h2>{{ t('Chưa có sản phẩm phù hợp') }}</h2><p>{{ 'Thử tên hoặc mã khác, hoặc chọn lại bộ lọc.' if locale == 'vi' else 'Try another name, code, or filter.' }}</p></div>
   <button class="button button-light pos-more" type="button" data-pos-more data-product-page="1" data-pet-page="1" data-product-has-more="{{ 'true' if product_pagination.has_next else 'false' }}" data-pet-has-more="{{ 'true' if pet_pagination.has_next else 'false' }}" {% if not (product_pagination.has_next or pet_pagination.has_next) %}hidden{% endif %}>{{ t('Hiển thị thêm') }}</button>
 </section>
-<aside class="panel invoice-summary pos-order">
+<aside class="panel invoice-summary pos-order" id="pos-order" tabindex="-1">
 <div class="pos-order-scroll">
 <div class="pos-order-heading"><div><span class="eyebrow">{{ t('TÓM TẮT') }}</span><h2>{{ 'Đơn hàng hiện tại' if locale == 'vi' else 'Current order' }}</h2></div>{{ icon('invoice') }}</div>
 {{ error_summary(form_error|default(None)) }}

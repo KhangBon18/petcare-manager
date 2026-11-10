@@ -57,7 +57,7 @@ class TenantSignupCleanupTests(unittest.TestCase):
             return [{"tenant_id": 42, "user_id": 7}]
 
         with patch(
-            "petcare.services.tenant_signup_cleanup.fetch_all",
+            "petcare.repositories.tenant_cleanup_repo.fetch_all",
             side_effect=candidates,
         ):
             self.assertEqual(cleanup_expired_public_signups(connection), 1)

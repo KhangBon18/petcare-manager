@@ -1,6 +1,8 @@
 """Admin workflows for suppliers, purchase orders and partial stock receipts."""
 
 from decimal import Decimal
+from hashlib import sha256
+from uuid import UUID, uuid4
 
 from petcare.database.connection import read_connection, transaction
 from petcare.email_address import normalize_email
@@ -23,10 +25,10 @@ MAX_AMOUNT = Decimal("9999999999999999.9999")
 ORDER_STATUSES = {"ordered", "partially_received", "received", "cancelled"}
 
 
-def list_suppliers(actor_id, search="", include_inactive=False, page="1"):
+def list_suppliers(actor_id, search="", include_inactive=False, page="1", tenant_id=None):
     search = (search or "").strip()[:120]
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         total = purchase_repo.count_suppliers(connection, search, include_inactive)
         _page, offset, pagination = page_window(page, total)
         items = purchase_repo.list_suppliers_page(
@@ -67,11 +69,11 @@ def _supplier_data(data):
     return values
 
 
-def create_supplier(actor_id, data):
+def create_supplier(actor_id, data, tenant_id=None):
     supplier = _supplier_data(data)
     try:
         with transaction() as connection:
-            require_actor(connection, actor_id, admin=True)
+            require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             supplier_id = purchase_repo.create_supplier(connection, supplier)
             audit_repo.add_event(
                 connection, actor_id, "supplier.created", "supplier", supplier_id,
@@ -84,22 +86,22 @@ def create_supplier(actor_id, data):
         raise
 
 
-def get_supplier(actor_id, supplier_id):
+def get_supplier(actor_id, supplier_id, tenant_id=None):
     supplier_id = positive_id(supplier_id, "Nhà cung cấp")
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         supplier = purchase_repo.get_supplier(connection, supplier_id)
     if not supplier:
         raise NotFoundError("Không tìm thấy nhà cung cấp.")
     return supplier
 
 
-def update_supplier(actor_id, supplier_id, data):
+def update_supplier(actor_id, supplier_id, data, tenant_id=None):
     supplier_id = positive_id(supplier_id, "Nhà cung cấp")
     supplier = _supplier_data(data)
     try:
         with transaction() as connection:
-            require_actor(connection, actor_id, admin=True)
+            require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             current = purchase_repo.get_supplier(connection, supplier_id, lock=True)
             if not current:
                 raise NotFoundError("Không tìm thấy nhà cung cấp.")
@@ -120,10 +122,10 @@ def update_supplier(actor_id, supplier_id, data):
         raise
 
 
-def set_supplier_active(actor_id, supplier_id, active):
+def set_supplier_active(actor_id, supplier_id, active, tenant_id=None):
     supplier_id = positive_id(supplier_id, "Nhà cung cấp")
     with transaction() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         supplier = purchase_repo.get_supplier(connection, supplier_id, lock=True)
         if not supplier:
             raise NotFoundError("Không tìm thấy nhà cung cấp.")
@@ -139,11 +141,11 @@ def set_supplier_active(actor_id, supplier_id, active):
         )
 
 
-def list_purchase_orders(actor_id, status=None, page="1"):
+def list_purchase_orders(actor_id, status=None, page="1", tenant_id=None):
     if status and status not in ORDER_STATUSES:
         raise ValidationError("Trạng thái đơn nhập không hợp lệ.")
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         total = purchase_repo.count_purchase_orders(connection, status)
         _page, offset, pagination = page_window(page, total)
         items = purchase_repo.list_purchase_orders_page(
@@ -152,16 +154,16 @@ def list_purchase_orders(actor_id, status=None, page="1"):
     return {"items": items, "pagination": pagination}
 
 
-def list_active_suppliers(actor_id):
+def list_active_suppliers(actor_id, tenant_id=None):
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         return purchase_repo.list_active_suppliers(connection)
 
 
-def search_active_products(actor_id, search=""):
+def search_active_products(actor_id, search="", tenant_id=None):
     search = text_value(search or "", "Từ khóa", 80, required=False)
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         return product_repo.search_active_products_for_purchase(connection, search, limit=20)
 
 
@@ -195,12 +197,12 @@ def _parse_order_lines(lines, currency_code):
     return parsed
 
 
-def create_purchase_order(actor_id, data, lines):
+def create_purchase_order(actor_id, data, lines, tenant_id=None):
     supplier_id = positive_id(data.get("supplier_id"), "Nhà cung cấp")
     note = text_value(data.get("note"), "Ghi chú", 500, required=False)
     try:
         with transaction() as connection:
-            actor = require_actor(connection, actor_id, admin=True)
+            actor = require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
             parsed = _parse_order_lines(lines, actor["default_currency"])
             supplier = purchase_repo.get_supplier(connection, supplier_id, lock=True)
             if not supplier or not supplier["active"]:
@@ -235,10 +237,10 @@ def create_purchase_order(actor_id, data, lines):
         raise
 
 
-def get_purchase_order_detail(actor_id, purchase_order_id):
+def get_purchase_order_detail(actor_id, purchase_order_id, tenant_id=None):
     purchase_order_id = positive_id(purchase_order_id, "Đơn nhập")
     with read_connection() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         order = purchase_repo.get_purchase_order(connection, purchase_order_id)
         if not order:
             raise NotFoundError("Không tìm thấy đơn nhập.")
@@ -269,14 +271,45 @@ def _parse_receipt_lines(lines):
     return parsed
 
 
-def receive_purchase_order(actor_id, purchase_order_id, lines):
+def _receipt_request_key(value):
+    if value is None:
+        return str(uuid4())
+    raw = str(value).strip()
+    try:
+        normalized = str(UUID(raw))
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValidationError("Mã yêu cầu nhận hàng không hợp lệ. Hãy tải lại trang.") from exc
+    if normalized != raw.lower():
+        raise ValidationError("Mã yêu cầu nhận hàng không hợp lệ. Hãy tải lại trang.")
+    return normalized
+
+
+def _receipt_payload_hash(lines):
+    canonical = ",".join(
+        f"{line['item_id']}:{line['quantity']}"
+        for line in sorted(lines, key=lambda row: row["item_id"])
+    )
+    return sha256(canonical.encode("ascii")).hexdigest()
+
+
+def receive_purchase_order(actor_id, purchase_order_id, lines, tenant_id=None, request_key=None):
     purchase_order_id = positive_id(purchase_order_id, "Đơn nhập")
     parsed = _parse_receipt_lines(lines)
+    request_key = _receipt_request_key(request_key)
+    payload_hash = _receipt_payload_hash(parsed)
     with transaction() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         order = purchase_repo.get_purchase_order(connection, purchase_order_id, lock=True)
         if not order:
             raise NotFoundError("Không tìm thấy đơn nhập.")
+        previous_request = purchase_repo.find_receipt_request(connection, request_key)
+        if previous_request:
+            if (
+                previous_request["purchase_order_id"] != purchase_order_id
+                or previous_request["payload_hash"] != payload_hash
+            ):
+                raise ConflictError("Mã yêu cầu nhận hàng đã được dùng cho nội dung khác.")
+            return order["status"]
         if order["status"] in {"received", "cancelled"}:
             raise ConflictError("Đơn nhập đã đóng và không thể nhận thêm hàng.")
         order_items = purchase_repo.lock_purchase_order_items(connection, purchase_order_id)
@@ -306,6 +339,15 @@ def receive_purchase_order(actor_id, purchase_order_id, lines):
                     f"Tồn kho {product['name']} sẽ vượt {MAX_STOCK_QTY:,} đơn vị."
                 )
             line["stock_after"] = updated_stock
+
+        try:
+            purchase_repo.create_receipt_request(
+                connection, purchase_order_id, request_key, payload_hash
+            )
+        except Exception as exc:
+            if getattr(exc, "errno", None) == 1062:
+                raise ConflictError("Mã yêu cầu nhận hàng đã được sử dụng.") from exc
+            raise
 
         stock_after = {}
         for line in parsed:
@@ -343,10 +385,10 @@ def receive_purchase_order(actor_id, purchase_order_id, lines):
         return next_status
 
 
-def cancel_purchase_order(actor_id, purchase_order_id):
+def cancel_purchase_order(actor_id, purchase_order_id, tenant_id=None):
     purchase_order_id = positive_id(purchase_order_id, "Đơn nhập")
     with transaction() as connection:
-        require_actor(connection, actor_id, admin=True)
+        require_actor(connection, actor_id, admin=True, tenant_id=tenant_id)
         order = purchase_repo.get_purchase_order(connection, purchase_order_id, lock=True)
         if not order:
             raise NotFoundError("Không tìm thấy đơn nhập.")
