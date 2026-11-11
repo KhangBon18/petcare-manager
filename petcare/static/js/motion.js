@@ -1,6 +1,11 @@
 /* Optional presentation layer: content and business actions never wait for motion. */
 (() => {
   const engine = window.gsap;
+  // GSAP's CSSPlugin writes inline transform attributes. Safari/WebKit blocks
+  // those writes under the application's strict style-src policy; motion is
+  // decorative, so keep the policy strict and leave the static UI untouched.
+  const isSafariWebKit = navigator.vendor === "Apple Computer, Inc.";
+  if (isSafariWebKit) return;
   if (!engine?.matchMedia || !engine?.timeline) return;
   const root = document.documentElement;
   const noop = () => {};

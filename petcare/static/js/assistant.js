@@ -37,7 +37,7 @@
 
   function renderCards(catalog, parent) {
     if (!catalog || !Array.isArray(catalog.items)) return;
-    const group = document.createElement("div"); group.className = "assistant-catalog";
+    const group = document.createElement("div"); group.className = "assistant-catalog"; group.setAttribute("role", "group");
     const heading = document.createElement("strong");
     heading.textContent = english ? `${catalog.total} database matches · showing ${catalog.items.length}` : `${catalog.total} kết quả từ MySQL · hiển thị ${catalog.items.length}`;
     group.append(heading);
@@ -71,6 +71,7 @@
       : {today:"hôm nay", "7d":"7 ngày gần nhất", week:"tuần này", last_week:"tuần trước", month:"tháng này", last_month:"tháng trước"};
     const group = document.createElement("div");
     group.className = "assistant-catalog assistant-insight";
+    group.setAttribute("role", "group");
     group.setAttribute("aria-label", english ? "Top product sales" : "Sản phẩm bán chạy");
     const heading = document.createElement("strong");
     heading.textContent = `${english ? "Sales report" : "Báo cáo bán hàng"} · ${periodLabels[insight.period] || insight.period} · ${insight.start_date} – ${insight.end_date}`;
@@ -102,6 +103,7 @@
     if (!insight || insight.kind !== "operations_overview") return;
     const group = document.createElement("div");
     group.className = "assistant-catalog assistant-insight assistant-operations-overview";
+    group.setAttribute("role", "group");
     group.setAttribute("aria-label", english ? "Store operations overview" : "Tổng quan vận hành cửa hàng");
     const heading = document.createElement("strong");
     heading.textContent = english ? "Store overview · current tenant" : "Tổng quan cửa hàng · tenant hiện tại";
@@ -250,6 +252,7 @@
     if (!insight || !Array.isArray(insight.items)) return;
     const group = document.createElement("div");
     group.className = "assistant-catalog assistant-insight";
+    group.setAttribute("role", "group");
     const heading = document.createElement("strong");
     if (insight.kind === "inventory_restock") {
       group.setAttribute("aria-label", english ? "Inventory restock priorities" : "Ưu tiên bổ sung tồn kho");

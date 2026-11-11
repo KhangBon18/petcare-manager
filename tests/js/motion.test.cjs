@@ -5,7 +5,7 @@ const fs = require("node:fs");
 const {Node, UIEvent, el} = require("./dom.cjs");
 const script = fs.readFileSync("petcare/static/js/motion.js", "utf8");
 
-function harness({reduced = false, library = true, error = false, cards = 0, bars = 0} = {}) {
+function harness({reduced = false, library = true, webkit = false, error = false, cards = 0, bars = 0} = {}) {
   const root = el("document");
   const heading = el("h1", {className:"page-heading", textContent:"2.250.000 VND"});
   const input = el("input", {value:"2"});
@@ -44,7 +44,7 @@ function harness({reduced = false, library = true, error = false, cards = 0, bar
     },
   };
   if (library) window.gsap = engine;
-  vm.runInNewContext(script, {window,document:root,Set,WeakMap,Map});
+  vm.runInNewContext(script, {window,document:root,navigator:{vendor:webkit ? "Apple Computer, Inc." : "Google Inc."},Set,WeakMap,Map});
   return {root,window,heading,input,animations,registrations, motion:window.PetCare?.motion,
     event(name, args = {}) { window.dispatchEvent(new UIEvent(name,args)); }};
 }
@@ -53,6 +53,14 @@ test("missing GSAP leaves HTML, focus, values and application namespace usable",
   const h = harness({library:false});
   assert.equal(h.animations.length,0); assert.equal(h.root.documentElement.className,"");
   assert.equal(h.heading.textContent,"2.250.000 VND"); assert.equal(h.input.value,"2");
+  assert.equal(Node.active,h.input);
+});
+
+test("Safari/WebKit skips CSP-blocked inline motion without changing content or focus", () => {
+  const h = harness({webkit:true});
+  assert.equal(h.animations.length,0);
+  assert.equal(h.heading.textContent,"2.250.000 VND");
+  assert.equal(h.input.value,"2");
   assert.equal(Node.active,h.input);
 });
 
