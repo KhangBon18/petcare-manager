@@ -12,7 +12,7 @@
 | Runtime/build checks | PASS local | `pip check`, compileall, `docker compose config --quiet`, Docker image build và kiểm tra `.agents/`/`skills-lock.json` không có trong image đều pass. |
 | Screenshot preservation | PASS | `PETCARE_PRESERVE_DOC_ASSETS=1`; SHA-256 hai ảnh `docs/assets/phase55/` trước/sau full browser suite không đổi. |
 | Development/production data | NOT TOUCHED | Chỉ schema QA disposable `_test`, tmpfs và storage tạm; không kết nối/mutate dev hoặc production. |
-| Hosted Actions | PENDING PUSH | Sẽ ghi link và kết quả run thật sau push; platform Python 3.11/3.12/3.13, source security, container và browser jobs chưa tính là pass trước khi hoàn tất. |
+| Hosted Actions | PASS | CI run [#11](https://github.com/KhangBon18/petcare-manager/actions/runs/42981619084) trên commit `2e91f7a9fcde3b94fbfd848dcb1de19c5ced91b0`: 6/6 jobs success — Python 3.11/3.12/3.13, `source-security`, `container`, `browser-smoke`. |
 
 Release evidence: [Phase 6.0 report](PHASE60_RELEASE_VERIFICATION.md). Acceptance kế tiếp: [Phase 6.1 plan](PHASE61_ACCEPTANCE_PLAN.md).
 

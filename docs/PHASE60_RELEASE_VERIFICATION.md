@@ -51,13 +51,15 @@ Mục này được cập nhật sau khi commit/push để ghi lại revision v�
 
 | Hạng mục | Kết quả |
 |---|---|
-| Commit(s) | Pending push verification |
-| Final local/remote HEAD | Pending push verification |
-| Push branch | Pending push verification |
-| GitHub Actions run URL | Pending hosted run |
-| Python 3.11 / 3.12 / 3.13 | Pending hosted run |
-| Source security / container / browser smoke | Pending hosted run |
-| Final working tree and upstream | Pending push verification |
+| Application commit | `2e91f7a9fcde3b94fbfd848dcb1de19c5ced91b0` — `feat(assistant): add read-only operations overview`. |
+| Push target/result | `origin/solo/khang-petcare`; normal push succeeded from baseline `4bb9d08`; no divergence or force push. |
+| GitHub Actions | [CI run #11](https://github.com/KhangBon18/petcare-manager/actions/runs/42981619084) on commit `2e91f7a9fcde3b94fbfd848dcb1de19c5ced91b0`: completed, conclusion `success`. |
+| Python 3.11 / 3.12 / 3.13 | **PASS** — all three `verify` matrix jobs succeeded. |
+| Source security | **PASS** — `source-security` succeeded, including Bandit baseline gate and Trivy filesystem secret scan. |
+| Container | **PASS** — production image build and Trivy vulnerability/secret scan job succeeded. |
+| Browser smoke | **PASS** — hosted `browser-smoke` job succeeded. |
+| Run jobs | **6/6 success** — three Python matrix jobs, `browser-smoke`, `source-security`, `container`. No failed-job diagnostics were required. |
+| Documentation follow-up | Report and acceptance-plan updates are a separate docs-only commit; its hosted Actions result is verified separately in the handoff. |
 
 ## Còn lại trước khi production
 
@@ -66,4 +68,4 @@ Mục này được cập nhật sau khi commit/push để ghi lại revision v�
 - Provider thật, SMTP, S3, payment gateway, worker daemon, hiệu năng/tải và quyền dữ liệu bên ngoài chưa được kiểm chứng.
 - Không thay schema development trước backup/restore evidence và phê duyệt riêng; trạng thái readiness development lịch sử là 503.
 
-**Kết luận:** baseline local đã được kiểm tra bằng full Python/JavaScript/Playwright và các gate liệt kê ở trên. Chưa xác nhận hosted CI hoặc production readiness cho đến khi mục commit/push/Actions được điền bằng kết quả thực.
+**Kết luận:** application commit đã được push đúng branch và toàn bộ hosted CI run #11 thành công, bên cạnh các full-suite/gate local đã nêu. Việc này không xác nhận production readiness; xem các giới hạn và kế hoạch Phase 6.1 ở trên.

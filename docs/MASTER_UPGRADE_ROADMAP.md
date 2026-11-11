@@ -6,7 +6,8 @@ Ngày lập: 2026-11-09. Bảo toàn scope retail Petcare Manager; chưa đề x
 
 - Phase 5.5 operations overview được kiểm tra lại bằng Python **421/421**, JavaScript **40/40** và Playwright **18/18** trên MySQL QA mới, storage tạm và Vision mock/offline. Bandit CI gate, hai `pip-audit`, `npm audit`, `pip check`, compileall, Compose config, Docker build và `git diff --check` local đều pass.
 - Browser smoke dùng cờ bảo toàn ảnh; SHA-256 của hai Phase 5.5 screenshot không đổi. `.dockerignore` loại tooling local khỏi context/image.
-- Trạng thái push và GitHub Actions được ghi trong [Phase 6.0 release verification](PHASE60_RELEASE_VERIFICATION.md); không suy luận CI hosted từ local gates.
+- Application commit `2e91f7a9fcde3b94fbfd848dcb1de19c5ced91b0` đã push lên `solo/khang-petcare`; [GitHub Actions #11](https://github.com/KhangBon18/petcare-manager/actions/runs/42981619084) pass cả 6 jobs: Python 3.11/3.12/3.13, source-security, container và browser-smoke.
+- Chi tiết push, tests và giới hạn nằm trong [Phase 6.0 release verification](PHASE60_RELEASE_VERIFICATION.md).
 - **Kế tiếp: Phase 6.1 acceptance**, theo [checklist project Python](PHASE61_ACCEPTANCE_PLAN.md). Ưu tiên xác nhận cài đặt sạch, quyền và luồng bán/mua/report trên QA mới, rồi hoàn tất kiểm tra keyboard/screen reader/200% zoom. Dev/production DB và provider thật vẫn ngoài phạm vi nếu chưa được phê duyệt.
 
 ## Cập nhật Phase 5.2 — Vision stabilization — 2026-11-10
