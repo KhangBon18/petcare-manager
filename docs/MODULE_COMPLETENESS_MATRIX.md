@@ -1,5 +1,16 @@
 # Ma trận độ hoàn thiện module
 
+## Cập nhật Phase 5.5 — operations overview — 2026-11-11
+
+| Module | Trạng thái | Bằng chứng mới nhất và giới hạn |
+|---|---:|---|
+| AI Assistant — operations overview | A/B | Admin hỏi một câu để xem warning tồn, đơn `ordered`/`partially_received`, và top products bán ròng 7 ngày. Aggregation dùng `restock_service`, `purchase_service`, `report_service`; tối đa 5 dòng/nhóm; no-write/no-provider; admin gate trước khi đọc. MySQL route + Chromium PASS, staff bị từ chối, tenant payload bị bỏ qua. |
+| Assistant UX | A/B | Prompt gợi ý cho admin, ba nhóm insight, nguồn dữ liệu, empty/partial failure, record/report links. 320/390/768/1440 không tràn và panel bounds hợp lệ; hai axe scan 0 violation, 3 incomplete mỗi scan. Screen reader/200% zoom/cross-browser chưa xác minh. |
+| Sales summary | B | Nguồn là top product 7 ngày theo report service, không tính tổng doanh thu/invoice count mới. Không hỗ trợ khoảng tùy chỉnh hoặc so sánh doanh thu trong overview. |
+| Generative AI / Vision provider | E | Luồng mới luôn local/deterministic; provider thật vẫn tắt/chưa được chạy. Vision mock workflow còn được regression browser 18/18 bảo vệ. Accuracy/cost/privacy live chưa đo. |
+
+Evidence: [implementation](PHASE55_IMPLEMENTATION.md), [workflow](PHASE55_INTELLIGENCE_WORKFLOW.md), [evaluation](PHASE55_AI_EVALUATION.md), [UX](PHASE55_UX_VERIFICATION.md).
+
 ## Cập nhật Phase 5.4 — 2026-11-10
 
 | Module | Trạng thái | Bằng chứng mới nhất và giới hạn |

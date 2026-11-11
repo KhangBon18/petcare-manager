@@ -313,7 +313,8 @@ class BrowserSmokeTests(unittest.TestCase):
         return path
 
     def _save_phase43_screenshot(self, name):
-        path = ROOT / "docs" / "assets" / "phase43" / "after" / name
+        root = ARTIFACT_DIR / "phase43" if os.getenv("PETCARE_PRESERVE_DOC_ASSETS") == "1" else ROOT / "docs" / "assets" / "phase43"
+        path = root / "after" / name
         path.parent.mkdir(parents=True, exist_ok=True)
         self.page.evaluate("document.activeElement?.blur(); window.scrollTo({top: 0, left: 0, behavior: 'instant'})")
         self.page.screenshot(path=str(path), full_page=True, animations="disabled")
@@ -321,7 +322,21 @@ class BrowserSmokeTests(unittest.TestCase):
         return path
 
     def _save_phase54_screenshot(self, name):
-        path = ROOT / "docs" / "assets" / "phase54" / name
+        root = ARTIFACT_DIR / "phase54" if os.getenv("PETCARE_PRESERVE_DOC_ASSETS") == "1" else ROOT / "docs" / "assets" / "phase54"
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.page.evaluate("document.activeElement?.blur(); window.scrollTo({top: 0, left: 0, behavior: 'instant'})")
+        self.page.screenshot(path=str(path), full_page=False, animations="disabled")
+        path.chmod(0o644)
+        return path
+
+    def _save_phase55_screenshot(self, name):
+        root = (
+            ARTIFACT_DIR / "phase55"
+            if os.getenv("PETCARE_PRESERVE_DOC_ASSETS") == "1"
+            else ROOT / "docs" / "assets" / "phase55"
+        )
+        path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
         self.page.evaluate("document.activeElement?.blur(); window.scrollTo({top: 0, left: 0, behavior: 'instant'})")
         self.page.screenshot(path=str(path), full_page=False, animations="disabled")
@@ -818,6 +833,144 @@ class BrowserSmokeTests(unittest.TestCase):
         self.page.keyboard.press("Escape")
         expect(self.page.locator("#assistant-panel")).to_be_hidden()
         expect(self.page.get_by_role("button", name="Hỏi trợ lý")).to_be_focused()
+        self._assert_browser_diagnostics()
+
+    def test_assistant_operations_overview_uses_live_services_and_reduces_interactions(self):
+        fixture = {"supplier_id": None, "product_ids": [], "order_ids": []}
+        self.addCleanup(self._cleanup_purchase_fixture, fixture)
+        suffix = uuid4().hex[:8].upper()
+        self._login("admin")
+        toast_close = self.page.locator(".toast-close")
+        if toast_close.count():
+            toast_close.first.click()
+        fixture["supplier_id"] = purchase_service.create_supplier(
+            self.admin_id,
+            {"name": f"Phase55 synthetic supplier {suffix}", "contact_name": "", "phone": "",
+             "email": "", "address": ""},
+            tenant_id=self.tenant_id,
+        )
+        product_id = product_service.create_product(
+            self.admin_id,
+            {"code": f"P55-{suffix}", "name": f"000 Phase55 low stock {suffix}",
+             "category": "Synthetic QA", "description": "Isolated browser overview fixture",
+             "unit_price": "1000", "stock_qty": "0", "reorder_level": "0"},
+            tenant_id=self.tenant_id,
+        )
+        fixture["product_ids"].append(product_id)
+        order_id = purchase_service.create_purchase_order(
+            self.admin_id,
+            {"supplier_id": str(fixture["supplier_id"]), "note": "Phase55 synthetic overview fixture"},
+            [{"product_id": str(product_id), "quantity": "4", "unit_cost": "1250"}],
+            tenant_id=self.tenant_id,
+        )
+        fixture["order_ids"].append(order_id)
+
+        assistant_posts = []
+        self.page.on(
+            "request",
+            lambda request: assistant_posts.append(request.url)
+            if request.method == "POST" and request.url.endswith("/assistant/chat") else None,
+        )
+        self.page.set_viewport_size({"width": 1440, "height": 900})
+        self.page.get_by_role("button", name="Hỏi trợ lý").click()
+        self.page.get_by_role("button", name="Gợi ý nhập hàng").click()
+        expect(self.page.locator(".assistant-message-source")).to_have_count(1)
+
+        input_box = self.page.locator("#assistant-input")
+        input_box.fill("Tình trạng đơn nhập?")
+        input_box.press("Enter")
+        expect(self.page.locator(".assistant-message-source")).to_have_count(2)
+        input_box.fill("Sản phẩm nào bán chạy tuần này?")
+        input_box.press("Enter")
+        expect(self.page.locator(".assistant-message-source")).to_have_count(3)
+        baseline_posts = len(assistant_posts)
+        self.assertEqual(baseline_posts, 3)
+        baseline_interactions = 1 + 1 + 2 * 2  # open + first suggestion + two typed question/send pairs
+
+        self.page.locator("#assistant-clear").click()
+        self.page.locator("#assistant-close").click()
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.page.get_by_role("button", name="Hỏi trợ lý").click()
+        overview_prompt = self.page.get_by_role("button", name="Tổng quan cần chú ý")
+        expect(overview_prompt).to_be_visible()
+        overview_prompt.click()
+        overview = self.page.locator(".assistant-operations-overview")
+        expect(overview).to_be_visible()
+        inventory = overview.locator('section[aria-label="Ưu tiên bổ sung tồn"]')
+        purchasing = overview.locator('section[aria-label="Đơn nhập cần xử lý"]')
+        sales = overview.locator('section[aria-label="Ngữ cảnh bán hàng · 7 ngày gần nhất"]')
+        expect(inventory).to_contain_text("000 Phase55 low stock")
+        expect(inventory.locator(f'a[href="/products/{product_id}"]')).to_be_visible()
+        expect(purchasing).to_contain_text("đang đặt 1")
+        expect(purchasing.locator(f'a[href="/purchasing/{order_id}"]')).to_be_visible()
+        expect(purchasing.locator('a[href="/purchasing/"]')).to_be_visible()
+        expect(sales).to_contain_text("202")
+        expect(sales.locator('a[href^="/reports/?start="]')).to_be_visible()
+        expect(self.page.locator(".assistant-message-source").last).to_contain_text("Tổng quan chỉ đọc")
+        overview_posts = len(assistant_posts) - baseline_posts
+        self.assertEqual(overview_posts, 1)
+        overview_interactions = 2  # open assistant + choose the suggested overview
+        self.assertLess(overview_interactions, baseline_interactions)
+        if os.getenv("AXE_CORE_PATH"):
+            self._axe_audit("phase55-operations-overview-mobile-top")
+
+        for width in (320, 390, 768, 1440):
+            self.page.set_viewport_size({"width": width, "height": 844 if width < 600 else 900})
+            self.assertEqual(
+                self.page.evaluate("document.documentElement.scrollWidth"), width,
+                f"Operations overview overflows at {width}px.",
+            )
+            bounds = self.page.locator("#assistant-panel").bounding_box()
+            self.assertGreaterEqual(bounds["x"], 0)
+            self.assertLessEqual(bounds["x"] + bounds["width"], width)
+            self.assertGreaterEqual(bounds["y"], 0)
+            self.assertLessEqual(
+                bounds["y"] + bounds["height"],
+                844 if width < 600 else 900,
+                f"Assistant panel is vertically clipped at {width}px.",
+            )
+            self._accessibility_smoke()
+            if width == 390 and os.getenv("AXE_CORE_PATH"):
+                self._axe_audit("phase55-operations-overview-mobile-390")
+
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        expect(self.page.locator(".assistant-header")).to_be_visible()
+        self.page.evaluate(
+            "() => { const messages = document.getElementById('assistant-messages'); "
+            "const overview = messages.querySelector('.assistant-operations-overview'); "
+            "messages.scrollTop = overview.offsetTop; }"
+        )
+        self._save_phase55_screenshot("operations-overview-mobile-top.png")
+        self.page.evaluate(
+            "() => { const messages = document.getElementById('assistant-messages'); "
+            "messages.scrollTop = messages.scrollHeight; }"
+        )
+        self._save_phase55_screenshot("operations-overview-mobile-bottom.png")
+
+        with self.page.expect_navigation(wait_until="domcontentloaded"):
+            inventory.locator(f'a[href="/products/{product_id}"]').click()
+        self.assertRegex(self.page.url, rf"/products/{product_id}$")
+        self.page.goto(BASE_URL + "/dashboard", wait_until="domcontentloaded")
+        self.page.get_by_role("button", name="Hỏi trợ lý").click()
+        self.page.locator("#assistant-input").fill("Tổng quan cần chú ý ở cửa hàng")
+        self.page.locator("#assistant-input").press("Enter")
+        purchasing = self.page.locator(".assistant-operations-overview section").nth(1)
+        expect(purchasing.locator(f'a[href="/purchasing/{order_id}"]')).to_be_visible()
+        with self.page.expect_navigation(wait_until="domcontentloaded"):
+            purchasing.locator(f'a[href="/purchasing/{order_id}"]').click()
+        self.assertRegex(self.page.url, rf"/purchasing/{order_id}$")
+        self.page.goto(BASE_URL + "/dashboard", wait_until="domcontentloaded")
+        self.page.get_by_role("button", name="Hỏi trợ lý").click()
+        self.page.locator("#assistant-input").fill("Tổng quan cần chú ý ở cửa hàng")
+        self.page.locator("#assistant-input").press("Enter")
+        sales = self.page.locator(".assistant-operations-overview section").nth(2)
+        report_link = sales.locator('a[href^="/reports/?start="]')
+        expect(report_link).to_be_visible()
+        with self.page.expect_navigation(wait_until="domcontentloaded") as navigation:
+            report_link.click()
+        self.assertEqual(navigation.value.status, 200)
+        self.assertRegex(self.page.url, r"/reports/\?start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}$")
+        expect(self.page.get_by_role("heading", name="Báo cáo", exact=True)).to_be_visible()
         self._assert_browser_diagnostics()
 
     def test_tenant_export_job_runs_and_downloads_in_isolated_storage(self):

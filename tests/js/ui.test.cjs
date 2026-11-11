@@ -147,6 +147,65 @@ test("assistant renders inventory and purchasing insights with safe text and sam
   }
 });
 
+test("assistant renders grouped operations overview with safe record and report links", async () => {
+  const launcher=el("button",{id:"assistant-launcher"});
+  const input=el("input",{id:"assistant-input",value:"Tổng quan cần chú ý ở cửa hàng"});
+  const form=el("form",{id:"assistant-form",action:"/assistant/chat"},[input,el("button",{attributes:{type:"submit"}})]);
+  const messages=el("div",{id:"assistant-messages"});
+  const root=el("document",{},[launcher,el("aside",{id:"assistant-panel",hidden:true},[form,messages])]);
+  const h=run("assistant.js",root);
+  launcher.click();form.dispatchEvent(new UIEvent("submit"));
+  h.requests[0].resolve({ok:true,json:async()=>({reply:"Tổng quan hiện tại",mode:"local",status:"ok",insight:{
+    kind:"operations_overview",
+    inventory:{status:"available",total:1,target_days:14,items:[
+      {product_id:23,name:"<img src=x onerror=bad()>",code:"QA-1",stock_qty:1,reorder_level:2,suggested_qty:7,days_left:"3.2",url:"/products/23"},
+      {product_id:24,name:"Untrusted product",url:"//evil.test/products/24"}
+    ]},
+    purchasing:{status:"available",open_total:1,status_counts:{ordered:0,partially_received:1},url:"/purchasing/",items:[
+      {purchase_order_id:52,supplier_name:"<script>bad()</script>",status:"partially_received",received_units:2,ordered_units:5,created_at_label:"11/11/2026 08:30",url:"/purchasing/52"}
+    ]},
+    sales:{status:"available",period:"7d",start_date:"2026-11-05",end_date:"2026-11-11",url:"/reports/?start=2026-11-05&end=2026-11-11",items:[
+      {product_id:23,name:"Top product",code:"QA-1",quantity_sold:4,revenue_label:"40,000 VND",url:"/products/23"}
+    ]}
+  }})});
+  await settle();
+  const sections=messages.querySelectorAll(".assistant-overview-section");
+  assert.equal(sections.length,3);
+  assert.equal(sections[0].querySelector("strong").textContent,"Ưu tiên bổ sung tồn");
+  assert.equal(sections[1].querySelector("strong").textContent,"Đơn nhập cần xử lý");
+  assert.equal(sections[2].querySelector("strong").textContent,"Ngữ cảnh bán hàng · 7 ngày gần nhất");
+  assert.equal(sections[0].querySelectorAll(".assistant-result-card").length,1);
+  assert.equal(sections[0].querySelector(".assistant-result-card strong").textContent,"<img src=x onerror=bad()>");
+  assert.equal(sections[0].querySelector("a").href,"/products/23");
+  assert.equal(sections[1].querySelector(".assistant-result-card a").href,"/purchasing/52");
+  assert.equal(sections[1].querySelector(".assistant-overview-action").href,"/purchasing/");
+  assert.equal(sections[2].querySelector(".assistant-overview-action").href,"/reports/?start=2026-11-05&end=2026-11-11");
+  assert.equal(messages.querySelectorAll("script, img").length,0);
+  assert.match(messages.querySelector(".assistant-message-source").textContent,/Tổng quan chỉ đọc/);
+});
+
+test("assistant explains unavailable overview sources while keeping available sections", async () => {
+  const launcher=el("button",{id:"assistant-launcher"});
+  const input=el("input",{id:"assistant-input",value:"Store overview"});
+  const form=el("form",{id:"assistant-form",action:"/assistant/chat"},[input,el("button",{attributes:{type:"submit"}})]);
+  const messages=el("div",{id:"assistant-messages"});
+  const root=el("document",{},[launcher,el("aside",{id:"assistant-panel",hidden:true},[form,messages])]);
+  const h=run("assistant.js",root);
+  launcher.click();form.dispatchEvent(new UIEvent("submit"));
+  h.requests[0].resolve({ok:true,json:async()=>({reply:"Some sources failed.",mode:"local",status:"partial",insight:{
+    kind:"operations_overview",
+    inventory:{status:"unavailable"},
+    purchasing:{status:"available",open_total:0,status_counts:{ordered:0,partially_received:0},url:"/purchasing/",items:[]},
+    sales:{status:"available",period:"7d",start_date:"2026-11-05",end_date:"2026-11-11",url:"/reports/?start=2026-11-05&end=2026-11-11",items:[]}
+  }})});
+  await settle();
+  const sections=messages.querySelectorAll(".assistant-overview-section");
+  assert.equal(sections.length,3);
+  assert.match(sections[0].querySelector(".assistant-overview-empty").textContent,/Chưa tải được dữ liệu tồn kho/);
+  assert.match(sections[1].querySelector(".assistant-overview-empty").textContent,/Không có đơn nhập đang chờ xử lý/);
+  assert.match(messages.querySelector(".assistant-message-source").textContent,/một số nguồn dữ liệu chưa tải được/);
+});
+
 test("assistant exposes a keyboard-accessible retry action after a failed request", async () => {
   const launcher=el("button",{id:"assistant-launcher"});
   const input=el("input",{id:"assistant-input",value:"Restock suggestions"});

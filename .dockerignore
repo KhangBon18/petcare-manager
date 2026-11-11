@@ -1,5 +1,7 @@
 .git
 .gitignore
+.agents/
+skills-lock.json
 .env
 .env.*
 !.env.example

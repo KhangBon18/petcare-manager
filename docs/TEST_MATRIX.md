@@ -1,5 +1,41 @@
 # Ma trận kiểm thử và độ phủ chức năng
 
+## Phase 6.0 — kiểm chứng baseline phát hành — 2026-11-11
+
+| Kiểm tra | Trạng thái | Bằng chứng |
+|---|---|---|
+| Python + MySQL regression | PASS local | **421/421 PASS, 0 skip** trên MySQL 8.4 schema QA `_test` mới, tmpfs; `/readyz=200`. Lượt đầu sai cấu hình password ở harness; lượt chạy chuẩn sau đó pass toàn bộ. |
+| JavaScript | PASS local | **40/40 PASS** với `node --test tests/js/*.test.cjs`. |
+| Full Playwright | PASS local | **18/18 PASS, 0 skip**, app Flask và MySQL `_test` thật, storage/browser artifacts riêng; `/healthz=200`, `/readyz=200`. Vision chỉ dùng mock/offline. |
+| Browser diagnostics / Axe | PASS theo scope | 0 page error và failed request; một staff 403 `/users/` là hành vi quyền mong đợi. Axe 31 scans: 0 violations, 36 incomplete; screen reader/zoom thật/cross-browser còn thiếu. |
+| Bandit / dependency security | PASS local | Lệnh Bandit đúng CI + baseline exit 0; hai pip-audit không có advisory; `npm audit` 0 vulnerabilities. Cảnh báo B608/nosec đã có vẫn được in. |
+| Runtime/build checks | PASS local | `pip check`, compileall, `docker compose config --quiet`, Docker image build và kiểm tra `.agents/`/`skills-lock.json` không có trong image đều pass. |
+| Screenshot preservation | PASS | `PETCARE_PRESERVE_DOC_ASSETS=1`; SHA-256 hai ảnh `docs/assets/phase55/` trước/sau full browser suite không đổi. |
+| Development/production data | NOT TOUCHED | Chỉ schema QA disposable `_test`, tmpfs và storage tạm; không kết nối/mutate dev hoặc production. |
+| Hosted Actions | PENDING PUSH | Sẽ ghi link và kết quả run thật sau push; platform Python 3.11/3.12/3.13, source security, container và browser jobs chưa tính là pass trước khi hoàn tất. |
+
+Release evidence: [Phase 6.0 report](PHASE60_RELEASE_VERIFICATION.md). Acceptance kế tiếp: [Phase 6.1 plan](PHASE61_ACCEPTANCE_PLAN.md).
+
+## Phase 5.5 — Operations overview — 2026-11-11
+
+| Kiểm tra | Trạng thái | Bằng chứng |
+|---|---|---|
+| Full Python + MySQL regression | PASS | `.venv/bin/python -m unittest discover -s tests -q`: **421/421 PASS, 0 skip**, MySQL 8.4 schema mới kết thúc `_test`, Compose tmpfs. Có thêm 6 unit tests cho aggregation/quyền/lỗi/empty/range; test MySQL purchasing hiện đối chiếu service facts, tenant override, staff denial, provider off, stock và PO state không đổi. |
+| JavaScript | PASS | `node --test tests/js/*.test.cjs`: **40/40 PASS**, thêm 2 test grouped overview, text an toàn, allowlisted links và trạng thái nguồn không sẵn sàng. |
+| Full Chromium / Playwright | PASS | `scripts/browser_smoke/run_smoke.py`: **18/18 PASS, 0 skip**, MySQL/storage riêng; `/healthz=200`, `/readyz=200`. Vision browser tests vẫn chỉ dùng mock/offline. |
+| Operations overview E2E | PASS | Admin tạo fixture QA cô lập; 3 câu hỏi cũ (restock, PO, top products) thành 3 POST; một prompt tổng quan thành 1 POST. Bài test xác nhận card đọc từ MySQL, viewport/panel bounds, mở product/PO/report thật; targeted rerun sau kiểm bounds: **1/1 PASS**. |
+| Responsive / UX effort | PASS theo kịch bản | Kiểm `documentElement.scrollWidth` và panel bounds ở 320/390/768/1440 px. Kịch bản test đếm 6 tương tác (mở assistant + chọn restock + 2 lần nhập/gửi) trước, 2 lần chọn (mở assistant + prompt tổng quan) sau. Đây là interaction count tự động, không phải nghiên cứu thời gian với người dùng. |
+| Axe | PASS có giới hạn | Hai overview scan: **0 violation**, mỗi scan 3 incomplete items. Screen reader, 200% zoom thật, Safari/Firefox và toàn bộ WCAG chưa kiểm. |
+| Browser diagnostics | PASS theo scope | Overview test không có console/page/network/HTTP lỗi. Trong full suite có một 403 dự kiến cho staff tại `/users/` và console message đi cùng; không có failed request hoặc page error. |
+| Bandit CI gate | PASS | Lệnh CI với baseline `.security/bandit-baseline.json`, exit 0. Còn cảnh báo `nosec encountered (B608)` đã có trong baseline; Phase 5.5 không thêm SQL. |
+| Dependency / package | PASS | Hai `pip-audit` lockfiles không có known vulnerabilities; `npm audit --prefix tests/a11y` 0 vulnerabilities; `pip check` sạch. Không thêm dependency. |
+| Compile / build / Compose / diff | PASS | `compileall`, QA Compose config, Docker image `petcare-manager-web:phase55-verification`, `git diff --check`. |
+| Database health / isolation | PASS trên QA | Browser runner chờ `/readyz=200` và kiểm `/healthz=200` trên schema `_test` mới, tmpfs. Không kết nối hoặc thay đổi `petcare_shop_dev`/production. |
+| Provider / services bên ngoài | NOT TESTED, cố ý tắt | AI API endpoint/key/model unset; Vision disabled hoặc mock; không gọi real AI, SMTP, S3. |
+| CI hosted / production | NOT RUN trong phase này | Không push và không kích hoạt workflow mới; Docker build local có chạy. |
+
+Ảnh browser đã lưu ở [Phase 5.5 assets](assets/phase55/). Các file trace/diagnostic thô ở thư mục QA `/tmp`; không chứa dữ liệu production và không được đưa vào Git. Python/JS/Playwright là các suite riêng, không cộng thành phần trăm coverage.
+
 ## Phase 5.4 — Multi-module assistant — 2026-11-10
 
 | Kiểm tra | Trạng thái | Bằng chứng |

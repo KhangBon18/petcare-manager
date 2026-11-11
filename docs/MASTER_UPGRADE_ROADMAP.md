@@ -2,6 +2,13 @@
 
 Ngày lập: 2026-11-09. Bảo toàn scope retail Petcare Manager; chưa đề xuất thay framework hay viết lại kiến trúc.
 
+## Phase 6.0 — release baseline consolidation — 2026-11-11
+
+- Phase 5.5 operations overview được kiểm tra lại bằng Python **421/421**, JavaScript **40/40** và Playwright **18/18** trên MySQL QA mới, storage tạm và Vision mock/offline. Bandit CI gate, hai `pip-audit`, `npm audit`, `pip check`, compileall, Compose config, Docker build và `git diff --check` local đều pass.
+- Browser smoke dùng cờ bảo toàn ảnh; SHA-256 của hai Phase 5.5 screenshot không đổi. `.dockerignore` loại tooling local khỏi context/image.
+- Trạng thái push và GitHub Actions được ghi trong [Phase 6.0 release verification](PHASE60_RELEASE_VERIFICATION.md); không suy luận CI hosted từ local gates.
+- **Kế tiếp: Phase 6.1 acceptance**, theo [checklist project Python](PHASE61_ACCEPTANCE_PLAN.md). Ưu tiên xác nhận cài đặt sạch, quyền và luồng bán/mua/report trên QA mới, rồi hoàn tất kiểm tra keyboard/screen reader/200% zoom. Dev/production DB và provider thật vẫn ngoài phạm vi nếu chưa được phê duyệt.
+
 ## Cập nhật Phase 5.2 — Vision stabilization — 2026-11-10
 
 - **DONE local/test:** gợi ý thuộc tính ngoại hình trong form thú cưng hiện có; admin review, apply chỉ vào ô trống, không auto-save. Output field allowlist/cap, provider/fallback status và JSON errors rõ ràng.
@@ -143,6 +150,25 @@ Chưa bắt đầu clinic/appointments/vaccinations, loyalty, multi-warehouse ho
 6. **Optional:** không thêm chức năng tự tạo/nhận/hủy PO hoặc sửa tồn bằng chat, appointment, loyalty hay warehouse trong Phase 5.5 mặc định; cần scope/product approval riêng.
 
 Handoff: [Phase 5.5](PHASE55_HANDOFF.md); chi tiết [capabilities](PHASE54_AI_CAPABILITIES.md), [evaluation](PHASE54_AI_EVALUATION.md), [security](PHASE54_AI_SECURITY.md), [UX](PHASE54_AI_UX.md).
+
+## Cập nhật Phase 5.5 — tổng quan vận hành — 2026-11-11
+
+- **DONE / VERIFIED trên QA cô lập:** admin có thể xem cảnh báo bổ sung tồn, đơn nhập đang đặt/nhận một phần, và ngữ cảnh top-selling trong 7 ngày từ một câu hỏi. Đã bổ sung aggregation service chỉ đọc; giữ Flask/Jinja/MySQL, API route `/assistant/chat`, business contracts và không thêm dependency/schema.
+- **Nguồn dữ liệu:** `restock_service.recommendations` giữ nguyên công thức cảnh báo/lượng đề xuất; `purchase_service.list_purchase_orders` kiểm admin, count hai trạng thái mở và trả bản ghi mới nhất; `report_service.top_products_for_period(..., "7d")` là nguồn duy nhất cho nhóm bán hàng. Count là service output; sales rows là top 5 bán ròng, không được diễn giải thành tổng doanh thu.
+- **Quyền và an toàn:** thao tác overview admin-only; purchase authorization chạy trước các read khác. Mọi service nhận tenant từ session; `tenant_id` client bị bỏ qua. Tối đa 5 card/nhóm; không SQL mới, không provider, không tự động đổi tồn/tạo/nhận/hủy PO.
+- **Kết quả QA:** Python 421/421 + 0 skip trên MySQL tmpfs `_test`; JavaScript 40/40; Chromium 18/18 + 0 skip; thêm target E2E 1/1 sau kiểm tra vertical bounds. `/healthz`/`readyz` 200; Bandit CI, pip/npm audits, `pip check`, compile, Compose, Docker build và diff check pass. Axe overview: 0 violations, 3 incomplete mỗi scan.
+- **Giá trị UX đã đo theo kịch bản browser:** ba câu hỏi riêng gây 3 POST và 6 thao tác (mở assistant, chọn restock, hai lần nhập/gửi) trong test; overview gợi ý gây 1 POST và 2 lần chọn. Đây là số interaction trong script tái lập, không phải time study/user study.
+- **Giới hạn:** các service đọc trên nhiều connection riêng, snapshot không atomic giữa module; inventory service vẫn duyệt catalog active để có exact total; chỉ hỗ trợ last 7 days cho sales; deterministic phrase recognition; chưa có screen reader/200% zoom/Safari/Firefox. Không dùng provider thật, SMTP hay S3.
+- **Hồ sơ:** [implementation](PHASE55_IMPLEMENTATION.md), [workflow](PHASE55_INTELLIGENCE_WORKFLOW.md), [evaluation](PHASE55_AI_EVALUATION.md), [UX evidence](PHASE55_UX_VERIFICATION.md), [Phase 6 handoff](PHASE6_HANDOFF.md).
+
+### Phase 6 — thứ tự đề xuất
+
+1. Hoàn tất kiểm tra accessibility thủ công cho assistant (keyboard-only, screen reader, browser zoom 200%) và lưu browser/AT evidence.
+2. Chạy một round acceptance với admin/staff trên dữ liệu staging tổng hợp để xác nhận copy, relevance của actionable rows và empty/error behavior.
+3. Đo latency theo kích thước catalog cho `restock_service` trước khi đề xuất query/aggregation tối ưu; giữ nguyên công thức business hiện có.
+4. Theo dõi feedback/usage cho intent overview và ambiguity VI/EN trước khi thêm alias hoặc kỳ báo cáo mới.
+5. Giữ provider AI, Vision, SMTP/S3 live ngoài scope cho đến khi có bộ dữ liệu được duyệt, privacy/cost gates và approval riêng.
+6. Chỉ mở rộng analytics hoặc tự động hóa nghiệp vụ khi có yêu cầu học thuật/sản phẩm mới; mọi thao tác ghi tiếp tục qua form/service hiện có, không qua chat.
 # Phase 5.3A update — 2026-11-10
 
 Vision quality infrastructure is implemented with a no-provider scoring harness, synthetic-only fixture set, guarded mock transport, bounded retry and targeted keyboard/axe browser checks. Mock score is mechanics-only; real model accuracy remains **NOT MEASURED**. No real provider, dev DB or production DB was touched. Local gates: Python 405/405, JavaScript 36/36, Chromium 16/16; Bandit CI gate, lockfile audits, pip/npm checks, compile, Compose config and local Docker build pass. GitHub-hosted CI and Trivy remain NOT TESTED. Details: [Phase 5.3A implementation](PHASE53A_IMPLEMENTATION.md), [benchmark](VISION_BENCHMARK_SPEC.md), [privacy/cost](VISION_PRIVACY_AND_COST.md), [approval protocol](PHASE53B_PROVIDER_APPROVAL.md).

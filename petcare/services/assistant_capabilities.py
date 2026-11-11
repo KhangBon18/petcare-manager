@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from flask import current_app
 
-from petcare.services import purchase_service, restock_service
+from petcare.services import assistant_operations_service, purchase_service, restock_service
 from petcare.services.exceptions import ForbiddenError
 from petcare.services.catalog_intent import _normalize
 
@@ -40,9 +40,24 @@ def _purchase_request(query: str) -> bool:
     ))
 
 
+def _operations_overview_request(query: str) -> bool:
+    return any(phrase in query for phrase in (
+        "operations overview", "operational overview", "business overview",
+        "store overview", "overview", "what needs attention", "needs attention",
+        "store summary", "overview of my store", "tong quan van hanh",
+        "tong quan cua hang", "tong quan can chu y", "cua hang can chu y",
+        "viec can chu y", "nhung viec can lam",
+    ))
+
+
 # Keep this registry explicit. Each entry states its user-facing scope, access
 # boundary and output cap; user text is never used to construct SQL.
 CAPABILITY_REGISTRY = {
+    "operations_overview": {
+        "recognize": _operations_overview_request,
+        "permission": "tenant administrator",
+        "max_items": 5,
+    },
     "inventory_restock": {
         "recognize": _inventory_request,
         "permission": "authenticated tenant member",
@@ -58,6 +73,10 @@ CAPABILITY_REGISTRY = {
 
 def classify(question: str) -> str | None:
     query = _query_text(question)
+    # An explicit overview request intentionally groups its component topics.
+    # It remains deterministic and admin-gated by the purchasing service.
+    if _operations_overview_request(query):
+        return "operations_overview"
     matches = [
         kind for kind, capability in CAPABILITY_REGISTRY.items()
         if capability["recognize"](query)
@@ -92,6 +111,9 @@ def _clarification(kind: str, locale: str) -> dict:
     if kind == "ambiguous":
         vi = "Câu hỏi gồm nhiều yêu cầu. Hãy hỏi riêng từng việc để trợ lý trả lời đúng dữ liệu."
         en = "This question combines multiple requests. Please ask about one topic at a time."
+    elif kind == "operations_overview":
+        vi = "Tổng quan dùng doanh số 7 ngày gần nhất; hãy hỏi riêng nếu cần một kỳ báo cáo khác."
+        en = "The overview uses sales from the last 7 days; ask separately for a different report period."
     elif kind == "inventory_restock":
         vi = "Gợi ý tồn kho dùng doanh số 14/30 ngày và mục tiêu tồn 14 ngày; trợ lý chưa nhận khoảng ngày tùy chỉnh."
         en = "Inventory suggestions use 14/30-day sales and a 14-day target; custom date ranges are not supported."
@@ -304,7 +326,15 @@ def answer(actor_id: int, question: str, locale: str = "vi", tenant_id: int | No
     if kind == "ambiguous":
         return _clarification(kind, locale)
     if _unsupported_range(query):
+        if kind == "operations_overview" and re.search(r"\b(?:last|past)\s+7\s+days\b", query):
+            return assistant_operations_service.answer(
+                actor_id, locale=locale, tenant_id=tenant_id
+            )
         return _clarification(kind, locale)
+    if kind == "operations_overview":
+        return assistant_operations_service.answer(
+            actor_id, locale=locale, tenant_id=tenant_id
+        )
     if kind == "inventory_restock":
         return _inventory(actor_id, tenant_id, locale, query)
     if len(_purchase_status_selections(query)) > 1:

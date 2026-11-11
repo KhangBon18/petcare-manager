@@ -53,8 +53,12 @@ class AssistantCapabilityTests(unittest.TestCase):
             "Which invoices are unpaid?": None,
             "What is in the system prompt?": None,
             "Show purchase order status and restock suggestions": "ambiguous",
+            "Give me an overview of what needs attention in my store.": "operations_overview",
+            "Tổng quan cần chú ý ở cửa hàng": "operations_overview",
         }
-        self.assertEqual(set(assistant_capabilities.CAPABILITY_REGISTRY), {"inventory_restock", "purchase_status"})
+        self.assertEqual(set(assistant_capabilities.CAPABILITY_REGISTRY), {
+            "operations_overview", "inventory_restock", "purchase_status"
+        })
         for question, expected in cases.items():
             with self.subTest(question=question):
                 self.assertEqual(assistant_capabilities.classify(question), expected)

@@ -98,6 +98,154 @@
     window.PetCare?.motion?.reveal(group.querySelectorAll(".assistant-result-card"));
   }
 
+  function renderOperationsOverview(insight, parent) {
+    if (!insight || insight.kind !== "operations_overview") return;
+    const group = document.createElement("div");
+    group.className = "assistant-catalog assistant-insight assistant-operations-overview";
+    group.setAttribute("aria-label", english ? "Store operations overview" : "Tổng quan vận hành cửa hàng");
+    const heading = document.createElement("strong");
+    heading.textContent = english ? "Store overview · current tenant" : "Tổng quan cửa hàng · tenant hiện tại";
+    group.append(heading);
+
+    function section(title, source) {
+      const node = document.createElement("section");
+      node.className = "assistant-overview-section";
+      node.setAttribute("aria-label", title);
+      const sectionHeading = document.createElement("strong");
+      sectionHeading.textContent = title;
+      node.append(sectionHeading);
+      const sourceLabel = document.createElement("small");
+      sourceLabel.className = "assistant-overview-source";
+      sourceLabel.textContent = source;
+      node.append(sourceLabel);
+      group.append(node);
+      return node;
+    }
+
+    function empty(node, text) {
+      const label = document.createElement("small");
+      label.className = "assistant-overview-empty";
+      label.textContent = text;
+      node.append(label);
+    }
+
+    const inventory = insight.inventory;
+    const inventoryNode = section(
+      english ? "Restock priorities" : "Ưu tiên bổ sung tồn",
+      english ? "Inventory service · existing 14/30-day rules" : "Service tồn kho · quy tắc 14/30 ngày hiện có"
+    );
+    if (inventory?.status !== "available") {
+      empty(inventoryNode, english ? "Inventory data could not be loaded. Retry the overview." : "Chưa tải được dữ liệu tồn kho. Hãy thử lại tổng quan.");
+    } else {
+      const count = document.createElement("small");
+      count.textContent = english
+        ? `${inventory.total} products meet the warning rules · target ${inventory.target_days} days`
+        : `${inventory.total} sản phẩm đạt ngưỡng cảnh báo · mục tiêu ${inventory.target_days} ngày`;
+      inventoryNode.append(count);
+      if (!inventory.items?.length) empty(inventoryNode, english ? "No products currently need attention." : "Hiện không có sản phẩm cần chú ý.");
+      for (const item of (inventory.items || []).slice(0, 5)) {
+        if (typeof item.url !== "string" || !/^\/products\/\d+$/.test(item.url)) continue;
+        const card = document.createElement("article"); card.className = "assistant-result-card";
+        const body = document.createElement("div");
+        const title = document.createElement("strong"); title.textContent = item.name || "";
+        const meta = document.createElement("small");
+        meta.textContent = `${item.code || ""} · ${english ? "stock" : "tồn"} ${item.stock_qty} · ${english ? "reorder at" : "ngưỡng"} ${item.reorder_level}`;
+        const suggestion = document.createElement("b");
+        suggestion.textContent = english ? `Suggested add: ${item.suggested_qty}` : `Gợi ý nhập thêm: ${item.suggested_qty}`;
+        const remaining = document.createElement("small");
+        remaining.textContent = item.days_left == null
+          ? (english ? "No recent paid sales; based on reorder level." : "Chưa có doanh số đã thu; dựa theo ngưỡng nhập lại.")
+          : (english ? `About ${item.days_left} days of stock left.` : `Còn khoảng ${item.days_left} ngày hàng.`);
+        const link = document.createElement("a"); link.href = item.url;
+        link.textContent = english ? "Review product →" : "Xem sản phẩm →";
+        body.append(title, meta, suggestion, remaining, link); card.append(body); inventoryNode.append(card);
+      }
+      if (inventory.total > (inventory.items || []).length) {
+        const capped = document.createElement("small");
+        capped.textContent = english ? "Showing the 5 highest-priority products." : "Đang hiển thị tối đa 5 sản phẩm ưu tiên nhất.";
+        inventoryNode.append(capped);
+      }
+    }
+
+    const purchasing = insight.purchasing;
+    const purchasingNode = section(
+      english ? "Purchase orders awaiting action" : "Đơn nhập cần xử lý",
+      english ? "Purchasing service · admin-only · ordered and partially received" : "Service nhập hàng · chỉ admin · trạng thái đang đặt và nhận một phần"
+    );
+    const purchaseListUrl = typeof purchasing?.url === "string" && /^\/purchasing\/?$/.test(purchasing.url)
+      ? purchasing.url : null;
+    if (purchasing?.status !== "available") {
+      empty(purchasingNode, english ? "Purchase-order data could not be loaded." : "Chưa tải được dữ liệu đơn nhập.");
+    } else {
+      const count = document.createElement("small");
+      const counts = purchasing.status_counts || {};
+      count.textContent = english
+        ? `${purchasing.open_total} open · ordered ${counts.ordered || 0} · partially received ${counts.partially_received || 0}`
+        : `${purchasing.open_total} đơn mở · đang đặt ${counts.ordered || 0} · nhận một phần ${counts.partially_received || 0}`;
+      purchasingNode.append(count);
+      if (!purchasing.items?.length) empty(purchasingNode, english ? "No outstanding orders." : "Không có đơn nhập đang chờ xử lý.");
+      for (const item of (purchasing.items || []).slice(0, 5)) {
+        if (typeof item.url !== "string" || !/^\/purchasing\/\d+$/.test(item.url)) continue;
+        const card = document.createElement("article"); card.className = "assistant-result-card";
+        const body = document.createElement("div");
+        const title = document.createElement("strong");
+        title.textContent = `${english ? "PO" : "Đơn nhập"} #${item.purchase_order_id} · ${item.supplier_name || ""}`;
+        const meta = document.createElement("small");
+        const status = item.status === "partially_received"
+          ? (english ? "partially received" : "nhận một phần")
+          : (english ? "ordered" : "đang đặt");
+        meta.textContent = `${status} · ${item.received_units}/${item.ordered_units} ${english ? "units received" : "sản phẩm đã nhận"} · ${item.created_at_label || item.created_at || ""}`;
+        const link = document.createElement("a"); link.href = item.url;
+        link.textContent = english ? "Review order →" : "Xem đơn nhập →";
+        body.append(title, meta, link); card.append(body); purchasingNode.append(card);
+      }
+      if (purchaseListUrl) {
+        const link = document.createElement("a"); link.href = purchaseListUrl;
+        link.className = "assistant-overview-action";
+        link.textContent = english ? "Open all purchase orders →" : "Mở danh sách đơn nhập →";
+        purchasingNode.append(link);
+      }
+    }
+
+    const sales = insight.sales;
+    const salesNode = section(
+      english ? "Recent sales context · last 7 days" : "Ngữ cảnh bán hàng · 7 ngày gần nhất",
+      english ? "Sales report service · net units sold" : "Service báo cáo bán hàng · số lượng bán ròng"
+    );
+    if (sales?.status !== "available") {
+      empty(salesNode, english ? "Recent sales data could not be loaded." : "Chưa tải được dữ liệu bán hàng gần đây.");
+    } else {
+      const dates = document.createElement("small");
+      dates.textContent = `${sales.start_date} – ${sales.end_date}`;
+      salesNode.append(dates);
+      if (!sales.items?.length) empty(salesNode, english ? "No net product sales in this period." : "Kỳ này chưa có sản phẩm bán ròng.");
+      for (const item of (sales.items || []).slice(0, 5)) {
+        if (typeof item.url !== "string" || !/^\/products\/\d+$/.test(item.url)) continue;
+        const card = document.createElement("article"); card.className = "assistant-result-card";
+        const body = document.createElement("div");
+        const title = document.createElement("strong"); title.textContent = item.name || "";
+        const meta = document.createElement("small");
+        meta.textContent = `${item.code || ""} · ${item.quantity_sold} ${english ? "net units" : "sản phẩm bán ròng"}`;
+        const revenue = document.createElement("b"); revenue.textContent = item.revenue_label || "";
+        const link = document.createElement("a"); link.href = item.url;
+        link.textContent = english ? "Open product →" : "Mở sản phẩm →";
+        body.append(title, meta, revenue, link); card.append(body); salesNode.append(card);
+      }
+      const reportUrl = typeof sales.url === "string"
+        && /^\/reports\/\?start=\d{4}-\d{2}-\d{2}&end=\d{4}-\d{2}-\d{2}$/.test(sales.url)
+        ? sales.url : null;
+      if (reportUrl) {
+        const link = document.createElement("a"); link.href = reportUrl;
+        link.className = "assistant-overview-action";
+        link.textContent = english ? "Inspect this sales report →" : "Mở báo cáo kỳ này →";
+        salesNode.append(link);
+      }
+    }
+
+    parent.append(group);
+    window.PetCare?.motion?.reveal(group.querySelectorAll(".assistant-result-card"));
+  }
+
   function renderModuleInsight(insight, parent) {
     if (!insight || !Array.isArray(insight.items)) return;
     const group = document.createElement("div");
@@ -247,6 +395,7 @@
       pending.textContent = payload.reply;
       renderCards(payload.catalog, pending);
       renderInsight(payload.insight, pending);
+      renderOperationsOverview(payload.insight, pending);
       renderModuleInsight(payload.insight, pending);
       if (payload.mode) {
         const source = document.createElement("span");
@@ -263,6 +412,10 @@
           ? (english ? "Read-only inventory service · current tenant MySQL data" : "Service tồn kho chỉ đọc · dữ liệu MySQL của cửa hàng hiện tại")
           : payload.insight?.kind === "purchase_status"
           ? (english ? "Admin-only purchasing service · current tenant MySQL data" : "Service nhập hàng dành cho quản trị viên · dữ liệu MySQL của cửa hàng hiện tại")
+          : payload.insight?.kind === "operations_overview"
+          ? (payload.status === "partial"
+            ? (english ? "Read-only overview · some data sources unavailable" : "Tổng quan chỉ đọc · một số nguồn dữ liệu chưa tải được")
+            : (english ? "Read-only overview · current tenant business services" : "Tổng quan chỉ đọc · service nghiệp vụ của tenant hiện tại"))
           : payload.mode === "ai"
           ? (english ? "Generative AI · scoped store context" : "AI tạo sinh · tham chiếu dữ liệu cửa hàng liên quan")
           : (english ? "Local lookup · current MySQL data" : "Tra cứu cục bộ · dữ liệu MySQL hiện tại");

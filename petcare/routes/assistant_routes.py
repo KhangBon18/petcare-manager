@@ -46,7 +46,48 @@ def chat():
         filename = item.pop("photo_filename", None)
         item["photo_url"] = url_for("pets.photo" if pet else "products.photo", filename=filename) if filename else None
     insight = response.get("insight")
-    if isinstance(insight, dict) and insight.get("kind") == "top_products":
+    if isinstance(insight, dict) and insight.get("kind") == "operations_overview":
+        inventory = insight.get("inventory")
+        if isinstance(inventory, dict):
+            for item in inventory.get("items", []):
+                product_id = item.get("product_id")
+                item["url"] = (
+                    url_for("products.detail", product_id=product_id)
+                    if isinstance(product_id, int) and not isinstance(product_id, bool) and product_id > 0
+                    else None
+                )
+        purchasing = insight.get("purchasing")
+        if isinstance(purchasing, dict):
+            purchasing["url"] = url_for("purchasing.index")
+            for item in purchasing.get("items", []):
+                order_id = item.get("purchase_order_id")
+                item["url"] = (
+                    url_for("purchasing.detail", purchase_order_id=order_id)
+                    if isinstance(order_id, int) and not isinstance(order_id, bool) and order_id > 0
+                    else None
+                )
+                item["created_at_label"] = format_tenant_datetime(
+                    item.get("created_at"),
+                    (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE),
+                    locale=g.locale,
+                )
+        sales = insight.get("sales")
+        if isinstance(sales, dict) and sales.get("status") == "available":
+            sales["url"] = url_for(
+                "reports.index", start=sales["start_date"], end=sales["end_date"]
+            )
+            for item in sales.get("items", []):
+                product_id = item.get("product_id")
+                item["url"] = (
+                    url_for("products.detail", product_id=product_id)
+                    if isinstance(product_id, int) and not isinstance(product_id, bool) and product_id > 0
+                    else None
+                )
+                item["revenue_label"] = format_money(
+                    item.get("revenue", 0), sales.get("currency_code", g.tenant["default_currency"]),
+                    "en_US" if g.locale == "en" else "vi_VN",
+                )
+    elif isinstance(insight, dict) and insight.get("kind") == "top_products":
         for item in insight.get("items", []):
             product_id = item.get("product_id")
             item["url"] = (

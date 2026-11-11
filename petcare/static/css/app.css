@@ -827,6 +827,15 @@ form[aria-busy="true"] button[type="submit"] { cursor: progress; }
 .assistant-insight .assistant-result-card { grid-template-columns: 40px minmax(0,1fr); gap: 10px; }
 .assistant-insight .assistant-result-art { width: 40px; height: 40px; }
 .assistant-insight .assistant-result-art .ui-icon { width: 22px; height: 22px; }
+.assistant-operations-overview { min-width: 0; }
+.assistant-overview-section { display: grid; gap: 8px; min-width: 0; padding: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); background: #f8fbf8; }
+.assistant-overview-section > strong { color: var(--green-dark); font-size: 12px; }
+.assistant-overview-section > small { color: var(--muted); line-height: 1.5; overflow-wrap: anywhere; }
+.assistant-overview-section .assistant-result-card { grid-template-columns: minmax(0,1fr); gap: 8px; padding: 9px; }
+.assistant-overview-section .assistant-result-card > div { overflow-wrap: anywhere; }
+.assistant-overview-source { font-size: 11px; }
+.assistant-overview-empty { padding: 8px; border-radius: 8px; background: #fff; }
+.assistant-overview-action { justify-self: start; min-height: 40px; padding: 8px 0; color: var(--green-dark); font-size: 12px; font-weight: 700; }
 .assistant-retry { justify-self: start; min-height: 36px; margin-top: 7px; padding: 0 12px; border: 1px solid #cfe0d5; border-radius: 8px; color: var(--green-dark); background: #f5faf7; font: inherit; font-weight: 700; cursor: pointer; }
 .assistant-retry:hover, .assistant-retry:focus-visible { border-color: #86b9a5; background: #eaf5ee; }
 .restock-panel, .business-panel, .report-detail-panel { margin-bottom: 24px; padding: 24px; }

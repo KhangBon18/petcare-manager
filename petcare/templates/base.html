@@ -97,10 +97,10 @@
 </div>
 <button class="assistant-launcher" id="assistant-launcher" type="button" aria-label="{{ t('Hỏi trợ lý') }}" aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button>
 <aside class="assistant-panel" id="assistant-panel" aria-label="{{ t('Trợ lý PetCare') }}" hidden>
-  <header class="assistant-header"><div><span class="assistant-avatar">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý AI PetCare') }}</strong><small>{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('AI tạo sinh đang bật') }}{% else %}{{ t('Tra cứu cục bộ · AI tạo sinh chưa kết nối') }}{% endif %}</small></span></div><div class="assistant-header-actions"><button class="assistant-clear" id="assistant-clear" type="button" aria-label="{{ t('Xóa cuộc trò chuyện') }}" title="{{ t('Xóa cuộc trò chuyện') }}">{{ icon('refresh') }}</button><button class="assistant-close" id="assistant-close" type="button" aria-label="{{ t('Đóng trợ lý') }}">×</button></div></header>
+  <header class="assistant-header"><div><span class="assistant-avatar">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý cửa hàng PetCare') }}</strong><small>{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('AI tạo sinh đang bật') }}{% else %}{{ t('Tra cứu MySQL theo quyền hiện tại') }}{% endif %}</small></span></div><div class="assistant-header-actions"><button class="assistant-clear" id="assistant-clear" type="button" aria-label="{{ t('Xóa cuộc trò chuyện') }}" title="{{ t('Xóa cuộc trò chuyện') }}">{{ icon('refresh') }}</button><button class="assistant-close" id="assistant-close" type="button" aria-label="{{ t('Đóng trợ lý') }}">×</button></div></header>
   <p class="assistant-privacy">{% if config.AI_API_BASE_URL and config.AI_MODEL %}{{ t('Câu hỏi, tối đa 8 tin nhắn gần nhất và dữ liệu cửa hàng liên quan được gửi tới endpoint AI đã cấu hình; dữ liệu có thể gồm tên/giá sản phẩm hoặc tên/đặc điểm thú cưng. Hồ sơ khách hàng không tự gửi; thông tin bạn nhập vào chat vẫn được gửi.') }}{% else %}{{ t('Không gọi endpoint AI bên ngoài; ứng dụng trả lời câu hỏi bằng dữ liệu cửa hàng hiện có.') }}{% endif %}</p>
   <div class="assistant-messages" id="assistant-messages" aria-live="polite">
-    <div class="assistant-message assistant-message-bot">{{ t('Hỏi về doanh thu, tồn kho, sản phẩm hoặc thú cưng đang bán. Câu trả lời cục bộ lấy từ dữ liệu MySQL; muốn chat tạo sinh, hãy cấu hình endpoint AI.') }}</div>
+    <div class="assistant-message assistant-message-bot">{{ t('Tra cứu theo câu hỏi được hỗ trợ: tồn kho, đơn nhập và sản phẩm bán chạy. Quản trị viên có thể yêu cầu tổng quan vận hành.') }}</div>
     <div class="assistant-suggestions" data-assistant-suggestions aria-label="{{ t('Câu hỏi gợi ý') }}">
       <button type="button" data-assistant-prompt="{{ t('Tìm mèo lông trắng đang bán') }}">{{ t('Mèo lông trắng') }}</button>
       <button type="button" data-assistant-prompt="{{ t('Sản phẩm nào sắp hết?') }}">{{ t('Tồn kho thấp') }}</button>
@@ -108,6 +108,7 @@
       <button type="button" data-assistant-prompt="{{ t('Doanh thu hôm nay?') }}">{{ t('Doanh thu hôm nay') }}</button>
       <button type="button" data-assistant-prompt="{{ t('Sản phẩm nào bán chạy tuần này?') }}">{{ t('Bán chạy tuần này') }}</button>
       {% if g.user.role == 'admin' %}{% if locale == 'en' %}<button type="button" data-assistant-prompt="Show purchase order status">Purchase order status</button>{% else %}<button type="button" data-assistant-prompt="Tình trạng đơn nhập?">Trạng thái đơn nhập</button>{% endif %}{% endif %}
+      {% if g.user.role == 'admin' %}{% if locale == 'en' %}<button type="button" data-assistant-prompt="Give me an overview of what needs attention in my store.">Store overview</button>{% else %}<button type="button" data-assistant-prompt="Tổng quan cần chú ý ở cửa hàng">Tổng quan cần chú ý</button>{% endif %}{% endif %}
       <button type="button" data-assistant-prompt="{{ t('Hướng dẫn lập hóa đơn') }}">{{ t('Cách lập hóa đơn') }}</button>
     </div>
     <a class="assistant-quick-link" href="{{ url_for('pets.find_similar') }}">{{ icon('search') }} {{ t('Mở tìm thú cưng bằng ảnh') }}</a>
