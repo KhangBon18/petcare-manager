@@ -4,7 +4,7 @@
 
 Khi đăng nhập, nhập **mã cửa hàng** cùng username/password. Tài khoản chỉ thấy dữ liệu và quyền của store đang chọn. Nếu được mời vào nhiều cửa hàng, dùng menu **Chuyển cửa hàng** ở sidebar; role có thể khác nhau giữa các store. Database cũ sau migration giữ dữ liệu trong mã cửa hàng `main`.
 
-Database mới được seed có mã cửa hàng `main` và tài khoản demo admin / Admin@123 cùng staff1 / Staff@123. Đổi mật khẩu trước khi dùng dữ liệu thật; không tái sử dụng tài khoản demo trên môi trường công khai.
+Database mới được seed có mã cửa hàng `main` và tài khoản demo `admin` (quản trị) cùng `staff1` (nhân viên). Chỉ dùng các tài khoản này trong database demo cô lập; đổi thông tin xác thực trước khi chia sẻ môi trường và không tái sử dụng tài khoản demo trên môi trường công khai. Giá trị mật khẩu không được ghi trong tài liệu.
 
 ## Thành viên và lời mời cửa hàng
 
@@ -61,7 +61,7 @@ Descriptor từ ảnh đã lưu trước bản nâng cấp vẫn dùng được.
 
 Chọn **Hỏi trợ lý** ở góc màn hình. Có thể hỏi tổng quan, doanh thu hôm nay/tuần/tháng, sản phẩm tồn thấp, tìm sản phẩm, hoặc lọc thú cưng theo loài, giống, màu lông/mắt, giới tính, mức giá. Trợ lý cũng hướng dẫn lập hóa đơn và tìm ảnh. Ví dụ: “Có mèo lông trắng dưới 5 triệu không?”, “Tìm chó Golden Retriever”, “Tìm sản phẩm thức ăn cho mèo”. Kết quả tra cứu có card ảnh/giá/trạng thái và nút mở hồ sơ; số đếm tính trên toàn danh mục đang bán, tối đa 12 card mỗi câu trả lời. Khi trả lời, nhãn dưới câu trả lời cho biết đang dùng dữ liệu MySQL local hay endpoint AI. Bấm **Xóa cuộc trò chuyện** để xóa lịch sử trong trang hiện tại và dừng chờ kết quả trên trình duyệt. Khi không cấu hình AI, trợ lý tra cứu MySQL và không gọi nhà cung cấp AI; request từ trình duyệt SaaS vẫn tới máy chủ ứng dụng. Để bật trả lời tạo sinh, thêm `AI_API_BASE_URL`, `AI_MODEL` và tùy chọn `AI_API_KEY` vào `.env`; khi cấu hình, câu hỏi cùng dữ liệu cửa hàng liên quan được gửi tới endpoint đó. Thông tin cá nhân khách hàng không nằm trong ngữ cảnh gửi.
 
-Hồ sơ chó/mèo mới và ảnh trong seed được tạo tổng hợp bằng AI, là dữ liệu hư cấu dùng cho demo/báo cáo; chúng không thể hiện hàng tồn hoặc thú cưng thật. Trên database demo hiện có, chạy `python -m petcare.database.seed` để nạp bản ghi mới. Chỉ chạy lệnh trên database kết thúc bằng `_dev` hoặc `_test`.
+Hồ sơ và ảnh trong seed là dữ liệu tổng hợp cho demo/báo cáo; chúng không đại diện thú cưng thật. Dùng `scripts/demo/classroom.sh --target qa` để tạo dữ liệu demo cô lập. Seed thủ công chỉ hợp lệ trên database `_dev`/`_test` khớp `APP_ENV`, yêu cầu `PETCARE_DEMO_MODE=1` và mật khẩu demo riêng từ operator; không dùng trên dữ liệu thật.
 
 ## Lập và thanh toán hóa đơn
 

@@ -139,7 +139,7 @@ Cập nhật: 2026-11-03. Nhánh làm việc `solo/khang-petcare` đã push đ�
 ## Chạy cục bộ
 
 - URL hiện tại khi server đang chạy: http://127.0.0.1:5055.
-- Tài khoản demo: admin / Admin@123, staff1 / Staff@123; chỉ dùng với database demo local.
+- Tài khoản demo `admin` và `staff1` chỉ dùng với database demo local. Đổi thông tin xác thực trước khi chia sẻ môi trường; giá trị mật khẩu không được ghi trong tài liệu.
 - Bí mật được lưu trong .env đã gitignore; .env.example chỉ chứa placeholder.
 - Database trống dùng dữ liệu thật có thể khởi tạo admin đầu tiên bằng `python -m petcare.database.create_admin`; xác nhận tên database và nhập mật khẩu ẩn qua terminal.
 

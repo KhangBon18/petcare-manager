@@ -1,5 +1,40 @@
 # Ma trận kiểm thử và độ phủ chức năng
 
+## Phase 6.2 — demo hardening — 2026-11-11
+
+| Kiểm tra | Trạng thái | Bằng chứng |
+|---|---|---|
+| Python + MySQL regression | PASS | **428/428 PASS, 0 skipped** trên MySQL 8.4 disposable QA schema `_test`; gồm 5 purchasing lifecycle tests. |
+| JavaScript | PASS | **41/41 PASS**, `node --test tests/js/*.test.cjs`. |
+| Clean locked installation | PASS | Runtime + browser requirement locks installed in a fresh Python 3.13 venv; `pip check` reports no broken requirements. Python 3.11/3.12 matrix not rerun locally. |
+| Chromium full browser suite | PASS | `scripts/browser_smoke/run_smoke.py`: **18/18 PASS, 0 skipped**, 61.857s trên fresh disposable MySQL/Flask/storage; includes refund, PO, export worker, Assistant and Vision tests. |
+| Chromium / Firefox / WebKit representative | PASS | **3/3 engines**; 22 axe scans ở Chromium/Firefox, 0 violations, 73 incomplete nodes. WebKit structural/keyboard/responsive checks; axe không chạy. |
+| Connected classroom workflow | PASS | `scripts/demo/classroom_rehearsal.py`: **14 steps/17.76s**, Flask + MySQL QA; stock/PO/invoice/refund/pet ownership/worker export reconciliation và staff 403 PASS. 0 unexpected browser diagnostics. |
+| Demo reset/launcher | PASS | `scripts/demo/classroom.sh --target qa`; startup/reset tested trên project/schema tmpfs; `/readyz=200`, `/workersz=200`; `r` reset đúng QA project. |
+| Bandit / Python dependency security | PASS | Exact CI Bandit command, `pip-audit` trên runtime/browser locks; xem Phase 6.2 report cho exit codes cuối. |
+| npm audit / pip check / compile | PASS | npm axe dependencies, `pip check`, Python compile checks đã chạy trong clean environment. |
+| Docker / Compose / diff | PASS | Docker image build và `docker compose -f compose.qa-test.yml config --quiet`; `git diff --check` sạch. Hosted CI hiện tại NOT RUN. |
+| Production / native AT | NOT TESTED | Không sửa DB dev/prod; screen reader và native 200% zoom chưa kiểm an toàn. |
+
+Không cộng suite khác loại thành một coverage %. Evidence và giới hạn được giải thích trong [accessibility](PHASE62_FINAL_ACCESSIBILITY.md), [cross-browser report](PHASE62_CROSS_BROWSER_REPORT.md), [known limitations](FINAL_KNOWN_LIMITATIONS.md).
+
+## Phase 6.1 — complete application acceptance — 2026-11-11
+
+| Kiểm tra | Trạng thái | Bằng chứng |
+|---|---|---|
+| Cài sạch Python/dependencies | PASS | Fresh Python 3.13.3 venv; runtime + browser locks cài thành công; `pip check` sạch. |
+| MySQL integration/full regression | PASS | 421/421 trên MySQL 8.4 schema QA mới `_test`/tmpfs; 26 bảng, 4 migration markers; `/readyz=200`. |
+| JavaScript | PASS | 40/40, `node --test tests/js/*.test.cjs`. |
+| Chromium browser workflows | PASS | 18/18, Flask/MySQL QA thật; customer/pet, product/inventory/POS, PO, refund, report/export, assistant và Vision mock. |
+| Cross-module joined workflow | PASS | Cùng SKU: PO receive 4+6 → POS pay 2 → partial refund 1 → report net qty 1; stock 0→10→8→9, UI/service revenue khớp. |
+| DB/worker failure recovery | PASS | QA normal health/readiness 200; DB outage health 200/readiness 503; worker missing 503 → both workers active 200. |
+| Firefox/WebKit | PASS có giới hạn | Login và 6 route chính 200/no overflow tại 390px; WebKit CSP warnings của GSAP inline motion. |
+| axe/keyboard | PASS có giới hạn | 31 scans + 5 Vision states, 0 violations; incomplete lần lượt 36 + 5; screen reader/zoom thật/contrast meter chưa chạy. |
+| Security/dependency/build | PASS | Bandit exact CI command exit 0; 2 pip-audit sạch; npm audit 0; compileall, Compose config, Docker build pass. |
+| Hosted CI/production/provider thật | NOT TESTED trong phase | Hosted 6/6 là baseline Phase 6.0; không push/run mới. Không dùng production DB, SMTP, live AI, S3/payment. |
+
+Acceptance details: [report](PHASE61_ACCEPTANCE_REPORT.md), [requirement matrix](PHASE61_ACCEPTANCE_MATRIX.md), [cross-module data](PHASE61_CROSS_MODULE_VERIFICATION.md), [accessibility](PHASE61_ACCESSIBILITY_RESULTS.md), [risks](PHASE61_DEFECTS_AND_RISKS.md).
+
 ## Phase 6.0 — kiểm chứng baseline phát hành — 2026-11-11
 
 | Kiểm tra | Trạng thái | Bằng chứng |

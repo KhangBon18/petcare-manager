@@ -12,7 +12,7 @@ python -m petcare.database.seed
 python run.py
 ```
 
-Mở http://127.0.0.1:5055, đăng nhập store `main`, admin / Admin@123 (hoặc staff1 / Staff@123). Seed giữ mật khẩu đã đổi, dữ liệu đã chỉnh sửa và ảnh hợp lệ; bổ sung hồ sơ/ảnh còn thiếu. Chỉ đúng các hóa đơn có marker demo được đưa về mốc ngày tương đối; hóa đơn đã hủy không mở lại và hóa đơn đã thanh toán không trừ tồn lần nữa. Seed không khôi phục thú cưng đã bán từ lần demo trước.
+Mở URL local, đăng nhập store `main` bằng tài khoản demo đã được cấu hình riêng (admin hoặc staff). Seed giữ mật khẩu đã đổi, dữ liệu đã chỉnh sửa và ảnh hợp lệ; bổ sung hồ sơ/ảnh còn thiếu. Chỉ đúng các hóa đơn có marker demo được đưa về mốc ngày tương đối; hóa đơn đã hủy không mở lại và hóa đơn đã thanh toán không trừ tồn lần nữa. Seed không khôi phục thú cưng đã bán từ lần demo trước. Không ghi giá trị mật khẩu vào tài liệu.
 
 Bộ seed chuẩn: **12 khách, 22 sản phẩm, 74 thú cưng (35 chó, 37 mèo, 1 thỏ, 1 hamster), 68 ảnh, 7 hóa đơn demo**. Dev sau Phase 2 có 14 khách vì giữ thêm hồ sơ cũ; các số lượng còn lại khớp bộ chuẩn. Không có ảnh sản phẩm seed sẵn: thẻ có biểu tượng thay thế hoặc ảnh do admin tải lên. Hồ sơ và ảnh là dữ liệu hư cấu, không chạy seed trên database thật.
 

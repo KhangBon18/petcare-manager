@@ -1,6 +1,23 @@
 # PetCare Manager — quản lý cửa hàng thú cưng
 
-Ứng dụng web quản trị nhiều cửa hàng trên cùng nền tảng, với backend Python + Flask, giao diện HTML/CSS/JavaScript thuần và MySQL. Mỗi cửa hàng có membership, quyền và dữ liệu riêng. Phạm vi nghiệp vụ gồm khách hàng, sản phẩm có tồn kho, từng cá thể thú cưng để bán, hóa đơn và báo cáo. Bản hiện tại là nền tảng SaaS multi-tenant đang phát triển; chưa đủ điều kiện để gọi là global launch-ready.
+Ứng dụng web quản trị nhiều cửa hàng trên cùng nền tảng, với backend Python + Flask, giao diện HTML/CSS/JavaScript thuần và MySQL. Mỗi cửa hàng có membership, quyền và dữ liệu riêng. Phạm vi nghiệp vụ gồm khách hàng, thú cưng, hàng tồn kho, nhà cung cấp/đơn nhập, hóa đơn, hoàn trả và báo cáo. Bản hiện tại là nền tảng multi-tenant đang phát triển; chưa đủ điều kiện production.
+
+## Demo học thuật an toàn
+
+Ưu tiên dùng một QA database mới, không nối demo vào `petcare_shop_dev` hoặc production:
+
+```sh
+python3 -m venv /tmp/petcare-demo-venv
+. /tmp/petcare-demo-venv/bin/activate
+python -m pip install -r requirements.txt -c requirements.lock -r requirements-browser.lock
+scripts/demo/classroom.sh --target qa
+```
+
+Ứng dụng demo dùng browser hiện có và không cần Playwright để mở bằng tay. Nếu chạy automated classroom rehearsal, cài binary Chromium một lần bằng `python -m playwright install chromium`; để chạy cross-browser/axe, cài `python -m playwright install chromium firefox webkit` và `npm ci --prefix tests/a11y`. Lưu các binary/packages cache trước buổi demo nếu cần offline.
+
+Launcher yêu cầu Docker Engine/Compose và mật khẩu demo riêng qua prompt ẩn (hoặc biến môi trường được cấp riêng). Nó tạo MySQL `_test` trong tmpfs, synthetic fixtures, local Vision mock, local workers và Flask trên loopback. `/readyz` và `/workersz` phải báo healthy. Nhập `r` để reset đúng QA project hoặc `q`/Ctrl-C để dừng và cleanup. Chi tiết workflow, roles và fallback ở [Phase 6.2 demo readiness](docs/PHASE62_DEMO_READINESS.md); kịch bản thuyết trình ở [academic demo script](docs/ACADEMIC_DEMO_SCRIPT.md).
+
+Không dùng lệnh seed trực tiếp trên dữ liệu thật. Demo provisioning cần `APP_ENV=test`, `PETCARE_DEMO_MODE=1` và mật khẩu do operator cung cấp; seed fail-closed nếu thiếu điều kiện.
 
 Ứng dụng chọn tiếng Việt hoặc English theo `Accept-Language`; người dùng có thể đổi ngôn ngữ từ màn hình đăng nhập hoặc thanh điều hướng, và lựa chọn được lưu theo tài khoản để dùng xuyên các cửa hàng. Bản English bao phủ đăng nhập, điều hướng, dashboard, trợ lý, khách hàng, sản phẩm, hồ sơ thú cưng, hóa đơn, báo cáo, tìm bằng ảnh/camera, cài đặt tài khoản/cửa hàng, onboarding, quản lý thành viên, xuất dữ liệu, bàn giao chủ cửa hàng và các màn hình lỗi. Email xác minh/khôi phục, lời mời, bàn giao owner và Excel báo cáo hỗ trợ hai ngôn ngữ; các màn hình nghiệp vụ chính định dạng ngày/giờ theo locale và múi giờ cửa hàng, định dạng số theo locale. CSV giữ schema và giá trị trung tính locale để trao đổi dữ liệu. Các thông báo lỗi/flash tĩnh và loại/sự kiện audit đã biết có bản dịch được kiểm thử; nội dung audit nhập ngoài hoặc tự do chưa có mẫu dịch sẽ giữ nguyên ngôn ngữ nguồn. Cần kiểm thử QA bản địa hóa toàn bộ route trước public launch.
 
@@ -57,10 +74,11 @@ Tại thư mục gốc repo:
 
    Nếu ứng dụng kết nối qua 127.0.0.1 thay vì socket, MySQL có thể phân biệt localhost và 127.0.0.1. Điều chỉnh host của DB user theo cấu hình server local.
 
-5. Khởi tạo schema cộng thêm an toàn và dữ liệu demo cho môi trường học tập/dev. Database single-store cũ sẽ được backfill vào store `main`; migration không xóa dữ liệu:
+5. Chỉ sau khi xác nhận backup phù hợp và target DB là môi trường local, khởi tạo schema. Database single-store cũ sẽ được backfill vào store `main`; migration không xóa dữ liệu nhưng có DDL và cần review trước khi chạy trên database đang tồn tại:
 
    python -m petcare.database.initialize
-   python -m petcare.database.seed
+
+   Với demo học thuật, ưu tiên launcher QA ở đầu README. Không seed demo vào database đang chứa dữ liệu thật.
 
 6. Chạy ứng dụng:
 
@@ -90,10 +108,9 @@ Tại thư mục gốc repo:
 
 3. Tạo database petcare_shop_dev và MySQL user local riêng với charset utf8mb4; cấp quyền trên đúng database đó. Không dùng tài khoản root trong cấu hình ứng dụng.
 
-4. Khởi tạo schema, dữ liệu demo và chạy:
+4. Khởi tạo schema sau khi xác nhận đây là database local phù hợp; dùng launcher QA nếu cần synthetic data:
 
    python -m petcare.database.initialize
-   python -m petcare.database.seed
    python run.py
 
    Để bật xử lý export nền, chạy `python -m petcare.services.tenant_export_worker_cli` trong terminal khác; nếu cấu hình SMTP thì chạy `python -m petcare.services.mail_worker` thêm một terminal nữa.
@@ -113,7 +130,7 @@ Docker Desktop đã có trên máy phát triển hiện tại. Tạo .env từ .
    docker compose run --rm web python -m petcare.database.initialize
    docker compose up -d --build web email-worker export-worker
 
-Trong môi trường demo/dev, có thể nạp dữ liệu tổng hợp sau khi schema sẵn sàng bằng `docker compose run --rm web python -m petcare.database.seed`. Không chạy lệnh seed trên production. Compose giữ cổng web trên loopback và dùng chung volume riêng cho ảnh cùng export worker. Để dừng container nhưng giữ dữ liệu: `docker compose down`. Không dùng `docker compose down -v` trừ khi chủ động muốn xóa toàn bộ dữ liệu trong volume.
+Trong môi trường local, chỉ nạp dữ liệu tổng hợp trên database mới/được chỉ định rõ, tên kết thúc `_dev` hoặc `_test`, với `APP_ENV=development`/`test`, `PETCARE_DEMO_MODE=1` và hai password demo khác nhau do operator tự cung cấp (`PETCARE_DEMO_ADMIN_PASSWORD`, `PETCARE_DEMO_STAFF_PASSWORD`, mỗi password dài 16–1024 ký tự). Không có mật khẩu mặc định. Với buổi học, launcher QA ở đầu README tự tạo schema cô lập an toàn. Không chạy seed trên production hoặc database chứa dữ liệu thật. Compose giữ cổng web trên loopback và dùng chung volume riêng cho ảnh cùng export worker. Để dừng container nhưng giữ dữ liệu: `docker compose down`. Không dùng `docker compose down -v` trừ khi chủ động muốn xóa toàn bộ dữ liệu trong volume.
 
 ### Backup local / Docker Compose
 
@@ -175,15 +192,14 @@ Chuẩn bị vấn đáp: [DEFENSE_QA_GUIDE.md](DEFENSE_QA_GUIDE.md). Các lện
 Seed idempotent tạo dữ liệu hoàn toàn tổng hợp trong store `main`, có nhãn demo:
 
 - Mã cửa hàng: `main`
-- Admin: admin / Admin@123
-- Nhân viên: staff1 / Staff@123
+- Admin demo: `admin`; nhân viên demo: `staff1`. Chỉ dùng trong database demo cô lập; mật khẩu do operator chọn/tạo riêng cho mỗi lần provision, không có password mặc định và không lưu trong source/tài liệu.
 - 12 hồ sơ khách demo với số điện thoại giả có đầu `00000000`.
 - 22 sản phẩm có mã, danh mục, mô tả, giá, tồn kho và ngưỡng bổ sung riêng.
 - 74 cá thể thú cưng: 35 chó, 37 mèo, 1 thỏ và 1 hamster; 68 hồ sơ có ảnh AI tổng hợp (32 chó, 32 mèo và 4 ảnh mẫu cũ).
 - Ảnh và hồ sơ là dữ liệu hư cấu phục vụ học tập/demo, không đại diện cho thú cưng hoặc hàng tồn tại cửa hàng thật.
 - 7 hóa đơn demo đã thanh toán để báo cáo có dữ liệu lịch sử; tồn kho được cập nhật qua luồng bán thật.
 
-Chỉ chạy `python -m petcare.database.seed` trên database tên kết thúc bằng `_dev` hoặc `_test`. Khi chuẩn bị dữ liệu trước buổi demo, chạy lại seed để đưa đúng 7 hóa đơn có marker demo về mốc ngày tương đối (hôm nay và các ngày trước); ngày của stock movement đi cùng được cập nhật trong cùng transaction. Hóa đơn demo đã thanh toán không bị thanh toán lại/trừ kho lần nữa; hóa đơn demo đã hủy được giữ nguyên. Seed bổ sung ảnh mẫu khi hồ sơ tương ứng thiếu ảnh hoặc file ảnh đã mất, giữ ảnh hợp lệ và các trường hồ sơ đã chỉnh sửa. Sản phẩm, khách hàng và mật khẩu hiện có không bị ghi đè; tổng số bản ghi có thể lớn hơn bộ seed chuẩn do giữ dữ liệu cũ.
+`python -m petcare.database.seed` yêu cầu database hậu tố phù hợp với `APP_ENV`, `PETCARE_DEMO_MODE=1`, và operator-supplied admin/staff password riêng. Khi chuẩn bị dữ liệu demo, seed cập nhật lại ngày tương đối của các hóa đơn có marker demo; chỉ dùng trên database demo đã xác định, không dùng trên dữ liệu thật. Seed idempotent theo marker nhưng không xóa mọi record ngoài fixture.
 
 Database phát triển `petcare_shop_dev` hiện có **20 bảng** và giữ nguyên dữ liệu demo. Source có migration cộng dồn cho nhà cung cấp/đơn nhập, sổ trả hàng/hoàn tiền và request ledger chống nhận hàng lặp; schema hiện hành sẽ có 26 bảng sau khi chạy `python -m petcare.database.initialize`. Lệnh bổ sung bảng/cột/index/FK, không xóa bảng hay dữ liệu; database local chưa chạy migrations purchasing/refund nên vẫn ở 20 bảng cho tới khi chủ dự án chủ động áp dụng. Sau nghiệm thu Phase 2 ngày 2026-10-25, database local có 14 khách hàng (gồm dữ liệu giữ lại), 22 sản phẩm, 74 thú cưng, 68 ảnh thú cưng và 7 hóa đơn demo đã thanh toán. Bộ seed chuẩn trên database mới có 12 khách mẫu. Dashboard hiển thị doanh thu thuần; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
 

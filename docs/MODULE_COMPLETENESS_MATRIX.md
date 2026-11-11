@@ -1,5 +1,40 @@
 # Ma trận độ hoàn thiện module
 
+## Phase 6.2 — current evidence — 2026-11-11
+
+| Module | Trạng thái | Bằng chứng Phase 6.2 / giới hạn |
+|---|---|---|
+| Demo seed/accounts | PASS local QA | Fail-closed `APP_ENV=test` + explicit demo mode; supplied unique 16+ character passwords; 7 regression tests. No production credential baked in. |
+| QA launcher/reset | PASS local | Explicit `--target qa`, new tmpfs `_test` schema, loopback only, local Vision mock/workers, guarded project reset; `/readyz` and `/workersz` healthy. |
+| Customer → PO → POS → refund | PASS connected QA rehearsal | Actual browser UI + DB joined records; lifecycle states, movement ledger, paid invoice/refund totals and stock asserted. Final measured run in [implementation report](PHASE62_IMPLEMENTATION_REPORT.md). |
+| Export / Assistant / Vision | PASS local QA; Vision MOCKED | QA worker export/download, Assistant MySQL-backed insight; Vision returns fixed mock, user reviews/applies without auto-save. Real provider is NOT TESTED. |
+| Shared accessibility | PASS automation; PARTIAL overall | 22 axe scans, 0 violations, 73 incomplete; keyboard/form/responsive checks. 200% zoom/screen reader NOT TESTED. |
+| Cross-browser | PASS representative | Chromium/Firefox/WebKit 3/3; WebKit axe omitted due CSP instrumentation; native device matrix incomplete. |
+
+Production remains **NO-GO**. See [Phase 6.2 limitations](FINAL_KNOWN_LIMITATIONS.md). Historical Phase 6.1 and earlier snapshots follow.
+
+## Phase 6.1 — acceptance snapshot — 2026-11-11
+
+| Module | Trạng thái acceptance | Bằng chứng mới nhất và giới hạn |
+|---|---|---|
+| Auth/session/role | PASS | Admin browser login; staff allowed/denied routes; MySQL/Flask session suite. Password recovery chưa đi hết bằng browser. |
+| Dashboard | PASS | Dashboard thật trên MySQL QA; responsive shared-shell screenshots. |
+| Customers | PASS | Tạo/sửa/validation/persistence, deactivate/reactivate và purchased-pet links qua browser. |
+| Pets/media/Vision | PASS local; Vision MOCKED | Pet profile relationship; upload validation/suggestions/recovery; preflight kiểm 68 ảnh local. Không có live model/S3. |
+| Products/inventory | PASS | CRUD, stock adjustment, invalid negative, ledger, POS lookup/paid stock flow. |
+| Purchasing/suppliers | PASS | PO create/partial/full/cancel UI; MySQL invalid transition, replay/idempotency/rollback. |
+| POS/invoices/refunds | PASS | Cart, estimate, paid invoice, simulated payment, refund confirm/partial/full/idempotency/stock/report. Không có gateway. |
+| Reports/XLSX | PASS | Real filter/value/export browser; UI so với service trên cùng joined QA product. |
+| Tenant export/workers | PASS local | Worker heartbeat 503→200, export ready/download local. SMTP không cấu hình. |
+| AI Assistant | PASS local/read-only | Top sales, restock, PO status, operations overview; service-grounded, role/tenant checks; provider tắt. |
+| Team/invitation/ownership/store/audit | PARTIAL | Backend/web/MySQL trong full suite; chưa nghiệm thu toàn bộ bằng authenticated browser. |
+| Accessibility | PASS có giới hạn | 0 axe violations; incomplete 36 + 5 Vision; keyboard cases pass; 200% thật/screen reader chưa test. |
+| Firefox/WebKit | PASS có giới hạn | Login/routes, 390px no-overflow; WebKit CSP warnings cho optional GSAP transform. Full business flow chạy Chromium. |
+| Health/readiness | PASS QA; dev unresolved | QA 26-table schema `/readyz=200`; controlled DB failure 503. `petcare_shop_dev` không kết nối trong Phase 6.1; baseline readiness vẫn 503. |
+| Production/external integration | NOT TESTED | Production DB/deploy, SMTP, live AI/Vision, S3, payment và load chưa chạy. |
+
+Requirement-level evidence: [Phase 6.1 acceptance matrix](PHASE61_ACCEPTANCE_MATRIX.md). Các phase cũ bên dưới được giữ làm lịch sử, không thay snapshot này.
+
 ## Cập nhật Phase 5.5 — operations overview — 2026-11-11
 
 | Module | Trạng thái | Bằng chứng mới nhất và giới hạn |

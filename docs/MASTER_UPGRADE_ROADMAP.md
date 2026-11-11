@@ -2,13 +2,75 @@
 
 Ngày lập: 2026-11-09. Bảo toàn scope retail Petcare Manager; chưa đề xuất thay framework hay viết lại kiến trúc.
 
+## Phase 6.2 — kết quả hardening và bước kế tiếp — 2026-11-11
+
+- **Demo:** conditional GO trên `scripts/demo/classroom.sh --target qa`, synthetic QA `_test` trong tmpfs, local workers và fixed Vision mock; reset chỉ nhắm đúng Compose project đã tạo. Chi tiết: [demo readiness](PHASE62_DEMO_READINESS.md).
+- **Account safety:** seed fail-closed ngoài test/demo config và cần operator-supplied distinct passwords; 7 regression tests.
+- **Regression:** Python 428/428, JS 41/41, fresh full Chromium browser suite 18/18; 3 representative engines; Chromium/Firefox 22 axe scans/0 violations/73 incomplete.
+- **Cross-browser/CSP:** WebKit `motion.js` change giữ CSP nghiêm; generic empty-select/screenshot events phân loại riêng sau fixture replication; app CSP violations 0.
+- **Limits:** screen reader/native zoom 200%, production/dev DB mutation, live SMTP/S3/payment/AI, provider accuracy/cost và hosted CI mới chưa được kiểm tra.
+
+### Thứ tự đề xuất
+
+1. Review và stage theo nhóm; chạy hosted CI sau khi người maintainers tự quyết định commit/push.
+2. Dùng browser native QA profile để hoàn tất zoom 200%, VoiceOver/NVDA, contrast và axe incomplete review.
+3. Trước dev migration: tạo backup mới, xác minh checksum/restore trên clone và xin approval riêng; không dùng demo QA launcher cho DB hiện hữu.
+4. Provider pilot chỉ sau dataset có rights/consent, privacy/region/retention, budget guard và test staging được duyệt.
+5. Sau khi các gate này hoàn tất mới cân nhắc release candidate; production vẫn NO-GO.
+
+Tài liệu: [Phase 6.2 implementation](PHASE62_IMPLEMENTATION_REPORT.md), [final accessibility](PHASE62_FINAL_ACCESSIBILITY.md), [cross-browser](PHASE62_CROSS_BROWSER_REPORT.md), [academic docs](ACADEMIC_PROJECT_OVERVIEW.md).
+
+## Phase 6.1 — complete application acceptance — 2026-11-11
+
+- **Academic demo: GO có điều kiện** trên MySQL QA mới/tmpfs, seed synthetic, app local, local workers và Vision mock. **Production: NO-GO.** Dev readiness chưa kiểm tra lại vì không được phép kết nối/chỉnh sửa DB trong phase.
+- **Evidence:** Python 421/421, JavaScript 40/40, Playwright 18/18; browser workflows customer/pet, tồn/POS, PO partial/full, refund, report/export, assistant và Vision mock. Luồng ghép cùng SKU: nhận 10 → bán 2 → refund 1 → report net 1, stock cuối 9.
+- **Quality:** Bandit đúng lệnh CI, pip-audit runtime/browser, npm audit, pip check, compileall, Compose config và Docker build PASS. QA readiness 200; DB outage health 200/readiness 503; worker outage/recovery 503→200.
+- **Giới hạn:** axe 0 violation nhưng incomplete cần AT/contrast review; zoom thật 200%, screen reader, SMTP, live AI/Vision, S3/payment và production chưa test. Firefox/WebKit chỉ route smoke; WebKit có CSP warnings cho GSAP inline motion.
+- **Deliverables:** [acceptance report](PHASE61_ACCEPTANCE_REPORT.md), [matrix](PHASE61_ACCEPTANCE_MATRIX.md), [cross-module evidence](PHASE61_CROSS_MODULE_VERIFICATION.md), [accessibility](PHASE61_ACCESSIBILITY_RESULTS.md), [risks](PHASE61_DEFECTS_AND_RISKS.md), [demo handoff](PHASE62_DEMO_HANDOFF.md).
+
+## Phase 6.2 — demo hardening và accessibility
+
+Thực hiện theo thứ tự; chỉ thay code khi có defect cụ thể và regression criteria rõ.
+
+### 1. Sửa defect hiện có
+
+- **P2:** xử lý WebKit CSP/GSAP inline-style warnings mà không nới CSP; giữ animation tùy chọn và content usable khi tắt motion. Tiêu chí: WebKit smoke sạch console, policy không yếu đi.
+- **P2:** DB `petcare_shop_dev` readiness chỉ xử lý theo [DB readiness remediation](DB_READINESS_REMEDIATION.md) sau backup/restore evidence và chấp thuận DDL riêng. Phase 6.1 không cấp quyền mutate.
+- **P2:** hoàn tất screen-reader/contrast review các axe incomplete trước khi close accessibility risk.
+
+### 2. Hoàn tất chức năng/độ phủ còn thiếu
+
+- Chạy browser workflow team/invitation/ownership, store settings, audit, profile/password recovery và export failure/retry; ưu tiên luồng sẽ trình diễn.
+- Thêm negative/recovery browser case nếu có thiếu hụt thực tế; MySQL tests đã kiểm purchasing/refund invalid transition, replay, concurrency và rollback.
+- Giữ seed demo idempotent; supplier/PO hiện được tạo qua UI trong demo, chưa nạp sẵn.
+
+### 3. Refactor và ổn định kiến trúc
+
+- Không cần rewrite hoặc thay framework theo evidence acceptance. Chỉ refactor khi test chỉ ra seam gây defect; không tăng enterprise complexity.
+- Thêm cross-browser smoke có giới hạn sau khi CSP/motion được xử lý. Hosted CI và current Trivy source/image scan cần xanh trước release mới.
+
+### 4. Frontend và UX
+
+- Chạy keyboard-only full journey, zoom thật 200%, VoiceOver/NVDA và contrast đo bằng công cụ; thêm regression test nếu phát hiện defect.
+- Xác minh accessible group/name của assistant cards/nút đóng và reduced-motion/CSP trên Safari/WebKit.
+
+### 5. AI capabilities
+
+- Giữ Assistant local/read-only cho lớp học. Trước provider thật cần Vision benchmark per-field, ảnh có quyền, privacy/region/retention/cost approvals, secret store và staging; không bật provider trong demo mặc định.
+
+### 6. Optional features
+
+- Chưa nhận feature mới cho đến khi demo reproducible và các P2 gaps trên được chốt. Giữ ngoài scope payment automation, auto-save Vision và integration chưa được duyệt.
+
+**Gate đóng Phase 6.2:** demo tái lập từ QA trống, browser journey chính có evidence, AT/200% zoom và route demo được ký xác nhận; không suy diễn production readiness.
+
 ## Phase 6.0 — release baseline consolidation — 2026-11-11
 
 - Phase 5.5 operations overview được kiểm tra lại bằng Python **421/421**, JavaScript **40/40** và Playwright **18/18** trên MySQL QA mới, storage tạm và Vision mock/offline. Bandit CI gate, hai `pip-audit`, `npm audit`, `pip check`, compileall, Compose config, Docker build và `git diff --check` local đều pass.
 - Browser smoke dùng cờ bảo toàn ảnh; SHA-256 của hai Phase 5.5 screenshot không đổi. `.dockerignore` loại tooling local khỏi context/image.
 - Application commit `2e91f7a9fcde3b94fbfd848dcb1de19c5ced91b0` đã push lên `solo/khang-petcare`; [GitHub Actions #11](https://github.com/KhangBon18/petcare-manager/actions/runs/42981619084) pass cả 6 jobs: Python 3.11/3.12/3.13, source-security, container và browser-smoke.
 - Chi tiết push, tests và giới hạn nằm trong [Phase 6.0 release verification](PHASE60_RELEASE_VERIFICATION.md).
-- **Kế tiếp: Phase 6.1 acceptance**, theo [checklist project Python](PHASE61_ACCEPTANCE_PLAN.md). Ưu tiên xác nhận cài đặt sạch, quyền và luồng bán/mua/report trên QA mới, rồi hoàn tất kiểm tra keyboard/screen reader/200% zoom. Dev/production DB và provider thật vẫn ngoài phạm vi nếu chưa được phê duyệt.
+- Phase 6.1 acceptance được thực hiện sau baseline này; kết quả và Phase 6.2 scope mới nhất nằm ở đầu roadmap. Phase 6.0 không phải hosted CI run mới của Phase 6.1.
 
 ## Cập nhật Phase 5.2 — Vision stabilization — 2026-11-10
 
