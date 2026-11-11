@@ -23,9 +23,11 @@ from uuid import uuid4
 from PIL import Image
 from playwright.sync_api import expect, sync_playwright
 
+from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD
+
 from petcare.config import Config
 from petcare.database.initialize import initialize_database
-from petcare.database.seed import USERS, seed_database
+from petcare.database.seed import seed_database
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -35,7 +37,10 @@ ARTIFACT_DIR = Path(os.environ.get("PLAYWRIGHT_ARTIFACT_DIR") or (
     Path(tempfile.gettempdir()) / "petcare-phase52-browser"
 )).resolve()
 EMPTY_CREDENTIAL = ""
-SEED_PASSWORDS = {username: password for username, password, _name, _role in USERS}
+SEED_PASSWORDS = {
+    "admin": DEMO_ADMIN_PASSWORD,
+    "staff1": DEMO_STAFF_PASSWORD,
+}
 
 
 class _MockVisionState:

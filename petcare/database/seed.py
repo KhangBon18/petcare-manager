@@ -1,6 +1,7 @@
 """Idempotent synthetic demo catalog for isolated local/test databases."""
 
 from datetime import datetime, timedelta, timezone
+import os
 from pathlib import Path
 
 from werkzeug.datastructures import FileStorage
@@ -14,9 +15,11 @@ from petcare.vision.photo_storage import remove_pet_photo, store_pet_photo
 from petcare.vision.media_storage import get_media_storage
 
 
+# The fixture contains account identities and roles only. Passwords are supplied
+# per isolated demo/test run and are never embedded in the application source.
 USERS = (
-    ("admin", "Admin@123", "Quản trị cửa hàng", "admin"),
-    ("staff1", "Staff@123", "Nhân viên cửa hàng", "staff"),
+    ("admin", "Quản trị cửa hàng", "admin"),
+    ("staff1", "Nhân viên cửa hàng", "staff"),
 )
 
 # Phone numbers use an obviously fictional all-zero prefix; these customers are
@@ -171,10 +174,40 @@ DEMO_SALES = (
 DEMO_ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "demo" / "pets"
 
 
+def _demo_user_records(environ=None):
+    """Return demo account inputs only for an explicit isolated local/test run."""
+    environ = os.environ if environ is None else environ
+    app_env = str(environ.get("APP_ENV", "")).strip().lower()
+    expected_suffix = {"development": "_dev", "test": "_test"}.get(app_env)
+    if environ.get("PETCARE_DEMO_MODE") != "1" or expected_suffix is None:
+        raise RuntimeError(
+            "Demo seed requires PETCARE_DEMO_MODE=1 and APP_ENV=development or test."
+        )
+    if not Config.DB_NAME.endswith(expected_suffix):
+        raise RuntimeError(
+            "Demo seed requires a database matching the selected local/test environment."
+        )
+
+    passwords = (
+        environ.get("PETCARE_DEMO_ADMIN_PASSWORD", ""),
+        environ.get("PETCARE_DEMO_STAFF_PASSWORD", ""),
+    )
+    if any(not isinstance(password, str) or not 16 <= len(password) <= 1024 for password in passwords):
+        raise RuntimeError(
+            "Set separate PETCARE_DEMO_ADMIN_PASSWORD and PETCARE_DEMO_STAFF_PASSWORD values (16–1024 characters)."
+        )
+    if passwords[0] == passwords[1]:
+        raise RuntimeError("Demo admin and staff passwords must be different.")
+
+    return tuple(
+        (username, password, full_name, role)
+        for (username, full_name, role), password in zip(USERS, passwords)
+    )
+
+
 def seed_database():
     """Add demo rows without replacing data already maintained by the user."""
-    if not Config.DB_NAME.endswith(("_dev", "_test")):
-        raise RuntimeError("Demo data requires a dedicated _dev or _test database.")
+    demo_users = _demo_user_records()
     created_photos = []
     pet_media_storage = get_media_storage(Config, "pets")
     try:
@@ -184,7 +217,7 @@ def seed_database():
                 cursor.execute("SELECT id FROM tenants WHERE slug = 'main' AND status = 'active'")
                 tenant_id = cursor.fetchone()[0]
                 cursor.execute("SET @petcare_tenant_id = %s", (tenant_id,))
-                for username, password, full_name, role in USERS:
+                for username, password, full_name, role in demo_users:
                     cursor.execute(
                         "INSERT INTO users (username, password_hash, full_name, role) "
                         "VALUES (%s, %s, %s, %s) ON DUPLICATE KEY UPDATE username = VALUES(username)",
@@ -381,9 +414,8 @@ def _seed_demo_sales():
 
 
 if __name__ == "__main__":
-    if not Config.DB_NAME.endswith(("_dev", "_test")):
-        raise SystemExit(
-            "Từ chối nạp dữ liệu demo vào database không có hậu tố _dev hoặc _test."
-        )
-    seed_database()
+    try:
+        seed_database()
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from exc
     print("Đã nạp dữ liệu demo tổng hợp, ảnh mẫu và giao dịch mẫu idempotent.")

@@ -19,10 +19,12 @@ from uuid import uuid4
 
 from playwright.sync_api import expect, sync_playwright
 
+from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD
+
 from petcare.config import Config
 from petcare.database.connection import get_connection, transaction
 from petcare.database.initialize import initialize_database
-from petcare.database.seed import USERS, seed_database
+from petcare.database.seed import seed_database
 from petcare.money import format_money, format_number
 from petcare.repositories.base import fetch_one
 from petcare.services import (
@@ -39,7 +41,10 @@ ARTIFACT_DIR = Path(
     )
 ).resolve()
 BASE_URL = f"http://127.0.0.1:{Config.APP_PORT}"
-SEED_PASSWORDS = {username: password for username, password, _name, _role in USERS}
+SEED_PASSWORDS = {
+    "admin": DEMO_ADMIN_PASSWORD,
+    "staff1": DEMO_STAFF_PASSWORD,
+}
 
 
 def _safe_name(value: str) -> str:

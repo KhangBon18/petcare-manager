@@ -6,6 +6,8 @@ import unittest
 from unittest.mock import patch
 from uuid import uuid4
 
+from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD
+
 from petcare import create_app
 from petcare.config import Config
 from petcare.database.connection import get_connection
@@ -65,7 +67,7 @@ class MySQLPurchasingIntegrationTests(unittest.TestCase):
             "csrf_token": csrf.group(1),
             "store_slug": "main",
             "username": "admin",
-            "password": "Admin@123",
+            "password": DEMO_ADMIN_PASSWORD,
         })
         self.assertEqual(response.status_code, 302)
         with get_connection() as connection:
@@ -321,7 +323,7 @@ class MySQLPurchasingIntegrationTests(unittest.TestCase):
         login_html = staff.get("/login").get_data(as_text=True)
         csrf = re.search(r'name="csrf_token" value="([^"]+)"', login_html).group(1)
         staff.post("/login", data={
-            "csrf_token": csrf, "store_slug": "main", "username": "staff1", "password": "Staff@123",
+            "csrf_token": csrf, "store_slug": "main", "username": "staff1", "password": DEMO_STAFF_PASSWORD,
         })
         # Obtain the token from the staff session without reusing the admin client.
         staff_page = staff.get("/dashboard")

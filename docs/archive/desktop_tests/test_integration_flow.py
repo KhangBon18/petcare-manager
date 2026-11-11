@@ -45,7 +45,7 @@ class TestIntegrationFlow(unittest.TestCase):
         # Tạo sẵn tài khoản và dịch vụ cơ bản
         conn = get_connection(self.db_path)
         from petcare.security import hash_password
-        pwd_hash, salt = hash_password("Staff@123")
+        pwd_hash, salt = hash_password("[removed legacy demo credential]")
         conn.execute(
             """
             INSERT INTO users (username, password_hash, salt, role, full_name, active, created_at)
@@ -61,12 +61,12 @@ class TestIntegrationFlow(unittest.TestCase):
 
     def test_complete_lan_and_miu_workflow(self):
         # 1. Đăng nhập Nhân viên
-        session = self.auth_service.login("staff1", "Staff@123")
+        session = self.auth_service.login("staff1", "[removed legacy demo credential]")
         self.assertTrue(session.is_staff())
 
         # Tạo các dịch vụ với giá niêm yết
         # Dùng admin session đăng nhập thực tế để tạo danh mục
-        admin_session = self.auth_service.login("admin", "Admin@123")
+        admin_session = self.auth_service.login("admin", "[removed legacy demo credential]")
         svc_kham_id = self.catalog_service.create_service(
             admin_session,
             {"name": "Khám lâm sàng", "category": "Khám bệnh", "price_vnd": 150000},

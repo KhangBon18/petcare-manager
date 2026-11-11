@@ -10,6 +10,8 @@ from threading import Thread
 from time import monotonic
 import unittest
 
+from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD
+
 from werkzeug.serving import make_server
 from petcare import create_app
 from petcare.config import Config

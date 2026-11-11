@@ -17,6 +17,12 @@ from unittest.mock import patch
 from uuid import uuid4
 from urllib.parse import parse_qs, urlsplit
 
+from scripts.demo.test_accounts import (
+    CHANGED_TEST_PASSWORD,
+    DEMO_ADMIN_PASSWORD,
+    DEMO_STAFF_PASSWORD,
+)
+
 from PIL import Image
 from cryptography.fernet import Fernet
 from mysql.connector import DatabaseError, IntegrityError
@@ -107,7 +113,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         return match.group(1)
 
     def test_attribute_suggestion_uses_mock_provider_without_saving_image_and_uses_session_tenant(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         token = self._csrf_token(client, "/pets/new")
         with get_connection() as connection:
             tenant_id = fetch_one(
@@ -157,7 +163,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         after_files = set(storage.iterdir()) if storage.is_dir() else set()
         self.assertEqual(after_files, before_files, "A suggestion request must not persist its upload.")
 
-        staff = self._login("staff1", "Staff@123")
+        staff = self._login("staff1", DEMO_STAFF_PASSWORD)
         staff_token = self._csrf_token(staff, "/customers/new")
         forbidden = staff.post(
             "/pets/suggest-attributes",
@@ -188,7 +194,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         return match.group(2)
 
     def test_phase_two_private_photo_burst_works_with_a_small_connection_pool(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             photos = fetch_all(connection, "SELECT photo_filename FROM pets WHERE tenant_id=(SELECT id FROM tenants WHERE slug='main') AND photo_filename IS NOT NULL LIMIT 12")
         cookie = client.get_cookie(self.app.config["SESSION_COOKIE_NAME"])
@@ -208,7 +214,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(results, [(200, "image/jpeg")] * len(photos))
 
     def test_phase_two_quick_customer_uses_real_mysql_and_csrf(self):
-        client = self._login("staff1", "Staff@123")
+        client = self._login("staff1", DEMO_STAFF_PASSWORD)
         token = self._csrf_token(client, "/invoices/new")
         phone = "09" + f"{uuid4().int % 100_000_000:08d}"
         response = client.post("/invoices/customers/quick", json={
@@ -271,7 +277,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         storage.delete(pet["photo_filename"])
 
     def test_phase_one_validation_preserves_real_mysql_selections(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         token = self._csrf_token(client, "/customers/new")
         response = client.post("/customers/new", data={
             "csrf_token": token, "full_name": "Khách chưa lưu", "phone": "invalid",
@@ -300,7 +306,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertIn("Giữ nguyên ghi chú hóa đơn</textarea>", html)
 
     def test_phase_one_assistant_filters_and_json_validation_with_mysql(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         token = self._csrf_token(client, "/invoices/new")
         for message in [42, [], {}]:
             response = client.post("/assistant/chat", json={"message": message},
@@ -316,7 +322,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             self.assertNotIn("Chưa có thú cưng", response.get_json()["reply"])
 
     def test_assistant_top_products_uses_current_tenant_sales_report(self):
-        client = self._login("staff1", "Staff@123")
+        client = self._login("staff1", DEMO_STAFF_PASSWORD)
         with get_connection() as connection:
             tenant_id = fetch_one(connection, "SELECT id FROM tenants WHERE slug = 'main'")["id"]
             staff_id = fetch_one(connection, "SELECT id FROM users WHERE username = 'staff1'")["id"]
@@ -370,7 +376,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(denied.status_code, 302)
 
     def test_admin_and_staff_access_real_routes(self):
-        admin = self._login("admin", "Admin@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         response = admin.get("/dashboard")
         self.assertEqual(response.status_code, 200)
         self.assertIn("TỔNG QUAN CỬA HÀNG", response.get_data(as_text=True))
@@ -378,14 +384,14 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(admin.get("/activity/").status_code, 200)
         self.assertEqual(admin.get("/store/settings").status_code, 200)
 
-        staff = self._login("staff1", "Staff@123")
+        staff = self._login("staff1", DEMO_STAFF_PASSWORD)
         self.assertEqual(staff.get("/dashboard").status_code, 200)
         self.assertEqual(staff.get("/users/").status_code, 403)
         self.assertEqual(staff.get("/activity/").status_code, 403)
         self.assertEqual(staff.get("/store/settings").status_code, 403)
 
     def test_account_language_preference_survives_a_new_browser_session(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             user = fetch_one(
                 connection,
@@ -404,7 +410,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertIn("Dashboard", response.get_data(as_text=True))
 
-            new_client = self._login("admin", "Admin@123")
+            new_client = self._login("admin", DEMO_ADMIN_PASSWORD)
             new_session_dashboard = new_client.get("/dashboard").get_data(as_text=True)
             self.assertIn("Dashboard", new_session_dashboard)
             with get_connection() as connection:
@@ -599,7 +605,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_store_owner_is_visible_and_cannot_be_demoted_or_locked(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         page = client.get("/users/")
         self.assertIn("Chủ cửa hàng", page.get_data(as_text=True))
         self.assertIn("Không thể đổi vai trò hoặc khóa tại đây", page.get_data(as_text=True))
@@ -635,7 +641,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(unchanged, {"role": "owner", "active": 1})
 
     def test_owner_transfer_requires_both_accounts_to_reauthenticate_and_accept(self):
-        owner = self._login("admin", "Admin@123")
+        owner = self._login("admin", DEMO_ADMIN_PASSWORD)
         suffix = uuid4().hex[:10]
         target_username = "handoff_" + suffix
         target_password = "Handoff@123"
@@ -697,7 +703,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         try:
             self.app.config.update(MAIL_HOST="", MAIL_FROM="")
             owner_csrf = self._csrf_token(owner, "/users/ownership")
-            second_owner = self._login("admin", "Admin@123")
+            second_owner = self._login("admin", DEMO_ADMIN_PASSWORD)
             second_owner_csrf = self._csrf_token(second_owner, "/users/ownership")
             first_holds_tenant_lock = Event()
             second_waiting_for_lock = Event()
@@ -724,7 +730,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                         data={
                             "csrf_token": csrf_token,
                             "target_user_id": str(target_user_id),
-                            "current_password": "Admin@123",
+                            "current_password": DEMO_ADMIN_PASSWORD,
                         },
                         follow_redirects=True,
                     )
@@ -774,7 +780,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             pending_csrf = self._csrf_token(owner, "/users/ownership")
             cancelled_race = owner.post(
                 f"/users/ownership/{open_transfers['id']}/cancel",
-                data={"csrf_token": pending_csrf, "current_password": "Admin@123"},
+                data={"csrf_token": pending_csrf, "current_password": DEMO_ADMIN_PASSWORD},
                 follow_redirects=True,
             )
             self.assertIn("Đã thu hồi yêu cầu", cancelled_race.get_data(as_text=True))
@@ -805,7 +811,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 data={
                     "csrf_token": owner_csrf,
                     "target_user_id": str(target_user_id),
-                    "current_password": "Admin@123",
+                    "current_password": DEMO_ADMIN_PASSWORD,
                 },
                 follow_redirects=True,
             )
@@ -830,7 +836,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             cancel_csrf = self._csrf_token(owner, "/users/ownership")
             cancelled = owner.post(
                 f"/users/ownership/{cancelled_transfer['id']}/cancel",
-                data={"csrf_token": cancel_csrf, "current_password": "Admin@123"},
+                data={"csrf_token": cancel_csrf, "current_password": DEMO_ADMIN_PASSWORD},
                 follow_redirects=True,
             )
             self.assertIn("Đã thu hồi yêu cầu bàn giao", cancelled.get_data(as_text=True))
@@ -848,7 +854,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 data={
                     "csrf_token": owner_csrf,
                     "target_user_id": str(target_user_id),
-                    "current_password": "Admin@123",
+                    "current_password": DEMO_ADMIN_PASSWORD,
                 },
             )
             with get_connection() as connection:
@@ -894,7 +900,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 data={
                     "csrf_token": owner_csrf,
                     "target_user_id": str(target_user_id),
-                    "current_password": "Admin@123",
+                    "current_password": DEMO_ADMIN_PASSWORD,
                 },
             )
             target_page = target_user.get("/users/ownership")
@@ -1015,7 +1021,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_login_and_logout_are_recorded_in_selected_store_activity(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             login_event = fetch_one(
                 connection,
@@ -1053,8 +1059,8 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertGreaterEqual(events["total"], 2)
 
     def test_password_change_revokes_existing_session_cookie(self):
-        admin = self._login("admin", "Admin@123")
-        staff = self._login("staff1", "Staff@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
+        staff = self._login("staff1", DEMO_STAFF_PASSWORD)
         with get_connection() as connection:
             staff_user = fetch_one(
                 connection,
@@ -1069,13 +1075,13 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     "full_name": "Nhân viên cửa hàng",
                     "role": "staff",
                     "active": "1",
-                    "password": "Changed@123",
+                    "password": CHANGED_TEST_PASSWORD,
                 },
             )
             self.assertEqual(response.status_code, 302)
             self.assertEqual(staff.get("/dashboard").status_code, 302)
 
-            changed_password_session = self._login("staff1", "Changed@123")
+            changed_password_session = self._login("staff1", CHANGED_TEST_PASSWORD)
             self.assertEqual(changed_password_session.get("/dashboard").status_code, 200)
 
             response = admin.post(
@@ -1085,7 +1091,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     "full_name": "Nhân viên cửa hàng",
                     "role": "staff",
                     "active": "1",
-                    "password": "Staff@123",
+                    "password": DEMO_STAFF_PASSWORD,
                 },
             )
             self.assertEqual(response.status_code, 302)
@@ -1104,7 +1110,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_verified_email_password_recovery_is_single_use_and_revokes_sessions(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             account = fetch_one(
                 connection,
@@ -1136,7 +1142,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     data={
                         "csrf_token": self._csrf_token(client, "/account/settings"),
                         "email": recovery_email,
-                        "current_password": "Admin@123",
+                        "current_password": DEMO_ADMIN_PASSWORD,
                     },
                 )
                 self.assertEqual(response.status_code, 302)
@@ -1850,7 +1856,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertGreater(index["total"], 0)
 
     def test_invitation_creates_member_and_is_single_use(self):
-        admin = self._login("admin", "Admin@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         invite_email = f"invite-{uuid4().hex}@example.test"
         invite_url = self._create_invitation(admin, "staff", invite_email)
         duplicate_csrf = self._csrf_token(admin, "/users/")
@@ -1944,7 +1950,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 connection.commit()
             finally:
                 cursor.close()
-        admin = self._login("admin", "Admin@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         invite_url = self._create_invitation(admin, "admin", invited_email)
         invite_client = self.app.test_client()
         page = invite_client.get(invite_url)
@@ -1958,7 +1964,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 "csrf_token": csrf.group(1),
                 "token": token.group(1),
                 "username": "admin",
-                "password": "Admin@123",
+                "password": DEMO_ADMIN_PASSWORD,
                 "full_name": "",
             },
         )
@@ -2041,7 +2047,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 cursor.close()
 
     def test_configured_invitation_email_is_encrypted_and_not_exposed_to_admin(self):
-        admin = self._login("admin", "Admin@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         old = {
             key: self.app.config.get(key)
             for key in ("MAIL_HOST", "MAIL_FROM", "MAIL_OUTBOX_KEY")
@@ -2250,7 +2256,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 self.assertIn("Yêu cầu xuất dữ liệu", page.get_data(as_text=True))
                 self.assertEqual(page.headers.get("Cache-Control"), "private, no-store, max-age=0")
 
-                staff = self._login("staff1", "Staff@123")
+                staff = self._login("staff1", DEMO_STAFF_PASSWORD)
                 self.assertEqual(staff.get("/users/export").status_code, 403)
 
                 invalid_password = client.post(
@@ -2309,7 +2315,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 with self.app.app_context():
                     self.assertTrue(process_tenant_export_one(job_id))
 
-                other_store_admin = self._login("admin", "Admin@123")
+                other_store_admin = self._login("admin", DEMO_ADMIN_PASSWORD)
                 self.assertEqual(other_store_admin.get(queued.headers["Location"]).status_code, 404)
                 state = client.get(f"/users/export/jobs/{job_id}/status")
                 self.assertEqual(state.status_code, 200)
@@ -2411,7 +2417,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 finally:
                     cursor.close()
     def test_catalog_and_invoice_lists_use_bounded_mysql_pages(self):
-        admin = self._login("admin", "Admin@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         paths = (
             "/customers/?q=Kh%C3%A1ch&page=9999999",
             "/products/?all=1&page=not-a-page",
@@ -2425,7 +2431,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 self.assertIn("Hiển thị", response.get_data(as_text=True))
 
     def test_ai_and_image_routes_enforce_shared_mysql_quotas(self):
-        admin = self._login("admin", "Admin@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         token = self._csrf_token(admin, "/dashboard")
         with get_connection() as connection:
             user = fetch_one(connection, "SELECT id FROM users WHERE username = 'admin'")
@@ -2511,8 +2517,8 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_ai_and_vision_network_quotas_are_shared_across_accounts(self):
-        admin = self._login("admin", "Admin@123")
-        staff = self._login("staff1", "Staff@123")
+        admin = self._login("admin", DEMO_ADMIN_PASSWORD)
+        staff = self._login("staff1", DEMO_STAFF_PASSWORD)
         with get_connection() as connection:
             admin_user = fetch_one(connection, "SELECT id FROM users WHERE username = 'admin'")
             staff_user = fetch_one(connection, "SELECT id FROM users WHERE username = 'staff1'")
@@ -2649,7 +2655,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(sales, len(DEMO_SALES))
 
     def test_invoice_detail_and_payment_route_work(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             tenant_id = fetch_one(
                 connection, "SELECT id FROM tenants WHERE slug = 'main'"
@@ -2723,7 +2729,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_stock_adjustment_is_recorded_atomically(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             actor = fetch_one(connection, "SELECT id FROM users WHERE username = 'admin'")
             tenant_id = fetch_one(
@@ -2778,7 +2784,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_invoice_lookup_endpoints_search_customer_and_saleable_items(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         page = client.get("/invoices/new")
         self.assertEqual(page.status_code, 200)
         self.assertIn("data-lookup-widget", page.get_data(as_text=True))
@@ -2796,7 +2802,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertEqual(payload["pets"], [])
 
     def test_admin_create_forms_save_customer_product_and_pet(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             admin = fetch_one(
                 connection,
@@ -3104,7 +3110,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                         self.app.config[config_key] = previous_image_dir
 
     def test_image_upload_processing_saturation_redirects_with_retry_hint(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         csrf_token = self._csrf_token(client, "/pets/find-similar")
         slots = self.app.extensions["petcare_image_processing_slots"]
         configured_slots = self.app.config["IMAGE_PROCESSING_CONCURRENCY"]
@@ -3143,7 +3149,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertIn("Đang xử lý ảnh khác", retry_page.get_data(as_text=True))
 
     def test_catalog_image_upload_quota_is_shared_between_app_instances(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             admin = fetch_one(connection, "SELECT id FROM users WHERE username = 'admin'")
         identities = (
@@ -3202,7 +3208,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     "csrf_token": login_token.group(1),
                     "store_slug": "main",
                     "username": "admin",
-                    "password": "Admin@123",
+                    "password": DEMO_ADMIN_PASSWORD,
                 },
             )
             self.assertEqual(login_response.status_code, 302)
@@ -3253,7 +3259,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             clear_test_keys()
 
     def test_pet_photo_upload_and_visual_search_use_mysql_profile(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         search_page = client.get("/pets/find-similar")
         self.assertEqual(search_page.status_code, 200)
         search_html = search_page.get_data(as_text=True)
@@ -3396,7 +3402,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     remove_pet_photo(photo_filename, current_app.config["PET_IMAGE_DIR"])
 
     def test_assistant_returns_current_shop_context_for_authenticated_user(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         token = self._csrf_token(client, "/dashboard")
 
         response = client.post(
@@ -3422,7 +3428,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         self.assertLessEqual(len(payload["catalog"]["items"]), 12)
 
     def test_role_change_is_applied_to_an_existing_session(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             cursor = connection.cursor()
             try:
@@ -3659,7 +3665,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 with self.assertRaises(ForbiddenError):
                     auth_service.update_user(
                         admin_id, user_id,
-                        {"full_name": "Shared Branch Identity", "role": "staff", "active": "1", "password": "Changed@123"},
+                        {"full_name": "Shared Branch Identity", "role": "staff", "active": "1", "password": CHANGED_TEST_PASSWORD},
                     )
         finally:
             with get_connection() as connection:
@@ -3682,7 +3688,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                     cursor.close()
 
     def test_locked_account_is_logged_out_on_next_request(self):
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             cursor = connection.cursor()
             try:
@@ -3712,7 +3718,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
     ):
         from petcare.ai.client import AIProviderError
 
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         token = self._csrf_token(client, "/invoices/new")
         prefix = "P3-" + uuid4().hex[:8]
         other_tenant = None
@@ -3820,7 +3826,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         from xml.etree import ElementTree as ET
         from petcare.services import restock_service, report_export_service
 
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         prefix = "P3-" + uuid4().hex[:8]
         with get_connection() as connection:
             actor = fetch_one(
@@ -3953,7 +3959,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
     ):
         from petcare.services import pet_image_service
 
-        client = self._login("admin", "Admin@123")
+        client = self._login("admin", DEMO_ADMIN_PASSWORD)
         with get_connection() as connection:
             actor = fetch_one(
                 connection, "SELECT id FROM users WHERE username='admin'"

@@ -65,8 +65,8 @@ class LoginView(ttk.Frame):
         # Gợi ý tài khoản demo
         demo_box = ttk.LabelFrame(container, text="Tài khoản dùng thử (Demo)", padding=10)
         demo_box.pack(fill="x")
-        ttk.Label(demo_box, text="• Admin: admin / Admin@123", style="Muted.TLabel").pack(anchor="w")
-        ttk.Label(demo_box, text="• Nhân viên: staff1 / Staff@123", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(demo_box, text="• Admin: admin / [removed legacy demo credential]", style="Muted.TLabel").pack(anchor="w")
+        ttk.Label(demo_box, text="• Nhân viên: staff1 / [removed legacy demo credential]", style="Muted.TLabel").pack(anchor="w")
 
     def _handle_login(self) -> None:
         username = self.txt_username.get().strip()

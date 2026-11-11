@@ -20,7 +20,7 @@ class TestAuthService(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_login_admin_success(self):
-        session = self.auth_service.login("admin", "Admin@123")
+        session = self.auth_service.login("admin", "[removed legacy demo credential]")
         self.assertIsInstance(session, AuthSession)
         self.assertEqual(session.username, "admin")
         self.assertEqual(session.role, "admin")
@@ -28,7 +28,7 @@ class TestAuthService(unittest.TestCase):
         self.assertTrue(session.is_staff())
 
     def test_login_staff_success(self):
-        session = self.auth_service.login("staff1", "Staff@123")
+        session = self.auth_service.login("staff1", "[removed legacy demo credential]")
         self.assertIsInstance(session, AuthSession)
         self.assertEqual(session.username, "staff1")
         self.assertEqual(session.role, "staff")
@@ -49,14 +49,14 @@ class TestAuthService(unittest.TestCase):
             self.auth_service.login("", "")
 
     def test_admin_create_user(self):
-        admin_session = self.auth_service.login("admin", "Admin@123")
-        staff_session = self.auth_service.login("staff1", "Staff@123")
+        admin_session = self.auth_service.login("admin", "[removed legacy demo credential]")
+        staff_session = self.auth_service.login("staff1", "[removed legacy demo credential]")
 
         # Admin tạo được nhân viên mới
         new_user_id = self.auth_service.create_user(
             admin_session,
             username="staff_new",
-            password="NewStaff@123",
+            password="New[removed legacy demo credential]",
             role="staff",
             full_name="Nhân viên mới",
         )
@@ -64,7 +64,7 @@ class TestAuthService(unittest.TestCase):
         self.assertGreater(new_user_id, 0)
 
         # Đăng nhập bằng tài khoản mới
-        new_session = self.auth_service.login("staff_new", "NewStaff@123")
+        new_session = self.auth_service.login("staff_new", "New[removed legacy demo credential]")
         self.assertEqual(new_session.username, "staff_new")
 
         # Staff tạo tài khoản thì bị chặn
@@ -78,7 +78,7 @@ class TestAuthService(unittest.TestCase):
             )
 
     def test_cannot_deactivate_or_demote_last_admin(self):
-        admin_session = self.auth_service.login("admin", "Admin@123")
+        admin_session = self.auth_service.login("admin", "[removed legacy demo credential]")
         # Hệ thống chỉ có 1 admin duy nhất trong seed
         with self.assertRaises(ValueError):
             # Cố tình hạ quyền xuống staff
@@ -104,8 +104,8 @@ class TestAuthService(unittest.TestCase):
         """QC Lỗi 1: Nhân viên đang đăng nhập, khi tài khoản bị khóa trong DB thì mọi thao tác sau đó phải bị chặn."""
         from petcare.services.owner_service import OwnerService
         owner_service = OwnerService(self.db_path)
-        admin_session = self.auth_service.login("admin", "Admin@123")
-        staff_session = self.auth_service.login("staff1", "Staff@123")
+        admin_session = self.auth_service.login("admin", "[removed legacy demo credential]")
+        staff_session = self.auth_service.login("staff1", "[removed legacy demo credential]")
 
         # Thao tác ban đầu thành công
         owner_id = owner_service.create_owner(
@@ -135,7 +135,7 @@ class TestAuthService(unittest.TestCase):
         """QC Lỗi 1: Admin đang đăng nhập, khi bị hạ quyền xuống staff trong DB thì các thao tác admin sau đó phải bị chặn."""
         from petcare.services.catalog_service import CatalogService
         catalog_service = CatalogService(self.db_path)
-        admin1_session = self.auth_service.login("admin", "Admin@123")
+        admin1_session = self.auth_service.login("admin", "[removed legacy demo credential]")
 
         # Tạo thêm admin thứ 2
         admin2_id = self.auth_service.create_user(

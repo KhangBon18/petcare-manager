@@ -10,6 +10,8 @@ from threading import Event, Thread, current_thread
 from uuid import uuid4
 from unittest.mock import patch
 
+from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD
+
 from petcare import create_app
 from petcare.config import Config
 from petcare.database.connection import get_connection, transaction
@@ -158,7 +160,7 @@ class MySQLSalesIntegrationTests(unittest.TestCase):
             "csrf_token": csrf.group(1),
             "store_slug": "main",
             "username": "admin",
-            "password": "Admin@123",
+            "password": DEMO_ADMIN_PASSWORD,
         })
         self.assertEqual(response.status_code, 302)
         return client

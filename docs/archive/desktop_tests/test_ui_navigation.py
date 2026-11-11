@@ -43,7 +43,7 @@ class TestUINavigation(unittest.TestCase):
         self.assertIsNotNone(self.app.current_view)
 
         # 2. Đăng nhập với Admin
-        session = self.app.auth_service.login("admin", "Admin@123")
+        session = self.app.auth_service.login("admin", "[removed legacy demo credential]")
         self.app.on_login_success(session)
         self.assertIsNotNone(self.app.session)
         self.assertTrue(self.app.session.is_admin())
