@@ -126,7 +126,18 @@ jobs:
       - name: Check installed package consistency
         run: python -m pip check
       - name: Install Chromium and system packages
-        run: python -m playwright install --with-deps chromium
+        run: |
+          for attempt in 1 2 3; do
+            if python -m playwright install --with-deps chromium; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Playwright dependency installation failed on attempt ${attempt}/3; retrying in 20 seconds."
+              sleep 20
+            fi
+          done
+          echo "Playwright dependency installation failed after 3 attempts."
+          exit 1
       - name: Run isolated Playwright browser smoke
         run: python scripts/browser_smoke/run_smoke.py
         env:
