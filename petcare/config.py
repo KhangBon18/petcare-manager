@@ -75,6 +75,10 @@ class Config:
     AI_VISION_MAX_RETRIES = int(os.getenv("AI_VISION_MAX_RETRIES", "1"))
     AI_VISION_ENABLED = os.getenv("AI_VISION_ENABLED", "0") == "1"
     AI_PROVIDER_APPROVED = os.getenv("AI_PROVIDER_APPROVED", "0") == "1"
+    AI_TOOL_CALLING_ENABLED = os.getenv("AI_TOOL_CALLING_ENABLED", "0") == "1"
+    AI_MAX_TOOL_ROUNDS = max(1, min(int(os.getenv("AI_MAX_TOOL_ROUNDS", "3")), 4))
+    AI_MAX_TOTAL_TOOL_CALLS = max(1, min(int(os.getenv("AI_MAX_TOTAL_TOOL_CALLS", "4")), 6))
+    AI_TOOL_TIMEOUT_SECONDS = max(0.05, min(float(os.getenv("AI_TOOL_TIMEOUT_SECONDS", "3.0")), 10.0))
     AI_TEST_ALLOW_LOOPBACK_PROVIDER = os.getenv("AI_TEST_ALLOW_LOOPBACK_PROVIDER", "0") == "1"
     ASSISTANT_CONVERSATION_TTL_SECONDS = max(
         60, int(os.getenv("ASSISTANT_CONVERSATION_TTL_SECONDS", "1800"))

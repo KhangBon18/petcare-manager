@@ -21,16 +21,22 @@ from petcare.ai.knowledge_base import (
 from petcare.ai.memory import MEMORY_STORE, SessionState, sanitize_conversation_id
 from petcare.ai.nlu import (
     InterpretedTurn,
+    detect_slot_removals,
     extract_preference_slots,
     interpret_turn,
     merge_preference_slots,
 )
-from petcare.ai.provider import get_provider_status, synthesize_approved_llm_reply
+from petcare.ai.provider import (
+    get_active_tool_calling_adapter,
+    get_provider_status,
+    synthesize_approved_llm_reply,
+)
 from petcare.ai.recommender_pets import localize_clarification, needs_pet_clarification
 from petcare.ai.recommender_products import needs_product_clarification
 from petcare.ai.tools import ActorContext, ToolPermissionError, execute_tool
 from petcare.database.connection import read_connection
 from petcare.services import assistant_capabilities
+from petcare.services.assistant_local import top_products_answer
 from petcare.services.catalog_intent import _normalize, _question_intent
 from petcare.services.common import require_actor
 from petcare.services.exceptions import ForbiddenError
@@ -80,6 +86,7 @@ def _hydrate_slots_from_history(history: Any) -> tuple[PreferenceSlots, bool]:
             continue
         if role == "user":
             had_user_turns = True
+            clr_bg, rem_al, clr_all_al = detect_slot_removals(content)
             upd, exp_sp, exp_bg = extract_preference_slots(content)
             domain = "product" if upd.product_category else ("pet" if upd.species and not slots.active_domain else slots.active_domain)
             slots = merge_preference_slots(
@@ -88,12 +95,33 @@ def _hydrate_slots_from_history(history: Any) -> tuple[PreferenceSlots, bool]:
                 target_domain=domain,
                 explicit_species_override=exp_sp,
                 explicit_budget_override=exp_bg,
+                clear_budget=clr_bg,
+                removed_allergies=rem_al,
+                clear_all_allergies=clr_all_al,
             )
         elif role == "assistant":
             norm_a = _normalize(content)
             if any(p in norm_a for p in ("calm or active", "hien/it van dong hay nang dong", "what is your budget", "ngan sach du kien")):
                 slots.awaiting_clarification_for = slots.active_domain or "pet"
     return slots, had_user_turns
+
+
+def _merge_turn_slots(
+    active_slots: PreferenceSlots,
+    interpreted: InterpretedTurn,
+    *,
+    target_domain: str | None,
+) -> PreferenceSlots:
+    return merge_preference_slots(
+        active_slots,
+        interpreted.slot_updates,
+        target_domain=target_domain,
+        explicit_species_override=interpreted.explicit_species_override,
+        explicit_budget_override=interpreted.explicit_budget_override,
+        clear_budget=interpreted.clear_budget,
+        removed_allergies=interpreted.removed_allergies,
+        clear_all_allergies=interpreted.clear_all_allergies,
+    )
 
 
 def _resolve_actor_context(
@@ -299,6 +327,9 @@ def try_orchestrate_turn(
     tenant_id: int | None = None,
     scope_raw: str | None = None,
     conversation_id_raw: object = None,
+    tool_adapter: Any | None = None,
+    offline_fallback_fn: Any | None = None,
+    force_offline: bool = False,
 ) -> dict[str, Any] | None:
     """Handle PetCare AI advisory, comparison, knowledge, forecast, memory, and shopper-scope turns.
 
@@ -371,7 +402,7 @@ def try_orchestrate_turn(
 
     # 3. Veterinary Emergency & Medical Boundaries
     if interpreted.intent == "vet_emergency":
-        kb_res = build_emergency_triage_response(locale)
+        kb_res = build_emergency_triage_response(locale, category=interpreted.safety_category)
         return AssistantTurnResponse(
             reply=kb_res.reply,
             response_type=ResponseType.KNOWLEDGE_ANSWER,
@@ -383,7 +414,7 @@ def try_orchestrate_turn(
         ).to_api_dict()
 
     if interpreted.intent == "vet_medical_boundary":
-        kb_res = build_medical_boundary_response(locale)
+        kb_res = build_medical_boundary_response(locale, category=interpreted.safety_category)
         return AssistantTurnResponse(
             reply=kb_res.reply,
             response_type=ResponseType.UNSUPPORTED_REQUEST,
@@ -395,6 +426,88 @@ def try_orchestrate_turn(
             follow_up_questions=kb_res.follow_up_questions,
             context_state=active_slots.to_public_dict(locale),
         ).to_api_dict()
+
+    if interpreted.intent == "unsupported_species":
+        reply = (
+            "Danh mục sản phẩm xác thực và kho tri thức đã kiểm duyệt của PetCare AI hiện **chỉ bao gồm chó và mèo**, "
+            "chưa hỗ trợ thông số hay hướng dẫn chăm sóc cho các loài thú ngoại lai (như sóc bay, nhím kiểng, bò sát, chim, thỏ hay hamster). "
+            "Trợ lý xin phép không tự suy đoán thông tin."
+            if vi else
+            "PetCare AI's verified catalog and reviewed knowledge base currently **only cover dogs and cats** "
+            "and do not store verified guidance or product specifications for exotic species (such as sugar gliders, hedgehogs, reptiles, birds, rabbits, or hamsters). "
+            "Rather than guessing, please consult an exotic-pet specialist."
+        )
+        return AssistantTurnResponse(
+            reply=reply,
+            response_type=ResponseType.UNSUPPORTED_REQUEST,
+            scope=scope,
+            status="clarification",
+            conversation_id=conv_id,
+            missing_data=[
+                "Chưa hỗ trợ dữ liệu sản phẩm và kiến thức chăm sóc ngoài chó và mèo."
+                if vi else
+                "Verified catalog and care records only cover dogs and cats; exotic species are undocumented."
+            ],
+            follow_up_questions=(
+                ["Gợi ý mèo hợp căn hộ dưới 7 triệu", "Gợi ý thức ăn cho chó trưởng thành", "Cách chuẩn bị căn hộ khi mới đón mèo"]
+                if vi else
+                ["Recommend a calm apartment cat under 7 million VND", "Recommend adult dog food", "How to prepare an apartment for a new cat"]
+            ),
+            context_state=active_slots.to_public_dict(locale),
+        ).to_api_dict()
+
+    # 3b. Genuine LLM Tool-Calling Orchestration (AI-2: mock adapter in offline tests or approved Mode B)
+    active_adapter = None if force_offline else (tool_adapter or get_active_tool_calling_adapter())
+    if active_adapter is not None:
+        from petcare.ai.llm_tool_agent import run_tool_calling_turn
+
+        actor = _resolve_actor_context(actor_id, tenant_id, scope, locale)
+        if session_state is None and conv_id is not None:
+            session_state = MEMORY_STORE.get_or_create(
+                tenant_id=actor.tenant_id,
+                user_id=actor.user_id,
+                scope=scope,
+                conversation_id=conv_id,
+            )
+            active_slots = session_state.slots.clone()
+
+        def _default_offline_fallback() -> dict[str, Any]:
+            res = try_orchestrate_turn(
+                actor_id,
+                question,
+                history=history,
+                locale=locale,
+                tenant_id=tenant_id,
+                scope_raw=scope_raw,
+                conversation_id_raw=conversation_id_raw,
+                force_offline=True,
+            )
+            if res is not None:
+                return res
+            return AssistantTurnResponse(
+                reply=(
+                    "Dịch vụ AI ngoài tạm thời không khả dụng. Vui lòng thử lại với câu hỏi cụ thể hơn."
+                    if vi else
+                    "The external AI service is temporarily unavailable. Please retry with a specific catalog or care query."
+                ),
+                response_type=ResponseType.SERVICE_ERROR,
+                scope=scope,
+                status="unavailable",
+                conversation_id=conv_id,
+                currency_code=actor.currency_code,
+                context_state=active_slots.to_public_dict(locale),
+            ).to_api_dict()
+
+        return run_tool_calling_turn(
+            adapter=active_adapter,
+            actor=actor,
+            question=question,
+            session_state=session_state,
+            initial_slots=active_slots,
+            conversation_id=conv_id,
+            offline_fallback_fn=offline_fallback_fn or _default_offline_fallback,
+            history=history if isinstance(history, list) else None,
+        )
 
     # 4. Legacy Store Queries: Enforce strict Shopper Preview boundary or delegate in Workspace
     if interpreted.intent == "legacy_store_query":
@@ -489,7 +602,186 @@ def try_orchestrate_turn(
             conversation_id=conv_id,
         )
 
-    # 5. Inventory 8-Week Weighted Demand Forecast (Admin Workspace Tool)
+    # 5a. Undocumented Catalog / Clinical Attribute Disclosure (never fabricate nutrient %, vaccine logs, or factory dust %)
+    if interpreted.intent == "undocumented_attribute_inquiry":
+        merged_slots = _merge_turn_slots(
+            active_slots,
+            interpreted,
+            target_domain=active_slots.active_domain,
+        )
+        traces = []
+        verified_line = ""
+        if interpreted.comparison_codes:
+            target_code = interpreted.comparison_codes[0]
+            if target_code.startswith("PET-"):
+                pet_res, p_trace = execute_tool(actor, "search_available_pets", query=target_code, limit=1)
+                traces.append(p_trace)
+                matched_pet = next(
+                    (it for it in pet_res.get("items", []) if str(it.get("code", "")).upper() == target_code),
+                    None,
+                )
+                if matched_pet:
+                    p_str = _fmt_price(Decimal(str(matched_pet["price"])), actor.currency_code, locale)
+                    verified_line = (
+                        f"Hồ sơ **{matched_pet['name']} ({matched_pet['code']})** hiện đang mở bán với giá {p_str}. "
+                        if vi else
+                        f"Profile **{matched_pet['name']} ({matched_pet['code']})** is currently available at {p_str}. "
+                    )
+            else:
+                prod_res_lookup, pr_trace = execute_tool(actor, "search_products", query=target_code, limit=1)
+                traces.append(pr_trace)
+                matched_prod = next(
+                    (it for it in prod_res_lookup.get("items", []) if str(it.get("code", "")).upper() == target_code),
+                    None,
+                )
+                if matched_prod:
+                    p_str = _fmt_price(Decimal(str(matched_prod["price"])), actor.currency_code, locale)
+                    verified_line = (
+                        f"Sản phẩm **{matched_prod['name']} ({matched_prod['code']})** hiện có giá {p_str} (tồn kho: {matched_prod['stock']}). "
+                        if vi else
+                        f"Product **{matched_prod['name']} ({matched_prod['code']})** is priced at {p_str} (stock: {matched_prod['stock']}). "
+                    )
+
+        missing_note = (
+            "Cơ sở dữ liệu danh mục hiện chưa ghi nhận bảng phần trăm dinh dưỡng chi tiết (đạm thô, chất béo, taurine), "
+            "lịch sử ngày tiêm vaccine / hãng thuốc tẩy giun cụ thể, nhà máy sản xuất hay chứng nhận phần trăm bụi mịn."
+            if vi else
+            "The verified catalog schema does not store laboratory nutrient percentages (crude protein, fat, taurine), "
+            "individual vaccination dates or dewormer brands, manufacturing factory origin, or lab-certified silica dust percentages."
+        )
+        reply = verified_line + (
+            "Tuy nhiên, hệ thống **không lưu trữ** các thông số kiểm định phòng thí nghiệm (phần trăm đạm thô, chất béo, hàm lượng taurine, tỷ lệ bụi mịn), "
+            "nhà máy sản xuất hay sổ tiêm chủng / tẩy giun chi tiết của từng cá thể nên PetCare AI không tự suy đoán con số. "
+            "Vui lòng kiểm tra trực tiếp nhãn bao bì gốc tại quầy hoặc sổ sức khỏe thú y giấy."
+            if vi else
+            "However, our database **does not store** exact laboratory percentages (crude protein, fat, taurine, silica dust), "
+            "manufacturing factory origin, or individual vaccination/deworming logs, so PetCare AI will not guess or fabricate values. "
+            "Please check the physical product packaging or paper veterinary health booklet at the store."
+        )
+        if session_state is not None:
+            session_state.slots = merged_slots
+            session_state.record_turn("user", question)
+            session_state.record_turn("assistant", reply)
+        return AssistantTurnResponse(
+            reply=reply,
+            response_type=ResponseType.UNSUPPORTED_REQUEST,
+            scope=scope,
+            status="clarification",
+            conversation_id=conv_id,
+            currency_code=actor.currency_code,
+            missing_data=[missing_note],
+            follow_up_questions=(
+                ["Gợi ý thức ăn cho mèo trưởng thành dưới 350k", "So sánh FOOD-001, FOOD-002 và FOOD-006"]
+                if vi else
+                ["Recommend adult cat food under 350,000 VND", "Compare FOOD-001, FOOD-002, and FOOD-006"]
+            ),
+            tool_trace=traces,
+            context_state=merged_slots.to_public_dict(locale),
+        ).to_api_dict()
+
+    # 5b. Bounded Multi-Tool Operational Insights (Sales Ranking + Restock or 8-Week Forecast, <= 2 tools)
+    if interpreted.intent == "multi_operational":
+        period = interpreted.operational_period or "7d"
+        try:
+            sales_raw, trace_sales = execute_tool(actor, "get_sales_summary", period=period)
+        except ToolPermissionError as exc:
+            denied_trace = exc.args[1] if len(exc.args) > 1 else None
+            msg = (
+                "Đang ở chế độ **Xem thử khách mua (Shopper Preview)**: báo cáo bán chạy và cảnh báo nhập hàng nội bộ được bảo vệ và không hiển thị cho khách mua."
+                if vi else
+                "**Shopper Preview** mode restricts internal sales rankings and restock alerts."
+            )
+            return AssistantTurnResponse(
+                reply=msg,
+                response_type=ResponseType.PERMISSION_DENIED,
+                scope=scope,
+                status="forbidden",
+                conversation_id=conv_id,
+                currency_code=actor.currency_code,
+                tool_trace=[denied_trace] if denied_trace else [],
+                context_state=active_slots.to_public_dict(locale),
+            ).to_api_dict()
+
+        sales_text = top_products_answer(sales_raw, locale)
+        api_sales_insight = {
+            "kind": "top_products",
+            "period": sales_raw["period"],
+            "start_date": sales_raw["start_date"].isoformat(),
+            "end_date": sales_raw["end_date"].isoformat(),
+            "currency_code": sales_raw["currency_code"],
+            "items": [{**it, "revenue": str(it["revenue"])} for it in sales_raw.get("items", [])],
+        }
+        traces = [trace_sales]
+        sections: list[dict[str, Any]] = [api_sales_insight]
+        reply_parts = [sales_text]
+        missing_notes: list[str] = []
+
+        sec_tool = interpreted.secondary_operational_tool or "get_restock_insights"
+        try:
+            if sec_tool == "get_inventory_forecast":
+                fc_data, trace_sec = execute_tool(actor, "get_inventory_forecast", limit=8)
+                traces.append(trace_sec)
+                sections.append(fc_data)
+                fc_lines = [
+                    (
+                        f"Dự báo nhu cầu 8 tuần có trọng số (mục tiêu tồn {fc_data['horizon_days']} ngày): "
+                        f"có **{fc_data['warning_count']}/{fc_data['total_evaluated']}** mặt hàng cần chú ý nhập bổ sung."
+                        if vi else
+                        f"8-week weighted demand forecast ({fc_data['horizon_days']}-day coverage target): "
+                        f"**{fc_data['warning_count']}/{fc_data['total_evaluated']}** active SKUs trigger restock warnings."
+                    )
+                ]
+                for row in fc_data.get("items", [])[:5]:
+                    rate_lbl = (
+                        f"{row['daily_rate']}/ngày"
+                        if (vi and row["daily_rate"])
+                        else (f"{row['daily_rate']}/day" if row["daily_rate"] else ("chưa có lịch sử bán" if vi else "no paid sales"))
+                    )
+                    fc_lines.append(
+                        f"• {row['name']} ({row['code']}): tồn {row['stock_qty']} (+đang về {row['incoming_qty']}), tốc độ {rate_lbl}, gợi ý nhập +{row['suggested_qty']}"
+                        if vi else
+                        f"• {row['name']} ({row['code']}): stock {row['stock_qty']} (+incoming {row['incoming_qty']}), velocity {rate_lbl}, suggested +{row['suggested_qty']}"
+                    )
+                reply_parts.append("\n".join(fc_lines))
+            else:
+                restock_res, trace_sec = execute_tool(actor, "get_restock_insights", question="restock")
+                traces.append(trace_sec)
+                if isinstance(restock_res.get("insight"), dict):
+                    sections.append(restock_res["insight"])
+                if restock_res.get("reply"):
+                    reply_parts.append(str(restock_res["reply"]))
+        except ToolPermissionError as exc:
+            denied_trace = exc.args[1] if len(exc.args) > 1 else None
+            if denied_trace:
+                traces.append(denied_trace)
+            perm_note = (
+                "Phần dự báo nhu cầu tồn kho 8 tuần chỉ dành cho quản trị viên cửa hàng nên đã được lược bỏ khỏi phản hồi này."
+                if vi else
+                "The 8-week weighted demand forecast sub-request is restricted to store administrators and was omitted."
+            )
+            missing_notes.append(perm_note)
+            reply_parts.append(perm_note)
+
+        combined_reply = "\n\n".join(part for part in reply_parts if part)
+        return AssistantTurnResponse(
+            reply=combined_reply,
+            response_type=ResponseType.OPERATIONAL_INSIGHT,
+            scope=scope,
+            status="ok",
+            conversation_id=conv_id,
+            currency_code=actor.currency_code,
+            reasoning_summary=(
+                f"Thực thi kết hợp có giới hạn ({len(traces)}/2 công cụ đọc nội bộ) qua TOOL_REGISTRY với kiểm tra phân quyền độc lập từng bước."
+                if vi else
+                f"Bounded multi-intent execution ({len(traces)}/2 read-only operational tools) via TOOL_REGISTRY with per-tool RBAC checks."
+            ),
+            insight={"kind": "combined_operational", "sections": sections},
+            missing_data=missing_notes,
+            tool_trace=traces,
+            context_state=active_slots.to_public_dict(locale),
+        ).to_api_dict()
+
+    # 5c. Inventory 8-Week Weighted Demand Forecast (Admin Workspace Tool)
     if interpreted.intent == "inventory_forecast":
         try:
             forecast_data, trace = execute_tool(actor, "get_inventory_forecast", limit=8)
@@ -545,14 +837,101 @@ def try_orchestrate_turn(
             context_state=active_slots.to_public_dict(locale),
         ).to_api_dict()
 
-    # 6. Trusted Pet-Care Knowledge Base Retrieval
+    # 6a. Bounded Multi-Intent Care Knowledge + Catalog Recommendations (<= 2 tools)
+    if interpreted.intent == "multi_knowledge_and_shopping":
+        wants_pet_domain = (
+            interpreted.slot_updates.product_category is None
+            and not any(
+                w in interpreted.raw_query_normalized
+                for w in ("product", "products", "san pham", "mat hang", "food", "thuc an", "litter", "cat ve sinh", "treat", "banh thuong")
+            )
+            and active_slots.active_domain == "pet"
+        )
+        target_dom = "pet" if wants_pet_domain else "product"
+        merged_slots = _merge_turn_slots(active_slots, interpreted, target_domain=target_dom)
+
+        kb_res, kb_trace = execute_tool(
+            actor,
+            "search_pet_care_knowledge",
+            query=question,
+            species_hint=merged_slots.species,
+        )
+        traces = [kb_trace]
+        missing_notes: list[str] = []
+
+        if target_dom == "pet":
+            shop_res, shop_trace = execute_tool(actor, "recommend_pets", slots=merged_slots)
+            traces.append(shop_trace)
+            cards = shop_res.cards
+            shop_reply = _compose_pet_reply(cards, shop_res.total_passing_hard_constraints, locale)
+            missing_notes.extend(shop_res.missing_data_notes)
+            primary_rt = ResponseType.PET_RECOMMENDATIONS
+            follow_ups = shop_res.follow_up_questions
+        else:
+            shop_res, shop_trace = execute_tool(actor, "recommend_products", slots=merged_slots)
+            traces.append(shop_trace)
+            cards = shop_res.cards
+            shop_reply = _compose_product_reply(
+                cards,
+                shop_res.no_primary_match,
+                shop_res.out_of_stock_names,
+                locale,
+            )
+            missing_notes.extend(shop_res.missing_data_notes)
+            primary_rt = ResponseType.PRODUCT_RECOMMENDATIONS
+            follow_ups = shop_res.follow_up_questions
+
+        if kb_res.matched:
+            combined_reply = f"{kb_res.reply}\n\n{shop_reply}"
+            final_rt = primary_rt if cards else ResponseType.KNOWLEDGE_ANSWER
+        else:
+            missing_notes.insert(
+                0,
+                "Kho tri thức nội bộ chưa có bài viết khớp trực tiếp với vế câu hỏi chăm sóc; dưới đây là phần sản phẩm xác thực từ cửa hàng."
+                if vi else
+                "No reviewed knowledge-base article matched the care sub-question above confidence threshold; verified store matches are shown below.",
+            )
+            combined_reply = shop_reply
+            final_rt = primary_rt if cards else ResponseType.UNSUPPORTED_REQUEST
+
+        if session_state is not None:
+            session_state.slots = merged_slots
+            if target_dom == "pet":
+                session_state.last_recommended_pet_ids = [c.entity_id for c in cards]
+            else:
+                session_state.last_recommended_product_ids = [c.entity_id for c in cards]
+            session_state.record_turn("user", question)
+            session_state.record_turn("assistant", combined_reply)
+
+        return AssistantTurnResponse(
+            reply=combined_reply,
+            response_type=final_rt,
+            mode="local",
+            engine_mode=EngineMode.OFFLINE,
+            scope=scope,
+            conversation_id=conv_id,
+            currency_code=actor.currency_code,
+            reasoning_summary=(
+                f"Kết hợp tối đa 2 công cụ đọc an toàn: BM25 tri thức ({len(kb_res.citations)} nguồn) + gợi ý danh mục MySQL ({len(cards)} mục)."
+                if vi else
+                f"Bounded 2-tool orchestration: Okapi BM25 knowledge retrieval ({len(kb_res.citations)} sources) + verified MySQL ranking ({len(cards)} items)."
+            ),
+            cards=cards,
+            citations=kb_res.citations,
+            safety_notice=kb_res.safety_notice,
+            follow_up_questions=follow_ups or kb_res.follow_up_questions,
+            missing_data=missing_notes,
+            tool_trace=traces,
+            catalog=_cards_to_legacy_catalog(cards),
+            context_state=merged_slots.to_public_dict(locale),
+        ).to_api_dict()
+
+    # 6b. Trusted Pet-Care Knowledge Base Retrieval
     if interpreted.intent == "knowledge_qa":
-        merged_slots = merge_preference_slots(
+        merged_slots = _merge_turn_slots(
             active_slots,
-            interpreted.slot_updates,
+            interpreted,
             target_domain=active_slots.active_domain,
-            explicit_species_override=interpreted.explicit_species_override,
-            explicit_budget_override=interpreted.explicit_budget_override,
         )
         kb_res, trace = execute_tool(
             actor,
@@ -574,6 +953,7 @@ def try_orchestrate_turn(
                 "guidance": kb_res.reply,
             },
             fallback_reply=kb_res.reply,
+            force_offline=force_offline,
         )
         return AssistantTurnResponse(
             reply=reply_text,
@@ -597,12 +977,10 @@ def try_orchestrate_turn(
 
     # 7. Side-by-Side Product Comparison
     if interpreted.intent == "product_comparison":
-        merged_slots = merge_preference_slots(
+        merged_slots = _merge_turn_slots(
             active_slots,
-            interpreted.slot_updates,
+            interpreted,
             target_domain="product",
-            explicit_species_override=interpreted.explicit_species_override,
-            explicit_budget_override=interpreted.explicit_budget_override,
         )
         session_prod_ids = session_state.last_recommended_product_ids if session_state else []
         (table, summary_msg), trace = execute_tool(
@@ -665,13 +1043,47 @@ def try_orchestrate_turn(
 
     # 8. Pet Matching & Adoption/Purchase Advice
     if interpreted.intent == "pet_recommendation":
-        merged_slots = merge_preference_slots(
+        merged_slots = _merge_turn_slots(
             active_slots,
-            interpreted.slot_updates,
+            interpreted,
             target_domain="pet",
-            explicit_species_override=interpreted.explicit_species_override,
-            explicit_budget_override=interpreted.explicit_budget_override,
         )
+        if (
+            merged_slots.budget_min is not None
+            and merged_slots.budget_max is not None
+            and merged_slots.budget_min > merged_slots.budget_max
+        ):
+            min_txt = _fmt_price(merged_slots.budget_min, actor.currency_code, locale)
+            max_txt = _fmt_price(merged_slots.budget_max, actor.currency_code, locale)
+            merged_slots.budget_min = None
+            merged_slots.budget_max = None
+            merged_slots.awaiting_clarification_for = "pet"
+            msg = (
+                f"Ràng buộc ngân sách đang mâu thuẫn: mức tối thiểu (**{min_txt}**) lớn hơn mức trần tối đa (**{max_txt}**). "
+                "Bạn muốn lọc theo khoảng giá nào?"
+                if vi else
+                f"Your budget range is contradictory: the minimum (**{min_txt}**) exceeds the maximum ceiling (**{max_txt}**). "
+                "Which budget cap or floor would you like to apply?"
+            )
+            chips = (
+                [f"Dưới {max_txt}", f"Từ {min_txt} trở lên", "Bỏ giới hạn ngân sách"]
+                if vi else [f"Under {max_txt}", f"{min_txt} or more", "Remove budget limit"]
+            )
+            if session_state is not None:
+                session_state.slots = merged_slots
+                session_state.record_turn("user", question)
+                session_state.record_turn("assistant", msg)
+            return AssistantTurnResponse(
+                reply=msg,
+                response_type=ResponseType.CLARIFICATION,
+                scope=scope,
+                status="clarification",
+                conversation_id=conv_id,
+                currency_code=actor.currency_code,
+                follow_up_questions=chips,
+                context_state=merged_slots.to_public_dict(locale),
+            ).to_api_dict()
+
         effective_turn = prior_turn_count + 1
         should_clarify, packed_msg, packed_chips = needs_pet_clarification(merged_slots, effective_turn)
         if should_clarify:
@@ -694,6 +1106,18 @@ def try_orchestrate_turn(
 
         merged_slots.awaiting_clarification_for = None
         match_res, trace = execute_tool(actor, "recommend_pets", slots=merged_slots)
+        pet_missing = list(match_res.missing_data_notes)
+        if any(
+            term in interpreted.raw_query_normalized
+            for term in ("hypoallergenic", "dander", "khong gay di ung", "di ung long")
+        ):
+            hypo_note = (
+                "Lưu ý dữ liệu: Hồ sơ thú cưng không lưu chứng nhận '100% không gây dị ứng (hypoallergenic / zero dander)' — không có giống chó mèo nào hoàn toàn không tiết dị nguyên."
+                if vi else
+                "Data disclosure: Pet profiles do not store '100% hypoallergenic / zero-dander' certification, and no cat or dog breed is completely allergen-free."
+            )
+            pet_missing.insert(0, hypo_note)
+
         fallback_reply = _compose_pet_reply(
             match_res.cards,
             match_res.total_passing_hard_constraints,
@@ -708,6 +1132,7 @@ def try_orchestrate_turn(
                 "top_matches": [c.to_dict() for c in match_res.cards],
             },
             fallback_reply=fallback_reply,
+            force_offline=force_offline,
         )
         if session_state is not None:
             session_state.slots = merged_slots
@@ -726,20 +1151,54 @@ def try_orchestrate_turn(
             reasoning_summary=match_res.reasoning_summary,
             cards=match_res.cards,
             follow_up_questions=match_res.follow_up_questions,
-            missing_data=match_res.missing_data_notes,
+            missing_data=pet_missing,
             tool_trace=[trace],
             catalog=_cards_to_legacy_catalog(match_res.cards),
             context_state=merged_slots.to_public_dict(locale),
         ).to_api_dict()
 
     # 9. Personalized Product Recommendations
-    merged_slots = merge_preference_slots(
+    merged_slots = _merge_turn_slots(
         active_slots,
-        interpreted.slot_updates,
+        interpreted,
         target_domain="product",
-        explicit_species_override=interpreted.explicit_species_override,
-        explicit_budget_override=interpreted.explicit_budget_override,
     )
+    if (
+        merged_slots.budget_min is not None
+        and merged_slots.budget_max is not None
+        and merged_slots.budget_min > merged_slots.budget_max
+    ):
+        min_txt = _fmt_price(merged_slots.budget_min, actor.currency_code, locale)
+        max_txt = _fmt_price(merged_slots.budget_max, actor.currency_code, locale)
+        merged_slots.budget_min = None
+        merged_slots.budget_max = None
+        merged_slots.awaiting_clarification_for = "product"
+        msg = (
+            f"Ràng buộc ngân sách đang mâu thuẫn: mức tối thiểu (**{min_txt}**) lớn hơn mức trần tối đa (**{max_txt}**). "
+            "Bạn muốn lọc sản phẩm theo mức giá nào?"
+            if vi else
+            f"Your budget constraints conflict: the minimum (**{min_txt}**) exceeds the maximum ceiling (**{max_txt}**). "
+            "Which price bound should I apply?"
+        )
+        chips = (
+            [f"Dưới {max_txt}", f"Từ {min_txt} trở lên", "Bỏ giới hạn ngân sách"]
+            if vi else [f"Under {max_txt}", f"{min_txt} or more", "Remove budget limit"]
+        )
+        if session_state is not None:
+            session_state.slots = merged_slots
+            session_state.record_turn("user", question)
+            session_state.record_turn("assistant", msg)
+        return AssistantTurnResponse(
+            reply=msg,
+            response_type=ResponseType.CLARIFICATION,
+            scope=scope,
+            status="clarification",
+            conversation_id=conv_id,
+            currency_code=actor.currency_code,
+            follow_up_questions=chips,
+            context_state=merged_slots.to_public_dict(locale),
+        ).to_api_dict()
+
     effective_turn = prior_turn_count + 1
     should_clarify, packed_msg, packed_chips = needs_product_clarification(merged_slots, effective_turn)
     if should_clarify:
@@ -778,6 +1237,7 @@ def try_orchestrate_turn(
             "recommendations": [c.to_dict() for c in prod_res.cards],
         },
         fallback_reply=fallback_reply,
+        force_offline=force_offline,
     )
     if session_state is not None:
         session_state.slots = merged_slots

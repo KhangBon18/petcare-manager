@@ -167,6 +167,103 @@ def complete_vision(messages: list[dict], image_bytes: bytes) -> str:
     raise AIProviderError("Không kết nối được mô hình ảnh đã cấu hình.")
 
 
+def complete_chat_with_tools(
+    messages: list[dict],
+    tools: list[dict],
+    *,
+    timeout_seconds: float | None = None,
+    max_retries: int = 1,
+) -> dict:
+    """Call an approved OpenAI-compatible chat completions endpoint with function tools.
+
+    Strictly gated behind `AI_PROVIDER_APPROVED=True` and `AI_TOOL_CALLING_ENABLED=True`
+    plus `_enforce_test_provider_guard(url)`. Never retries HTTP 4xx or malformed JSON.
+    """
+    if not (
+        current_app.config.get("AI_PROVIDER_APPROVED")
+        and current_app.config.get("AI_TOOL_CALLING_ENABLED")
+    ):
+        raise AIProviderError("Chế độ gọi công cụ LLM ngoài chưa được phê duyệt và kích hoạt.")
+    if not is_configured():
+        raise AIProviderError("Chưa cấu hình mô hình AI.")
+
+    url = _completion_url()
+    _enforce_test_provider_guard(url)
+
+    try:
+        request_body: dict = {
+            "model": current_app.config["AI_MODEL"],
+            "messages": messages,
+            "temperature": 0.1,
+            "max_tokens": 700,
+        }
+        if tools:
+            request_body["tools"] = tools
+            request_body["tool_choice"] = "auto"
+        body = json.dumps(request_body, ensure_ascii=False).encode("utf-8")
+    except (TypeError, ValueError) as exc:
+        raise AIProviderError("Yêu cầu AI tool-calling không đúng định dạng.") from exc
+
+    if len(body) > 256 * 1024:
+        raise AIProviderError("Yêu cầu AI tool-calling vượt giới hạn 256 KB.")
+
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    api_key = str(current_app.config.get("AI_API_KEY") or "").strip()
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    class NoRedirectHandler(HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, hdrs, new_url):
+            return None
+
+    configured_timeout = float(
+        timeout_seconds
+        if timeout_seconds is not None
+        else current_app.config.get("AI_TIMEOUT_SECONDS", 15)
+    )
+    bounded_timeout = max(0.5, min(configured_timeout, 15.0))
+    bounded_retries = min(max(int(max_retries), 0), 1)
+    max_response_bytes = 512_000
+
+    for attempt in range(bounded_retries + 1):
+        request = Request(url, data=body, headers=headers, method="POST")
+        try:
+            opener = build_opener(NoRedirectHandler())
+            with opener.open(request, timeout=bounded_timeout) as response:  # nosec B310
+                raw_payload = response.read(max_response_bytes + 1)
+                if len(raw_payload) > max_response_bytes:
+                    raise AIProviderError("Mô hình AI trả về dữ liệu vượt giới hạn cho phép.")
+            break
+        except HTTPError as exc:
+            err = AIProviderError(
+                "Không kết nối được mô hình AI đã cấu hình.",
+                retryable=exc.code in RETRYABLE_HTTP_STATUSES,
+                status_code=exc.code,
+            )
+            if not err.retryable or attempt >= bounded_retries:
+                raise err from exc
+            time.sleep(0.1 * (attempt + 1))
+        except URLError as exc:
+            retryable = not isinstance(exc.reason, ssl.SSLError)
+            err = AIProviderError("Không kết nối được mô hình AI đã cấu hình.", retryable=retryable)
+            if not err.retryable or attempt >= bounded_retries:
+                raise err from exc
+            time.sleep(0.1 * (attempt + 1))
+        except (TimeoutError, socket.timeout, OSError) as exc:
+            err = AIProviderError("Không kết nối được mô hình AI đã cấu hình.", retryable=True)
+            if attempt >= bounded_retries:
+                raise err from exc
+            time.sleep(0.1 * (attempt + 1))
+
+    try:
+        payload = json.loads(raw_payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise AIProviderError("Mô hình AI trả về JSON không hợp lệ.") from exc
+    if not isinstance(payload, dict):
+        raise AIProviderError("Mô hình AI trả về dữ liệu không đúng định dạng.")
+    return payload
+
+
 def _enforce_test_provider_guard(url: str) -> None:
     """Block all external provider egress in tests; allow explicit literal loopback only."""
     if current_app.config.get("APP_ENV") != "test":

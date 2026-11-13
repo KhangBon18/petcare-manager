@@ -23,6 +23,7 @@ class ProviderStatus:
     loopback_demo_mock: bool
     model_name: str
     timeout_seconds: int
+    tool_calling_enabled: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -32,6 +33,7 @@ class ProviderStatus:
             "loopback_demo_mock": self.loopback_demo_mock,
             "model_name": self.model_name or "offline-python-engine-v1",
             "timeout_seconds": self.timeout_seconds,
+            "tool_calling_enabled": self.tool_calling_enabled,
         }
 
 
@@ -40,22 +42,24 @@ def get_provider_status() -> ProviderStatus:
     if has_app_context():
         cfg = current_app.config
         approved = bool(cfg.get("AI_PROVIDER_APPROVED", False))
+        tool_calling = bool(cfg.get("AI_TOOL_CALLING_ENABLED", False))
         model_name = str(cfg.get("AI_MODEL") or "").strip()
         loopback_mock = bool(
             cfg.get("AI_TEST_ALLOW_LOOPBACK_PROVIDER")
             and model_name == "petcare-local-demo-mock"
         )
         timeout = int(cfg.get("AI_TIMEOUT_SECONDS", Config.AI_TIMEOUT_SECONDS))
+        configured = bool(ai_client.is_configured()) and not loopback_mock
     else:
         approved = bool(Config.AI_PROVIDER_APPROVED)
+        tool_calling = bool(Config.AI_TOOL_CALLING_ENABLED)
         model_name = str(Config.AI_MODEL or "").strip()
         loopback_mock = bool(
             Config.AI_TEST_ALLOW_LOOPBACK_PROVIDER
             and model_name == "petcare-local-demo-mock"
         )
         timeout = int(Config.AI_TIMEOUT_SECONDS)
-
-    configured = bool(ai_client.is_configured()) and not loopback_mock
+        configured = bool(Config.AI_API_BASE_URL and Config.AI_MODEL) and not loopback_mock
     active_mode = (
         EngineMode.REAL_LLM
         if (approved and configured)
@@ -68,7 +72,23 @@ def get_provider_status() -> ProviderStatus:
         loopback_demo_mock=loopback_mock,
         model_name=model_name if active_mode == EngineMode.REAL_LLM else "offline-python-engine-v1",
         timeout_seconds=timeout,
+        tool_calling_enabled=bool(active_mode == EngineMode.REAL_LLM and tool_calling),
     )
+
+
+def get_active_tool_calling_adapter() -> Any | None:
+    """Return an injected offline mock adapter or an approved live tool-calling adapter."""
+    if has_app_context():
+        injected = current_app.config.get("AI_TOOL_CALLING_ADAPTER")
+        if injected is not None:
+            return injected
+
+    status = get_provider_status()
+    if status.active_mode == EngineMode.REAL_LLM and status.tool_calling_enabled:
+        from petcare.ai.llm_tool_agent import OpenAICompatibleToolCallingAdapter
+
+        return OpenAICompatibleToolCallingAdapter(status.model_name)
+    return None
 
 
 def synthesize_approved_llm_reply(
@@ -77,12 +97,15 @@ def synthesize_approved_llm_reply(
     locale: str,
     grounded_facts: dict[str, Any],
     fallback_reply: str,
+    force_offline: bool = False,
 ) -> tuple[str, EngineMode]:
     """Optionally polish phrasing via Mode B ONLY when AI_PROVIDER_APPROVED=1 and configured.
 
     By default, AI_PROVIDER_APPROVED is False (0), so zero external network calls occur
     and Mode A's deterministic grounded reply is returned immediately.
     """
+    if force_offline:
+        return fallback_reply, EngineMode.OFFLINE
     status = get_provider_status()
     if status.active_mode != EngineMode.REAL_LLM:
         return fallback_reply, EngineMode.OFFLINE
