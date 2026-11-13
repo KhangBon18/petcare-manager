@@ -97,6 +97,10 @@ def find_similar():
             and current_app.config.get("AI_API_BASE_URL")
             and current_app.config.get("AI_MODEL")
         ),
+        vision_mock_enabled=bool(
+            current_app.config.get("AI_TEST_ALLOW_LOOPBACK_PROVIDER")
+            and current_app.config.get("AI_MODEL") == "petcare-local-demo-mock"
+        ),
     ), status_code, headers
 
 

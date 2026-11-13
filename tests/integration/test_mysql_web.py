@@ -3853,6 +3853,14 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             },
             tenant_id=tenant_id,
         )
+        with get_connection() as connection:
+            cursor = connection.cursor()
+            cursor.execute(
+                "UPDATE products SET created_at=UTC_TIMESTAMP()-INTERVAL 60 DAY WHERE tenant_id=%s AND id=%s",
+                (tenant_id, product_id),
+            )
+            connection.commit()
+            cursor.close()
         ids = []
         try:
             for qty, days, paid in [(14, 1, True), (16, 20, True), (3, 0, False)]:
@@ -3887,8 +3895,11 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             self.assertEqual(suggestion["sold_14"], 14)
             self.assertEqual(suggestion["sold_30"], 30)
             self.assertEqual(suggestion["stock_qty"], 5)
-            self.assertEqual(suggestion["days_left"], 5)
-            self.assertEqual(suggestion["suggested_qty"], 9)
+            self.assertEqual(suggestion["history_days"], 56)
+            self.assertEqual(suggestion["weighted_units"], 208)
+            self.assertEqual(suggestion["weighted_days"], 252)
+            self.assertAlmostEqual(float(suggestion["days_left"]), 5 / (208 / 252))
+            self.assertEqual(suggestion["suggested_qty"], 7)
             self.assertEqual(client.get(f"/products/{product_id}").status_code, 200)
             page = client.get("/reports/?period=30d")
             self.assertEqual(page.status_code, 200)

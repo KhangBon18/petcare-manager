@@ -545,6 +545,57 @@ class MySQLPurchasingIntegrationTests(unittest.TestCase):
         with self.assertRaises(ConflictError):
             purchase_service.cancel_purchase_order(self.admin_id, completed_id, tenant_id=self.tenant_id)
 
+    def test_restock_forecast_subtracts_remaining_quantities_only_for_open_orders(self):
+        supplier_id = self._supplier()
+        product_id = self._product(opening_stock=0, name_prefix="Forecast incoming")
+        ordered = self._service_order(supplier_id, [
+            {"product_id": str(product_id), "quantity": "4", "unit_cost": "1000"},
+        ])
+        partial = self._service_order(supplier_id, [
+            {"product_id": str(product_id), "quantity": "5", "unit_cost": "1000"},
+        ])
+        partial_item = self._order_rows(partial)[1][0]
+        self.assertEqual(
+            purchase_service.receive_purchase_order(
+                self.admin_id, partial,
+                [{"item_id": str(partial_item["id"]), "quantity": "2"}],
+                tenant_id=self.tenant_id,
+            ),
+            "partially_received",
+        )
+
+        def recommendation():
+            return next(
+                row
+                for row in restock_service.recommendations(
+                    self.admin_id, tenant_id=self.tenant_id
+                )
+                if row["id"] == product_id
+            )
+
+        item = recommendation()
+        self.assertEqual(item["stock_qty"], 2)
+        self.assertEqual(item["incoming_qty"], 7)
+        self.assertEqual(item["suggested_qty"], 0)
+        purchase_service.cancel_purchase_order(
+            self.admin_id, ordered, tenant_id=self.tenant_id
+        )
+        item = recommendation()
+        self.assertEqual(item["incoming_qty"], 3)
+        self.assertEqual(item["stock_qty"], 2)
+        self.assertEqual(
+            purchase_service.receive_purchase_order(
+                self.admin_id, partial,
+                [{"item_id": str(partial_item["id"]), "quantity": "3"}],
+                tenant_id=self.tenant_id,
+            ),
+            "received",
+        )
+        item = recommendation()
+        self.assertEqual(item["incoming_qty"], 0)
+        self.assertEqual(item["stock_qty"], 5)
+        self.assertEqual(item["suggested_qty"], 0)
+
     def test_replayed_partial_payload_is_idempotent_but_distinct_receipt_is_counted(self):
         supplier_id = self._supplier()
         product_id = self._product()

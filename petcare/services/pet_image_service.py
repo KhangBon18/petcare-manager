@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import heapq
 import json
 import re
@@ -389,6 +390,9 @@ def search_similar(
         "warning": warning,
         "has_reference_photos": has_reference_photos,
         "search_scope": search_scope,
+        # The normalized query is rendered only in this authenticated response;
+        # it is not persisted with pet records or sent to a remote provider.
+        "query_preview": "data:image/jpeg;base64," + base64.b64encode(normalized).decode("ascii"),
     }
 
 

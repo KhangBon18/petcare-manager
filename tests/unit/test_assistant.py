@@ -1,6 +1,8 @@
 import unittest
 from unittest.mock import MagicMock, patch
 
+from flask import Flask
+
 from petcare.services import assistant_service
 from petcare.services.assistant_service import local_answer
 
@@ -135,6 +137,36 @@ class AssistantLocalAnswerTests(unittest.TestCase):
         self.assertNotIn("trả lời bằng tiếng Việt", messages[0]["content"])
         self.assertIn('"matching_count": 2', messages[1]["content"])
         self.assertNotIn("revenue_today", messages[1]["content"])
+
+    def test_demo_vision_mock_is_not_used_or_described_as_chat_llm(self):
+        app = Flask("local-vision-mock-boundary")
+        app.config.update(
+            AI_MODEL="petcare-local-demo-mock",
+            AI_TEST_ALLOW_LOOPBACK_PROVIDER=True,
+        )
+        connection_scope = MagicMock()
+        connection_scope.__enter__.return_value = object()
+        connection_scope.__exit__.return_value = False
+        with app.app_context(), patch(
+            "petcare.services.assistant_service.read_connection", return_value=connection_scope
+        ), patch(
+            "petcare.services.assistant_service.require_actor",
+            return_value={"default_currency": "VND", "timezone": "Asia/Ho_Chi_Minh"},
+        ), patch(
+            "petcare.services.assistant_service.assistant_repo.shop_context",
+            return_value=self.context,
+        ), patch(
+            "petcare.services.assistant_service.assistant_capabilities.answer",
+            return_value=None,
+        ), patch(
+            "petcare.services.assistant_service.ai_client.is_configured", return_value=True
+        ), patch(
+            "petcare.services.assistant_service.ai_client.complete"
+        ) as complete:
+            result = assistant_service.answer(7, "How can I use this app?", locale="en")
+
+        self.assertEqual(result["mode"], "local")
+        complete.assert_not_called()
 
     def test_answers_all_with_overview_instead_of_generic_prompt(self):
         answer = local_answer("Cho tôi xem tất cả", self.context)

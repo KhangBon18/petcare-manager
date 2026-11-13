@@ -45,10 +45,20 @@ def _period(start, end, timezone_name):
     return start_date, end_date, start_at_utc, end_at_utc
 
 
-def dashboard(actor_id, tenant_id=None):
+def dashboard(actor_id, tenant_id=None, period="7d"):
     with read_connection() as connection:
         actor = require_actor(connection, actor_id, tenant_id=tenant_id)
         today = tenant_today(actor["timezone"])
+        chart_starts = {
+            "today": today,
+            "7d": today - timedelta(days=6),
+            "30d": today - timedelta(days=29),
+            "month": today.replace(day=1),
+        }
+        if period not in chart_starts:
+            raise ValidationError(
+                ui_text("Kỳ tổng quan không hợp lệ.", "The dashboard period is invalid.")
+            )
         start_at_utc, end_at_utc = utc_window_for_local_day(today, actor["timezone"])
         metrics = report_repo.dashboard(connection, start_at_utc, end_at_utc)
         week_start, week_end = utc_window_for_local_dates(
@@ -68,9 +78,11 @@ def dashboard(actor_id, tenant_id=None):
             metrics["business"] = _report(
                 connection,
                 actor,
-                (today - timedelta(days=6)).isoformat(),
+                chart_starts[period].isoformat(),
                 today.isoformat(),
             )
+            metrics["chart_period"] = period
+            metrics["business"]["chart_period"] = period
         except ValidationError as exc:
             # The headline aggregates remain exact even when a detailed chart
             # period exceeds the deliberate MVP export bound.
@@ -210,13 +222,17 @@ def _report(connection, actor, start, end):
     maximum = max(maximum, Decimal(1))
     bars = [
         {
-            "x": round(i * 680 / count_days + 1, 2),
-            "width": round(max(0.5, 680 / count_days - 2), 2),
-            "y": round(160 - max(0, float(row["revenue"] / maximum)) * 150, 2),
+            "x": round(i * 630 / count_days + 1, 2),
+            "width": round(max(0.5, 630 / count_days - 2), 2),
+            "y": round(162 - max(0, float(row["revenue"] / maximum)) * 150, 2),
             "height": round(max(0, float(row["revenue"] / maximum)) * 150, 2),
             **row,
         }
         for i, row in enumerate(series)
+    ]
+    axis_ticks = [
+        {"value": maximum * Decimal(step) / Decimal(3), "y": 12 + (3 - step) * 50}
+        for step in range(3, -1, -1)
     ]
     result = {
         "start_date": start_date,
@@ -228,6 +244,8 @@ def _report(connection, actor, start, end):
         "growth": growth,
         "daily": series,
         "chart_bars": bars,
+        "chart_axis_max": maximum,
+        "chart_axis_ticks": axis_ticks,
         "peak": peak,
         "details": details,
         "top_products": report_repo.top_products(connection, start_at, end_at),

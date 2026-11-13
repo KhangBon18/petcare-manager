@@ -1,4 +1,4 @@
-from flask import Blueprint, g, redirect, render_template, url_for
+from flask import Blueprint, g, redirect, render_template, request, url_for
 
 from petcare.auth import login_required
 from petcare.services import report_service
@@ -18,5 +18,7 @@ def home():
 def dashboard():
     return render_template(
         "dashboard.html",
-        metrics=report_service.dashboard(g.user["id"], tenant_id=g.tenant_id),
+        metrics=report_service.dashboard(
+            g.user["id"], tenant_id=g.tenant_id, period=request.args.get("period", "7d")
+        ),
     )

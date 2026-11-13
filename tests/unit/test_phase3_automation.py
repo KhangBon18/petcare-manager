@@ -205,13 +205,35 @@ class RestockTests(unittest.TestCase):
     def test_sales_query_uses_paid_invoices_and_bound_half_open_dates(self):
         from petcare.repositories import restock_repo
 
+        windows = tuple(
+            (f"week{index}-start", f"week{index}-end") for index in range(8)
+        )
         with patch.object(restock_repo, "fetch_all", return_value=[]) as fetch:
-            restock_repo.sales_inventory(object(), "start30", "start14", "end")
+            restock_repo.sales_inventory(
+                object(), "start30", "start14", "end", "history-start", windows
+            )
         sql, params = fetch.call_args.args[1:]
         self.assertIn("i.status = 'paid'", sql)
         self.assertIn("ii.item_type = 'product'", sql)
         self.assertIn("i.paid_at >= %s AND i.paid_at < %s", sql)
-        self.assertEqual(params, ("start14", "start30", "end", "start30", "end"))
+        self.assertIn("iri.disposition <> 'not_returned'", sql)
+        self.assertIn("po.status IN ('ordered', 'partially_received')", sql)
+        self.assertIn("poi.tenant_id = @petcare_tenant_id", sql)
+        self.assertEqual(
+            params,
+            (
+                "start14", "start30",
+                *(value for window in windows for value in window),
+                "history-start", "end", "history-start", "end",
+            ),
+        )
+        self.assertEqual(sql, restock_repo.SALES_INVENTORY_SQL)
+
+    def test_sales_query_requires_the_fixed_forecast_window_count(self):
+        from petcare.repositories import restock_repo
+
+        with self.assertRaisesRegex(ValueError, "eight weekly windows"):
+            restock_repo.sales_inventory(object(), "30", "14", "end")
 
     def row(self, **kw):
         return dict(
