@@ -7,7 +7,8 @@ PetCare AI separates **business logic, retrieval, ranking, and authorization** f
 | Engine Mode | Enum Value | Default State | Network Egress | How It Works |
 |---|---|---|---|---|
 | **Mode A — Offline Deterministic Python Engine** | `offline` | **ACTIVE DEFAULT** | **Zero external calls** | Python NLU, `PreferenceSlots`, two-stage pet matching, `Decimal` unit-price product ranking, Okapi BM25 retrieval, and bilingual templates generate 100% of responses locally in ~`10ms`. |
-| **Mode B — Approved Real LLM Synthesis** | `real_llm` | **DISABLED BY DEFAULT** | HTTPS to configured OpenAI-compatible `/chat/completions` | Python still executes **all** NLU, RBAC, MySQL tool calls, scoring, and citations first, then passes a strictly bounded `VERIFIED_GROUNDED_FACTS_JSON` payload to the LLM solely to polish prose phrasing. |
+| **Mode B1 — Approved LLM Prose Synthesis** | `real_llm` (`tool_calling_enabled=false`) | **DISABLED BY DEFAULT** | HTTPS to configured OpenAI-compatible `/chat/completions` | Python executes NLU, RBAC, MySQL tool calls, scoring, and citations first, then passes `VERIFIED_GROUNDED_FACTS_JSON` to polish phrasing. |
+| **Mode B2 — Approved LLM Tool-Calling (`AI-2`)** | `real_llm` (`tool_calling_enabled=true`) | **DISABLED BY DEFAULT** | HTTPS with bounded OpenAI `tools` (`<= 3` rounds, `<= 4` calls) | LLM interprets open-ended queries and proposes allowlisted read-only tools; Python validates JSON schemas, enforces RBAC/scope/tenant isolation, records a `TurnGroundingLedger`, and runs `verify_llm_answer_consistency()` before returning. See `docs/PETCARE_AI_2_TOOL_CALLING_AND_PILOT.md`. |
 
 ---
 
@@ -45,9 +46,16 @@ Loopback Vision test mocks (`AI_MODEL=petcare-local-demo-mock` with `AI_TEST_ALL
 
 ---
 
-## 4. Pre-Activation Pilot Checklist
+## 4. Pre-Activation Blockers & Isolated Pilot Prerequisites (`AI-2.2` Status)
 
-Before setting `AI_PROVIDER_APPROVED=1` in any shared environment:
-1. Confirm vendor data-processing terms (zero training retention on store data) and configure hard monthly spend caps on the API key.
-2. Verify `ASSISTANT_RATE_LIMIT_PER_MINUTE` and `ASSISTANT_IP_RATE_LIMIT_PER_MINUTE` are active in production config.
-3. Re-run `scripts/evaluate_petcare_ai.py` with `AI_PROVIDER_APPROVED=1` on an isolated `_test` database and confirm `hallucinated_item_or_price_rate == 0.0` and `p95` latency remains within SLA (`< 3000 ms`).
+External LLM providers (`AI_PROVIDER_APPROVED=0`, `AI_TOOL_CALLING_ENABLED=0`) have **NOT** been tested against a live API and are **NOT** ready for production or unsupervised shopper traffic.
+
+### Mandatory Blockers Before Any Real-LLM Activation
+1. **Explicit Owner Authorization, DPA & Hard Spend Caps**: Zero-training-retention vendor DPA plus hard billing/token caps on a dedicated sandbox API key stored outside Git.
+2. **Real-Provider Benchmark Validation**: Zero live API calls have been executed to date; `evaluate_petcare_ai.py` (`84` cases), `evaluate_petcare_ai_independent.py` (`44` cases), `evaluate_petcare_ai_heldout.py` (`34` cases), and `evaluate_petcare_ai_final_holdout.py` (`40` cases) must be run end-to-end against the real model on a disposable `_test` database with `hallucinated_item_or_price_rate == 0.0`, `unauthorized_exposure_rate == 0.0`, and `p95 < 3000 ms`.
+3. **Licensed Veterinary Clinical Review & Semantic Safety Classifier**: Deterministic regex triage (`petcare/ai/safety_triage.py`) achieved `100.0%` precision (`0` FP) across all suites and `100.0%` recall on known regression cases (`34/34`), but `73.33%` recall (`11/15`, Wilson 95% CI `[48.05%, 89.10%]`) on the untouched `AI-2.2` generalization hold-out (`4` misses on long-span colloquial urinary straining, inverted open-mouth breathing syntax, accidental double insulin dosing, and post-spay incision dehiscence). Licensed veterinarian review and semantic pre-routing safety classification are required before public shopper deployment.
+4. **Distributed Session Memory & Multi-Worker Rate Limiting**: Replace process-local `MEMORY_STORE` with shared Redis/MySQL session backing before multi-worker Gunicorn scaling.
+
+### Pilot Gate Decision (`AI-2.2`)
+- **Production / Live Shopper Deployment**: **NO-GO**.
+- **Isolated Offline-Seeded QA Pilot (`_test` DB only, internal staff/QA only, budget-capped key)**: **CONDITIONAL GO** once Blockers 1 and 2 are authorized by the project owner (see `docs/PETCARE_AI_2_2_RELEASE.md`).
