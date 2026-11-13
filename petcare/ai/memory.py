@@ -37,13 +37,13 @@ def sanitize_conversation_id(raw_id: object) -> str:
     return f"conv_{secrets.token_urlsafe(12)}"
 
 
-def redact_sensitive_text(text: str) -> str:
+def redact_sensitive_text(text: str, max_chars: int = 240) -> str:
     """Strip emails, phone numbers, card numbers, and bearer/API secrets before retention."""
     cleaned = _SECRET_RE.sub("[REDACTED_SECRET]", text)
     cleaned = _EMAIL_RE.sub("[REDACTED_EMAIL]", cleaned)
     cleaned = _CARD_RE.sub("[REDACTED_CARD]", cleaned)
     cleaned = _PHONE_RE.sub("[REDACTED_PHONE]", cleaned)
-    return cleaned[:240]
+    return cleaned[: max(1, int(max_chars))]
 
 
 @dataclass(slots=True)

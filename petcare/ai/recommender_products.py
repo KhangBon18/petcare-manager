@@ -188,10 +188,19 @@ def extract_verified_product_meta(row: dict[str, Any]) -> VerifiedProductMeta:
     norm = _normalize(combined_raw)
     cat_norm = _normalize(raw_cat)
 
-    # Normalized category
+    # Normalized category (check product name/description for cat litter stored under generic Care category)
+    is_litter_item = (
+        "cat ve sinh" in cat_norm
+        or "litter" in cat_norm
+        or bool(re.search(r"\bcát\b", raw_name, re.IGNORECASE))
+        or any(
+            k in norm
+            for k in ("cat ve sinh", "cat dau nanh", "cat dat set", "cat von cuc", "bentonite", "litter")
+        )
+    )
     if "do choi" in cat_norm or "toy" in cat_norm:
         norm_cat = "toy"
-    elif "cat ve sinh" in cat_norm or "litter" in cat_norm:
+    elif is_litter_item:
         norm_cat = "litter"
     elif any(k in cat_norm for k in ("thuc an", "dinh duong", "food", "nutrition")):
         norm_cat = "food"

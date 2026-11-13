@@ -142,6 +142,108 @@ def _format_card_urls_and_money(response: dict, locale_code: str, default_curren
             )
 
 
+def _format_insight_urls(insight: object, locale_code: str, default_currency: str) -> None:
+    if not isinstance(insight, dict):
+        return
+    if insight.get("kind") == "combined_operational":
+        for section in insight.get("sections", []):
+            _format_insight_urls(section, locale_code, default_currency)
+        return
+    if insight.get("kind") == "operations_overview":
+        inventory = insight.get("inventory")
+        if isinstance(inventory, dict):
+            for item in inventory.get("items", []):
+                product_id = item.get("product_id")
+                item["url"] = (
+                    url_for("products.detail", product_id=product_id)
+                    if isinstance(product_id, int)
+                    and not isinstance(product_id, bool)
+                    and product_id > 0
+                    else None
+                )
+        purchasing = insight.get("purchasing")
+        if isinstance(purchasing, dict):
+            purchasing["url"] = url_for("purchasing.index")
+            for item in purchasing.get("items", []):
+                order_id = item.get("purchase_order_id")
+                item["url"] = (
+                    url_for("purchasing.detail", purchase_order_id=order_id)
+                    if isinstance(order_id, int)
+                    and not isinstance(order_id, bool)
+                    and order_id > 0
+                    else None
+                )
+                item["created_at_label"] = format_tenant_datetime(
+                    item.get("created_at"),
+                    (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE),
+                    locale=g.locale,
+                )
+        sales = insight.get("sales")
+        if isinstance(sales, dict) and sales.get("status") == "available":
+            sales["url"] = url_for(
+                "reports.index", start=sales["start_date"], end=sales["end_date"]
+            )
+            for item in sales.get("items", []):
+                product_id = item.get("product_id")
+                item["url"] = (
+                    url_for("products.detail", product_id=product_id)
+                    if isinstance(product_id, int)
+                    and not isinstance(product_id, bool)
+                    and product_id > 0
+                    else None
+                )
+                item["revenue_label"] = format_money(
+                    item.get("revenue", 0),
+                    sales.get("currency_code", default_currency),
+                    locale_code,
+                )
+    elif insight.get("kind") == "top_products":
+        for item in insight.get("items", []):
+            product_id = item.get("product_id")
+            item["url"] = (
+                url_for("products.detail", product_id=product_id)
+                if isinstance(product_id, int)
+                and not isinstance(product_id, bool)
+                and product_id > 0
+                else None
+            )
+            item["revenue_label"] = format_money(
+                item.get("revenue", 0),
+                insight.get("currency_code", default_currency),
+                locale_code,
+            )
+    elif insight.get("kind") in {"inventory_restock", "inventory_forecast"}:
+        for item in insight.get("items", []):
+            product_id = item.get("product_id")
+            item["url"] = (
+                url_for("products.detail", product_id=product_id)
+                if isinstance(product_id, int)
+                and not isinstance(product_id, bool)
+                and product_id > 0
+                else None
+            )
+    elif insight.get("kind") == "purchase_status":
+        for item in insight.get("items", []):
+            order_id = item.get("purchase_order_id")
+            item["url"] = (
+                url_for("purchasing.detail", purchase_order_id=order_id)
+                if isinstance(order_id, int)
+                and not isinstance(order_id, bool)
+                and order_id > 0
+                else None
+            )
+            item["amount_label"] = format_money(
+                item.get("total_amount", 0),
+                item.get("currency_code", default_currency),
+                locale_code,
+            )
+            item["created_at_label"] = format_tenant_datetime(
+                item.get("created_at"),
+                (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE),
+                locale=g.locale,
+            )
+
+
 @bp.post("/chat")
 @login_required
 def chat():
@@ -192,100 +294,6 @@ def chat():
     locale_code = "en_US" if g.locale == "en" else "vi_VN"
     default_currency = (g.tenant or {}).get("default_currency", "VND")
     _format_card_urls_and_money(response, locale_code, default_currency)
-
-    insight = response.get("insight")
-    if isinstance(insight, dict) and insight.get("kind") == "operations_overview":
-        inventory = insight.get("inventory")
-        if isinstance(inventory, dict):
-            for item in inventory.get("items", []):
-                product_id = item.get("product_id")
-                item["url"] = (
-                    url_for("products.detail", product_id=product_id)
-                    if isinstance(product_id, int)
-                    and not isinstance(product_id, bool)
-                    and product_id > 0
-                    else None
-                )
-        purchasing = insight.get("purchasing")
-        if isinstance(purchasing, dict):
-            purchasing["url"] = url_for("purchasing.index")
-            for item in purchasing.get("items", []):
-                order_id = item.get("purchase_order_id")
-                item["url"] = (
-                    url_for("purchasing.detail", purchase_order_id=order_id)
-                    if isinstance(order_id, int)
-                    and not isinstance(order_id, bool)
-                    and order_id > 0
-                    else None
-                )
-                item["created_at_label"] = format_tenant_datetime(
-                    item.get("created_at"),
-                    (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE),
-                    locale=g.locale,
-                )
-        sales = insight.get("sales")
-        if isinstance(sales, dict) and sales.get("status") == "available":
-            sales["url"] = url_for(
-                "reports.index", start=sales["start_date"], end=sales["end_date"]
-            )
-            for item in sales.get("items", []):
-                product_id = item.get("product_id")
-                item["url"] = (
-                    url_for("products.detail", product_id=product_id)
-                    if isinstance(product_id, int)
-                    and not isinstance(product_id, bool)
-                    and product_id > 0
-                    else None
-                )
-                item["revenue_label"] = format_money(
-                    item.get("revenue", 0),
-                    sales.get("currency_code", default_currency),
-                    locale_code,
-                )
-    elif isinstance(insight, dict) and insight.get("kind") == "top_products":
-        for item in insight.get("items", []):
-            product_id = item.get("product_id")
-            item["url"] = (
-                url_for("products.detail", product_id=product_id)
-                if isinstance(product_id, int)
-                and not isinstance(product_id, bool)
-                and product_id > 0
-                else None
-            )
-            item["revenue_label"] = format_money(
-                item.get("revenue", 0),
-                insight.get("currency_code", default_currency),
-                locale_code,
-            )
-    elif isinstance(insight, dict) and insight.get("kind") in {"inventory_restock", "inventory_forecast"}:
-        for item in insight.get("items", []):
-            product_id = item.get("product_id")
-            item["url"] = (
-                url_for("products.detail", product_id=product_id)
-                if isinstance(product_id, int)
-                and not isinstance(product_id, bool)
-                and product_id > 0
-                else None
-            )
-    elif isinstance(insight, dict) and insight.get("kind") == "purchase_status":
-        for item in insight.get("items", []):
-            order_id = item.get("purchase_order_id")
-            item["url"] = (
-                url_for("purchasing.detail", purchase_order_id=order_id)
-                if isinstance(order_id, int)
-                and not isinstance(order_id, bool)
-                and order_id > 0
-                else None
-            )
-            item["amount_label"] = format_money(
-                item.get("total_amount", 0),
-                item.get("currency_code", default_currency),
-                locale_code,
-            )
-            item["created_at_label"] = format_tenant_datetime(
-                item.get("created_at"),
-                (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE),
-                locale=g.locale,
-            )
+    _format_insight_urls(response.get("insight"), locale_code, default_currency)
     response["mode"] = response.get("mode", "local")
     return jsonify(response)

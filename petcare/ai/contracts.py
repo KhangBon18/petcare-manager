@@ -37,6 +37,13 @@ class EngineMode(str, Enum):
     REAL_LLM = "real_llm"
 
 
+def format_decimal_plain(value: Decimal) -> str:
+    """Serialize Decimal values without trailing `.0` on integral amounts or scientific `E+` notation."""
+    if value == value.to_integral_value():
+        return str(int(value))
+    return format(value.normalize(), "f").rstrip("0").rstrip(".")
+
+
 @dataclass(slots=True)
 class PreferenceSlots:
     """Explicit session-scoped preference slots for multi-turn guidance."""
@@ -142,7 +149,7 @@ class PreferenceSlots:
         if self.pet_weight_kg is not None:
             chips.append({
                 "slot": "pet_weight_kg",
-                "label": f"{self.pet_weight_kg.normalize()} kg",
+                "label": f"{format_decimal_plain(self.pet_weight_kg)} kg",
             })
         if self.budget_min is not None or self.budget_max is not None:
             if self.budget_min is not None and self.budget_max is not None:
@@ -174,13 +181,13 @@ class PreferenceSlots:
         return {
             "active_domain": self.active_domain,
             "species": self.species,
-            "budget_min": str(self.budget_min) if self.budget_min is not None else None,
-            "budget_max": str(self.budget_max) if self.budget_max is not None else None,
+            "budget_min": format_decimal_plain(self.budget_min) if self.budget_min is not None else None,
+            "budget_max": format_decimal_plain(self.budget_max) if self.budget_max is not None else None,
             "living_space": self.living_space,
             "temperament": self.temperament,
             "size_preference": self.size_preference,
             "life_stage": self.life_stage,
-            "pet_weight_kg": str(self.pet_weight_kg) if self.pet_weight_kg is not None else None,
+            "pet_weight_kg": format_decimal_plain(self.pet_weight_kg) if self.pet_weight_kg is not None else None,
             "sex": self.sex,
             "product_category": self.product_category,
             "product_subtopic": self.product_subtopic,

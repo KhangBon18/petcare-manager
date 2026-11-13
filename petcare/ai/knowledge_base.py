@@ -465,11 +465,55 @@ def standard_vet_disclaimer(locale: str) -> SafetyNotice:
     )
 
 
-def build_emergency_triage_response(locale: str) -> KnowledgeRetrievalResult:
+def build_emergency_triage_response(
+    locale: str,
+    category: str | None = None,
+) -> KnowledgeRetrievalResult:
     """Return high-priority veterinary emergency escalation with cited triage source."""
     vi = locale != "en"
     triage_doc = next(doc for doc in KNOWLEDGE_CORPUS if doc.doc_id == "KB-VET-009")
     poison_doc = next(doc for doc in KNOWLEDGE_CORPUS if doc.doc_id == "KB-SAFE-002")
+
+    if category == "urinary_obstruction":
+        msg = (
+            "Dấu hiệu rặn nhiều lần trong khay vệ sinh nhưng không ra (hoặc chỉ rỉ vài giọt) nước tiểu — đặc biệt ở mèo đực — có nguy cơ là **tắc nghẽn đường tiết niệu cấp tính** đe dọa tính mạng trong vài giờ. "
+            "PetCare AI không chẩn đoán bệnh và không gợi ý mua cát hay sản phẩm thay thế cho việc cấp cứu. Vui lòng đưa thú cưng tới phòng khám/bệnh viện thú y **ngay lập tức**."
+            if vi else
+            "Repeated straining in the litter box with little or no urine output—especially in male cats—is a classic warning sign of potentially life-threatening **acute urinary obstruction**. "
+            "PetCare AI cannot diagnose conditions and will not suggest shopping items in place of urgent care. Please take your pet to an emergency veterinary clinic **immediately**."
+        )
+    elif category in {"toxin_or_foreign_body_ingestion", "human_medication_toxicity_or_dosing"}:
+        msg = (
+            "Nghi ngờ thú cưng vừa nuốt chất độc (như xylitol, sô-cô-la, hoa ly, nho khô, bả chuột) hoặc thuốc của người là tình huống **cấp cứu ngộ độc thú y**. "
+            "PetCare AI không thể hướng dẫn xử trí giải độc tại nhà. Vui lòng liên hệ và đưa bé tới cơ sở thú y gần nhất **ngay lập tức**."
+            if vi else
+            "Suspected ingestion of a toxic substance (such as xylitol, chocolate, lilies, raisins/grapes, rodenticide) or human medication is an **urgent veterinary poisoning emergency**. "
+            "PetCare AI cannot guide home detoxification. Please contact and transport your pet to an emergency veterinary clinic **immediately**."
+        )
+    elif category == "acute_neurological_or_jaundice":
+        msg = (
+            "Dấu hiệu **ấn/tựa đầu vào tường hoặc góc nhà (head-pressing), mất thăng bằng cấp tính, hoặc vàng tròng trắng mắt / nướu / vành tai trong** là cảnh báo thần kinh hoặc chuyển hóa nghiêm trọng. "
+            "PetCare AI không chẩn đoán bệnh và không gợi ý sản phẩm thay thế cho việc cấp cứu. Vui lòng đưa thú cưng tới phòng khám/bệnh viện thú y **ngay lập tức**."
+            if vi else
+            "Signs such as **pressing the head against a wall/corner (head-pressing), acute disorientation, or yellow discoloration of the whites of the eyes, gums, or inner ears** are serious neurological or metabolic red flags. "
+            "PetCare AI cannot diagnose conditions and will not suggest shopping items in place of urgent care. Please transport your pet to an emergency veterinary clinic **immediately**."
+        )
+    elif category == "mucous_membrane_or_shock":
+        msg = (
+            "Dấu hiệu **nướu/lợi/lưỡi trắng bệch hoặc nhợt nhạt bất thường, hoặc tứ chi/bàn chân lạnh ngắt kèm lừ đừ/mệt lả** là cảnh báo nguy cấp về suy giảm tưới máu, thiếu máu cấp hoặc sốc tuần hoàn. "
+            "PetCare AI không thể hướng dẫn xử trí tại nhà; vui lòng ủ ấm nhẹ nhàng và đưa thú cưng tới cơ sở thú y gần nhất **ngay lập tức**."
+            if vi else
+            "**Very pale or white gums/mucous membranes, or unusually cold extremities paired with weakness or lethargy**, are critical warning signs of poor circulation, severe anemia, or shock. "
+            "PetCare AI cannot guide home treatment; keep your pet calm and warm and seek emergency veterinary care **immediately**."
+        )
+    else:
+        msg = (
+            "Triệu chứng bạn mô tả là dấu hiệu nguy cấp. PetCare AI không thể chẩn đoán hay hướng dẫn điều trị tại nhà cho tình huống này. "
+            "Vui lòng liên hệ và đưa thú cưng tới phòng khám/bệnh viện thú y gần nhất ngay lập tức."
+            if vi else
+            "The symptoms described are potentially life-threatening warning signs. PetCare AI is not a veterinarian and cannot guide home treatment for emergencies. "
+            "Please contact an emergency veterinary clinic immediately."
+        )
 
     notice = SafetyNotice(
         severity="emergency",
@@ -477,22 +521,16 @@ def build_emergency_triage_response(locale: str) -> KnowledgeRetrievalResult:
             "CẢNH BÁO KHẨN CẤP THÚ Y — CẦN ĐƯA ĐI KHÁM NGAY"
             if vi else "URGENT VETERINARY WARNING — SEEK IMMEDIATE CARE"
         ),
-        message=(
-            "Triệu chứng bạn mô tả là dấu hiệu nguy cấp. PetCare AI không thể chẩn đoán hay hướng dẫn điều trị tại nhà cho tình huống này. "
-            "Vui lòng liên hệ và đưa thú cưng tới phòng khám/bệnh viện thú y gần nhất ngay lập tức."
-            if vi else
-            "The symptoms described are potentially life-threatening warning signs. PetCare AI is not a veterinarian and cannot guide home treatment for emergencies. "
-            "Please contact an emergency veterinary clinic immediately."
-        ),
+        message=msg,
         escalation_steps=(
             (
-                "Giữ thú cưng ấm, yên tĩnh, thông thoáng đường thở khi di chuyển tới phòng khám thú y gần nhất.",
-                "Nếu nghi ngờ nuốt chất độc/thức ăn lạ, mang theo bao bì hoặc mẫu vật để bác sĩ xử trí chính xác.",
+                "Giữ thú cưng ấm, yên tĩnh, không ấn ép mạnh vào vùng bụng căng và giữ thông thoáng đường thở khi di chuyển tới phòng khám thú y gần nhất.",
+                "Nếu nghi ngờ nuốt chất độc, thực phẩm lạ hoặc thuốc của người, mang theo vỏ/nhãn sản phẩm để bác sĩ xác định hoạt chất.",
                 "Tuyệt đối không tự ý gây nôn hoặc cho uống thuốc của người khi chưa có chỉ định trực tiếp từ bác sĩ thú y.",
             )
             if vi else
             (
-                "Keep your pet calm, warm, and airway-unobstructed while transporting to the nearest veterinary clinic.",
+                "Keep your pet calm, warm, avoid pressing on a tense abdomen, and keep the airway unobstructed while transporting to the nearest veterinary clinic.",
                 "Bring any suspected toxin packaging, plant sample, or medication container with you.",
                 "Do not induce vomiting or give human medications unless explicitly instructed by a licensed veterinarian.",
             )
@@ -527,29 +565,47 @@ def build_emergency_triage_response(locale: str) -> KnowledgeRetrievalResult:
     )
 
 
-def build_medical_boundary_response(locale: str) -> KnowledgeRetrievalResult:
-    """Refuse diagnosis, prescriptions, and medication dosages clearly and safely."""
+def build_medical_boundary_response(
+    locale: str,
+    category: str | None = None,
+) -> KnowledgeRetrievalResult:
+    """Refuse diagnosis, prescriptions, human OTC medications, and drug dosages clearly and safely."""
     vi = locale != "en"
     triage_doc = next(doc for doc in KNOWLEDGE_CORPUS if doc.doc_id == "KB-VET-009")
-    notice = SafetyNotice(
-        severity="medical_boundary",
-        title="Giới hạn an toàn thú y" if vi else "Veterinary Medical Boundary",
-        message=(
+    poison_doc = next(doc for doc in KNOWLEDGE_CORPUS if doc.doc_id == "KB-SAFE-002")
+
+    if category == "human_medication_toxicity_or_dosing":
+        msg = (
+            "**Tuyệt đối không tự ý cho chó mèo dùng thuốc của người** (như paracetamol/Panadol/Tylenol, ibuprofen/Advil, aspirin, hoặc thuốc tiêu chảy người như Smecta, Berberin, Imodium) khi chưa có chỉ định trực tiếp của bác sĩ thú y — nhiều hoạt chất an toàn với người lại gây ngộ độc gan/thận cấp tính hoặc che lấp triệu chứng nguy hiểm ở thú cưng. "
+            "PetCare AI không kê đơn hay tính liều thuốc; vui lòng liên hệ bác sĩ thú y để được khám và hướng dẫn an toàn."
+            if vi else
+            "**Never administer human medications** (such as acetaminophen/Tylenol/paracetamol, ibuprofen/Advil, aspirin, or human antidiarrheals like Smecta, Berberin, or loperamide) to dogs or cats without explicit direction from a licensed veterinarian—several common human drugs can cause severe organ toxicity in pets. "
+            "PetCare AI cannot prescribe medications or recommend dosages; please contact a veterinarian promptly for safe evaluation."
+        )
+        cited_docs = (triage_doc, poison_doc)
+    else:
+        msg = (
             "PetCare AI không phải bác sĩ thú y được cấp phép nên không chẩn đoán bệnh, không kê đơn kháng sinh/thuốc điều trị "
             "và không tính liều lượng thuốc (mg/kg). Vui lòng đưa bé đến bác sĩ thú y để được khám lâm sàng chính xác."
             if vi else
             "PetCare AI is not a licensed veterinarian and cannot diagnose illnesses, prescribe medications, or recommend drug dosages. "
             "Please consult a licensed veterinarian for clinical examination and safe treatment."
-        ),
+        )
+        cited_docs = (triage_doc,)
+
+    notice = SafetyNotice(
+        severity="medical_boundary",
+        title="Giới hạn an toàn thú y" if vi else "Veterinary Medical Boundary",
+        message=msg,
         escalation_steps=(
             (
-                "Ghi lại thời điểm xuất hiện triệu chứng, tình trạng ăn uống, đi vệ sinh để cung cấp cho bác sĩ thú y.",
-                "Nếu bé lừ đừ nặng, bỏ ăn kéo dài, khó thở hoặc nôn/tiêu chảy ra máu, hãy đưa đi khám cấp cứu ngay.",
+                "Ghi lại thời điểm xuất hiện triệu chứng, cân nặng, tình trạng ăn uống và đi vệ sinh để cung cấp cho bác sĩ thú y.",
+                "Nếu bé đã lỡ uống thuốc của người, hoặc có dấu hiệu lừ đừ nặng, khó thở, nôn/tiêu chảy liên tục hay có máu, hãy đưa đi khám cấp cứu ngay kèm vỏ thuốc.",
             )
             if vi else
             (
-                "Note symptom onset, appetite, water intake, and litter/bathroom changes to share with your veterinarian.",
-                "Seek immediate veterinary care if you observe lethargy, labored breathing, repeated vomiting, or bleeding.",
+                "Note symptom onset, body weight, appetite, water intake, and bathroom changes to share with your veterinarian.",
+                "If your pet has already ingested human medication or shows lethargy, labored breathing, repeated vomiting, or bleeding, seek immediate veterinary care with the medication label.",
             )
         ),
     )
@@ -558,17 +614,18 @@ def build_medical_boundary_response(locale: str) -> KnowledgeRetrievalResult:
         reply=notice.message,
         citations=[
             KnowledgeCitation(
-                doc_id=triage_doc.doc_id,
-                title=triage_doc.title_vi if vi else triage_doc.title_en,
-                source_name=triage_doc.source_name,
-                source_url=triage_doc.source_url,
-                updated_at=triage_doc.updated_at,
-                topic=triage_doc.topic,
+                doc_id=doc.doc_id,
+                title=doc.title_vi if vi else doc.title_en,
+                source_name=doc.source_name,
+                source_url=doc.source_url,
+                updated_at=doc.updated_at,
+                topic=doc.topic,
                 language="vi" if vi else "en",
-                review_status=triage_doc.review_status,
-                version=triage_doc.version,
+                review_status=doc.review_status,
+                version=doc.version,
                 relevance_score=5.0,
             )
+            for doc in cited_docs
         ],
         safety_notice=notice,
         follow_up_questions=(
@@ -594,8 +651,9 @@ def answer_from_knowledge_base(
     norm = _normalize(query)
     if re.search(
         r"\b(?:iguana|reptiles?|snakes?|turtles?|tortoises?|parrots?|birds?|aquariums?|hamsters?|rabbits?|bunnies|"
-        r"bo\s+sat|ky\s+nhong|nuoi\s+ran|con\s+ran|nuoi\s+rua|con\s+rua|chim\s+vet|con\s+vet|nuoi\s+chim|"
-        r"ca\s+canh|be\s+ca|chuot\s+hamster|tho\s+kieng|nuoi\s+tho)\b",
+        r"sugar\s+gliders?|chinchillas?|hedgehogs?|ferrets?|guinea\s+pigs?|tarantulas?|"
+        r"bo\s+sat|ky\s+nhong|nuoi\s+ran|con\s+ran|nuoi\s+rua|rua\s+canh|con\s+rua|chim\s+vet|con\s+vet|nuoi\s+chim|"
+        r"ca\s+canh|be\s+ca|chuot\s+hamster|chuot\s+lang|soc\s+bay|nhim\s+kieng|chon\s+suong|tho\s+kieng|nuoi\s+tho)\b",
         norm,
     ):
         hits = []

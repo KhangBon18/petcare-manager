@@ -29,6 +29,7 @@
   let currentScope = root.dataset.initialScope === "shopper_preview" ? "shopper_preview" : "workspace";
   let conversationId = root.dataset.conversationId || `conv_${Date.now()}`;
   let activeController = null;
+  let activeReset = null;
   const history = [];
   const selectedCompareCodes = new Set();
   const welcomeSnapshot = welcomePanel ? welcomePanel.cloneNode(true) : null;
@@ -151,7 +152,7 @@
     const title = document.createElement("strong");
     title.textContent = notice.title || "";
     const msg = document.createElement("p");
-    msg.textContent = notice.message || "";
+    appendFormattedText(msg, notice.message || "");
     box.append(title, msg);
 
     if (Array.isArray(notice.escalation_steps) && notice.escalation_steps.length) {
@@ -454,6 +455,12 @@
 
   function renderOperationalInsight(insight, parent) {
     if (!insight || typeof insight !== "object") return;
+    if (insight.kind === "combined_operational" && Array.isArray(insight.sections)) {
+      for (const section of insight.sections) {
+        renderOperationalInsight(section, parent);
+      }
+      return;
+    }
     const box = document.createElement("div");
     box.className = "ai-ops-insight";
 
@@ -636,6 +643,10 @@
     updateCharCounter();
     const botCard = appendPendingBotCard();
 
+    if (activeReset) {
+      await activeReset;
+    }
+
     const controller = new AbortController();
     activeController = controller;
     let timedOut = false;
@@ -749,30 +760,6 @@
     updateCompareTray();
     updateContextChips({ chips: [] });
 
-    try {
-      const res = await fetch(resetUrl, {
-        method: "POST",
-        credentials: "same-origin",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "X-CSRFToken": csrf,
-        },
-        body: JSON.stringify({
-          scope: currentScope,
-          conversation_id: prevConv,
-        }),
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data?.conversation_id) {
-          conversationId = data.conversation_id;
-        }
-      }
-    } catch (_ignore) {
-      conversationId = `conv_${Date.now()}`;
-    }
-
     if (keepWelcomeOnly && welcomeSnapshot) {
       const freshWelcome = welcomeSnapshot.cloneNode(true);
       freshWelcome.classList.remove("ai-welcome-compact");
@@ -780,6 +767,40 @@
       syncScopeUI(currentScope);
     }
     input.focus();
+
+    const resetTask = (async () => {
+      try {
+        const res = await fetch(resetUrl, {
+          method: "POST",
+          credentials: "same-origin",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-CSRFToken": csrf,
+          },
+          body: JSON.stringify({
+            scope: currentScope,
+            conversation_id: prevConv,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data?.conversation_id) {
+            conversationId = data.conversation_id;
+          }
+        }
+      } catch (_ignore) {
+        conversationId = `conv_${Date.now()}`;
+      }
+    })();
+    activeReset = resetTask;
+    try {
+      await resetTask;
+    } finally {
+      if (activeReset === resetTask) {
+        activeReset = null;
+      }
+    }
   }
 
   // Event listeners
