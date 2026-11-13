@@ -1,5 +1,23 @@
 # Ma trận kiểm thử và độ phủ chức năng
 
+## Python-first modernization — 2026-11-13
+
+| Kiểm tra | Trạng thái | Bằng chứng |
+|---|---|---|
+| Python + MySQL regression | PASS | **441/441**, 0 skipped; `.venv/bin/python -m unittest discover -s tests -q` qua harness MySQL 8.4 schema `_test` mới, Compose database dùng tmpfs. Failure-path tests phát log warning/error dự kiến nhưng toàn suite kết thúc `OK`. |
+| JavaScript | PASS | **41/41**, `node --test tests/js/*.test.cjs`. |
+| Playwright Chromium | PASS | **19/19**, 103.707s, Flask thật + MySQL QA mới + storage/browser artifacts tạm; `/readyz=200`. Browser diagnostics của luồng redesign: 0 page errors, failed requests, HTTP errors hoặc console errors. |
+| Browser pages / locales / widths | PASS trong phạm vi test | 14 route chính đều trả 200 và không overflow ngang ở 320, 390, 768, 1024, 1440 px. Kiểm VI `dd/MM/yyyy` + VND nhóm bằng dấu chấm; đổi trực tiếp sang EN, duy trì locale qua 12 route, ngày `MMM d, yyyy` + VND nhóm bằng dấu phẩy. Menu tài khoản được kiểm bằng Enter/Tab/Escape, focus trả lại summary, logout vẫn POST có CSRF. |
+| Ảnh thú cưng | PASS sau fix | Dữ liệu demo mèo/chó tổng hợp; test xác nhận `object-fit: contain` và khung `<img>` nằm đúng trong media box. Trước fix, `<img>` cao 315–336 px trong khung 205 px dù CSS ghi `contain`; đổi thành phần tử định vị tuyệt đối bên trong khung tỷ lệ xác định. Ảnh trước/sau và 5 viewport: [`assets/python-first-v2`](assets/python-first-v2/). |
+| Tìm ảnh V2 trên browser | PASS theo phạm vi | Upload ảnh mèo/chó tổng hợp, hiển thị ảnh query cạnh ứng viên top-1 và điểm xếp hạng; không gọi Vision provider. |
+| Axe / accessibility smoke | PASS có giới hạn | 6 màn hình Chromium (dashboard, pets, products, POS, reports, account settings), **0 violations**. Còn 51 node `color-contrast` incomplete: 41 glyph/dấu ngắn và 10 SVG/biểu đồ có nền mà axe không xác định. Spot-check màu trên surface trắng: chart label 6.04:1, nhãn thú cưng 6.30:1, nút primary 5.18:1. Đây không phải WCAG audit; không có screen reader, zoom trình duyệt thật, Firefox/Safari/WebKit. |
+| Thuật toán tìm ảnh | PASS, synthetic | 68 ảnh demo (32 mèo, 32 chó, 4 ảnh cũ), 204 biến thể truy vấn; Precision@1 0.995098, Recall@5 1.0, MRR 0.997549; ranking p50/p95 1.159/1.297 ms và preprocessing p50 10.466 ms. Chỉ đo near-duplicate trên dữ liệu tổng hợp, không phải accuracy nhận dạng hay recall LSH. |
+| Forecast nhu cầu | PASS, synthetic evaluation | 12 chuỗi × 52 tuần, 516 rolling origins; 14-day MAE: WMA 38.647287 so với SMA 47.441860. WMA kém hơn baseline ở nhóm intermittent; không đo sales thật. Chi tiết và giới hạn ở [evaluation](PYTHON_ALGORITHMS_EVALUATION.md). |
+| Security / dependency / build | PASS local | Bandit đúng lệnh CI exit 0 (còn warning `nosec encountered (B608)` từ suppressions có sẵn); `pip-audit` hai lockfiles không có advisory; `npm audit` 0 vulnerability; `compileall`, `pip check`, hai Compose config và Docker image build pass; `git diff --check` sạch. |
+| CI hosted / production / providers | Local QA snapshot PASS; hosted CI được kiểm tra riêng sau push | Bộ regression và Trivy 0.76.0 secret scan (Docker image) chạy trước commit/push; không sửa `petcare_shop_dev`/production; không gọi AI, Vision, SMTP, S3 hoặc payment provider thật. Kết quả hosted CI cuối được báo theo commit release. |
+
+Các screenshot trước/sau và JSON đánh giá thuật toán nằm dưới [`assets/python-first-v2`](assets/python-first-v2/). Không cộng các suite khác loại thành một phần trăm coverage. Browser là Chromium hiện có; trạng thái này không thay thế kiểm tra thủ công bàn phím toàn ứng dụng, VoiceOver, zoom 200% hoặc kiểm thử trình duyệt chéo.
+
 ## Phase 6.2 — demo hardening — 2026-11-11
 
 | Kiểm tra | Trạng thái | Bằng chứng |

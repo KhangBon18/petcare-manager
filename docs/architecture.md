@@ -17,6 +17,7 @@ Trình duyệt gửi GET/POST đến Flask. Blueprint kiểm tra phiên, CSRF v�
 - Danh tính gồm tên hiển thị/mật khẩu dùng chung toàn nền tảng, còn role/active thuộc từng membership. Admin cửa hàng không được sửa tên hoặc mật khẩu toàn cục khi user có nhiều membership, kể cả membership đang inactive; chủ tài khoản đổi tên tại `/account/settings` sau re-auth. Tên thay đổi được audit trên membership đang hoạt động mà không lưu giá trị tên vào log.
 - Owner được nhận diện riêng trong danh sách thành viên; màn quản trị cửa hàng không thể khóa hoặc hạ quyền owner. Luồng bàn giao tại `/users/ownership` yêu cầu owner nhập lại mật khẩu, chọn admin đang hoạt động, rồi admin mục tiêu đăng nhập và xác thực lại trong 72 giờ. Khi chấp nhận, membership của người gửi chuyển thành admin và người nhận thành owner trong cùng transaction; yêu cầu có thể bị thu hồi bằng re-auth, ghi audit, giới hạn tần suất và chỉ gửi email thông báo tới địa chỉ đã xác minh. Email không chứa bí mật xác nhận. Owner/admin quản lý tên hiển thị cửa hàng và timezone tenant tại `/store/settings`; slug giữ ổn định, currency không đổi cho đến khi có FX/ledger.
 - `petcare/services/` giữ quy tắc nghiệp vụ và transaction; `services/actors.py` cung cấp actor context đã xác minh membership. `catalog_intent.py` và `assistant_local.py` tách logic phân loại/lọc khỏi câu trả lời nội bộ; `assistant_service.py` điều phối provider và giữ compatibility exports.
+- `petcare/analytics/demand_forecast.py` giữ estimator thuần Python (`DemandBucket`/`DemandEstimate`); `demand_evaluation.py` chạy rolling-origin holdout so với baseline. `restock_service.py` ghép tám bucket tuần theo ngày local của tenant với tồn và số lượng còn lại ở PO mở. Endpoint UI chỉ đọc; không tự thay stock hoặc tạo PO.
 - `petcare/repositories/` giữ SQL MySQL, không commit.
 - `petcare/database/readiness.py` kiểm tra schema MySQL theo contract chỉ đọc; `petcare/services/ops_metrics_service.py` dựng payload metrics tổng hợp, còn route vẫn bảo vệ endpoint bằng bearer token.
 - `petcare.database.connection` cấp MySQL connections qua pool thread-safe theo process. Mỗi checkout reset về UTC và `@petcare_tenant_id = NULL`; cấu hình pool được giới hạn để ngân sách kết nối có thể tính theo số web/worker process. Production bắt buộc `DB_SSL_CA` và bật xác minh CA lẫn hostname cho app, email worker và migration connections; thay CA tạo pool mới.
@@ -27,6 +28,23 @@ Trình duyệt gửi GET/POST đến Flask. Blueprint kiểm tra phiên, CSRF v�
 - petcare/ai/ gọi endpoint chat-completions tương thích OpenAI khi được cấu hình. Mặc định AI ngoại tuyến; AI Vision cần bật riêng. Trợ lý gửi ngữ cảnh cửa hàng theo phạm vi câu hỏi: ví dụ doanh thu chỉ nhận số doanh thu và currency, còn hỏi sản phẩm có thể nhận tên/giá/tồn kho. Không tự gửi hồ sơ khách hàng; câu hỏi và tối đa 8 tin nhắn lịch sử từ client vẫn được gửi, nên UI cảnh báo rõ nội dung outbound. Chính sách lưu giữ/vùng xử lý của endpoint cần được chốt trước production.
 - Các trang khách hàng/sản phẩm/thú cưng/hóa đơn dùng count + LIMIT/OFFSET, 25 kết quả mỗi trang. Chat, quét ảnh và upload ảnh hồ sơ thú cưng/sản phẩm dùng quota theo tài khoản và địa chỉ mạng HMAC trong MySQL; không lưu IP thô, và giới hạn mạng chia sẻ giữa web worker/instance dùng cùng database.
 - Form hóa đơn chỉ tải trang đầu cho từng nhóm; các ô tìm kiếm gọi route JSON đã xác thực, giới hạn 25 kết quả/trang và phân trang độc lập sản phẩm với thú cưng.
+
+## Python-first algorithms và giao diện
+
+- Restock forecast dùng 8 bucket tuần và weighted moving average với trọng số tuyến
+  tính 1…8; demand là hóa đơn đã thu trừ refund trả hàng về kho. `ordered` và
+  `partially_received` PO tính vào hàng đang về. Thời điểm được chia theo timezone
+  của tenant rồi đổi sang UTC bound parameters. Nếu thiếu lịch sử, UI hiển thị cảnh
+  báo; hệ thống không giả định supplier lead time. Chi tiết công thức ở
+  [`PYTHON_FIRST_UPGRADE.md`](PYTHON_FIRST_UPGRADE.md).
+- Tìm ảnh kế thừa Pillow descriptor màu/cấu trúc và truy xuất SimHash/LSH đã có.
+  Preview truy vấn chuẩn hóa được trả ngắn hạn cạnh ứng viên đầu; scoring không xác
+  nhận danh tính/loài/giống. Retrieval evaluation dùng nhãn synthetic độc lập được
+  mô tả trong [`PYTHON_ALGORITHMS_EVALUATION.md`](PYTHON_ALGORITHMS_EVALUATION.md).
+- Giao diện dùng Jinja templates, `tokens.css`, `app.css` và vanilla JS. Tên người
+  dùng/role làm tên truy cập cho menu account; language POST có CSRF và đổi trực
+  tiếp. Ảnh thú cưng hiển thị `contain`; biểu đồ doanh thu dùng số từ service báo
+  cáo và thanh cuộn có thể nhận keyboard focus khi bị tràn ở viewport nhỏ.
 
 ## Giao dịch thanh toán
 
