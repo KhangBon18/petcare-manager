@@ -134,7 +134,7 @@
     const inventory = insight.inventory;
     const inventoryNode = section(
       english ? "Restock priorities" : "Ưu tiên bổ sung tồn",
-      english ? "Inventory service · existing 14/30-day rules" : "Service tồn kho · quy tắc 14/30 ngày hiện có"
+      english ? "Inventory service · 8-week weighted forecast" : "Service tồn kho · dự báo trọng số 8 tuần"
     );
     if (inventory?.status !== "available") {
       empty(inventoryNode, english ? "Inventory data could not be loaded. Retry the overview." : "Chưa tải được dữ liệu tồn kho. Hãy thử lại tổng quan.");

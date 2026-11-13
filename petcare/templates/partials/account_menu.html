@@ -1,0 +1,23 @@
+{% from "partials/icons.html" import icon %}
+<details class="account-menu" data-mobile-menu data-account-menu>
+  <summary class="account-menu-trigger">
+    <span class="avatar" aria-hidden="true">{{ g.user.full_name[:1]|upper }}</span>
+    <span class="account-menu-trigger-copy">
+      <strong>{{ g.user.full_name }}</strong>
+      <small>{{ t('Quản trị viên') if g.user.role == 'admin' else t('Nhân viên') }}</small>
+    </span>
+    <span class="account-menu-chevron" aria-hidden="true">⌄</span>
+  </summary>
+  <div class="account-menu-panel">
+    <div class="account-menu-identity">
+      <span class="account-menu-label">{{ t('Tài khoản hiện tại') }}</span>
+      <strong>{{ g.user.full_name }}</strong>
+      <span>{{ t('Quản trị viên') if g.user.role == 'admin' else t('Nhân viên') }}</span>
+    </div>
+    <a class="account-menu-action" href="{{ url_for('account.settings') }}">{{ icon('team') }} {{ t('Cài đặt tài khoản') }}</a>
+    <form action="{{ url_for('auth.logout') }}" method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="account-menu-action account-menu-signout" type="submit">{{ icon('logout') }} {{ t('Đăng xuất') }}</button>
+    </form>
+  </div>
+</details>

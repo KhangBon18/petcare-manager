@@ -72,6 +72,7 @@ _ENGLISH = {
     "Đổi": "Switch",
     "Quản trị viên": "Administrator",
     "Nhân viên": "Staff",
+    "Tài khoản hiện tại": "Current account",
     "Đăng xuất": "Sign out",
     "Quản lý bán hàng gọn gàng mỗi ngày.": "Manage your store with ease, every day.",
     "Quản lý cửa hàng thú cưng": "Pet store management",

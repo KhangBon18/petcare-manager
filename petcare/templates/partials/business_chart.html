@@ -4,6 +4,7 @@
     <div>
       <span class="eyebrow">{{ 'BẢN TIN KINH DOANH' if locale == 'vi' else 'BUSINESS BRIEF' }}</span>
       <h2>{{ 'Doanh thu theo ngày' if locale == 'vi' else 'Daily revenue' }}</h2>
+      <small class="business-chart-freshness">{{ 'Cập nhật' if locale == 'vi' else 'Updated' }} {{ format_datetime(report.captured_at) }}</small>
     </div>
     <span class="soft-badge">{{ format_date(report.start_date) }} → {{ format_date(report.end_date) }}</span>
   </div>
@@ -14,20 +15,30 @@
     </span>
     <small>{{ 'Kỳ trước' if locale == 'vi' else 'Previous' }} {{ format_date(report.previous_start) }} — {{ format_date(report.previous_end) }}: {{ format_money(report.previous.revenue, report.currency_code) }}</small>
   </div>
+  {% if compact %}
+  <nav class="business-chart-controls" aria-label="{{ 'Khoảng thời gian biểu đồ' if locale == 'vi' else 'Chart date range' }}">
+    {% for key, vi, en in [('today', 'Hôm nay', 'Today'), ('7d', '7 ngày', '7 days'), ('30d', '30 ngày', '30 days'), ('month', 'Tháng này', 'This month')] %}
+    <a href="{{ url_for('main.dashboard', period=key) }}" {% if report.chart_period == key %}aria-current="page"{% endif %}>{{ vi if locale == 'vi' else en }}</a>
+    {% endfor %}
+  </nav>
+  {% endif %}
   <figure class="revenue-chart">
     <svg viewBox="0 0 700 185" role="img" aria-labelledby="chart-title">
       <title id="chart-title">{{ 'Doanh thu đã thanh toán theo ngày, đơn vị' if locale == 'vi' else 'Paid daily revenue in' }} {{ report.currency_code }}</title>
-      <path d="M10 42H690 M10 82H690 M10 122H690" class="chart-grid" fill="none" aria-hidden="true"/>
-      <line x1="10" y1="162" x2="690" y2="162" class="chart-axis"/>
+      {% for tick in report.chart_axis_ticks %}
+      <line x1="64" y1="{{ tick.y }}" x2="690" y2="{{ tick.y }}" class="chart-grid" aria-hidden="true"/>
+      <text class="chart-axis-label" x="58" y="{{ tick.y + 3 }}" text-anchor="end">{{ format_number(tick.value, '#,##0') }}</text>
+      {% endfor %}
+      <line x1="64" y1="162" x2="690" y2="162" class="chart-axis"/>
       {% for bar in report.chart_bars %}
-      <rect x="{{ bar.x + 10 }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="2" class="revenue-bar">
+      <rect x="{{ bar.x + 60 }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="2" class="revenue-bar">
         <title>{{ format_date(bar.date) }}: {{ format_money(bar.revenue, report.currency_code) }}</title>
       </rect>
       {% endfor %}
-      <text x="10" y="180">{{ format_date(report.start_date) }}</text>
+      <text x="64" y="180">{{ format_date(report.start_date) }}</text>
       <text x="690" y="180" text-anchor="end">{{ format_date(report.end_date) }}</text>
     </svg>
-    <figcaption>{{ 'Cao nhất' if locale == 'vi' else 'Peak' }}: {{ format_date(report.peak.date) }} · {{ format_money(report.peak.revenue, report.currency_code) }}</figcaption>
+    <figcaption><span class="chart-legend"><i aria-hidden="true"></i>{{ 'Doanh thu đã thanh toán' if locale == 'vi' else 'Paid revenue' }}</span> · {{ 'Cao nhất' if locale == 'vi' else 'Peak' }}: {{ format_date(report.peak.date) }} · {{ format_money(report.peak.revenue, report.currency_code) }}</figcaption>
   </figure>
   <ul class="business-brief">{% for line in report.brief %}<li>{{ line }}</li>{% endfor %}</ul>
   {% if not compact %}

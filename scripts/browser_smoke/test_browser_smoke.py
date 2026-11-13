@@ -309,6 +309,19 @@ class BrowserSmokeTests(unittest.TestCase):
             audit["unlabeled_controls"], [], f"Unlabeled controls: {audit['unlabeled_controls']}"
         )
 
+    def _wait_for_loaded_images(self, selector, *, required=1, timeout_seconds=10):
+        images = self.page.locator(selector)
+        expect(images.first).to_be_visible(timeout=timeout_seconds * 1000)
+        deadline = time.monotonic() + timeout_seconds
+        while time.monotonic() < deadline:
+            loaded = images.evaluate_all(
+                "items => items.map(image => image.complete && image.naturalWidth > 0)"
+            )
+            if sum(loaded) >= required:
+                return
+            self.page.wait_for_timeout(50)
+        self.fail(f"Expected {required} loaded image(s) matching {selector!r}.")
+
     def _save_page_screenshot(self, name):
         path = ARTIFACT_DIR / name
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -446,6 +459,175 @@ class BrowserSmokeTests(unittest.TestCase):
         self.page.evaluate("document.activeElement?.blur(); window.scrollTo({top: 0, left: 0, behavior: 'instant'})")
         self.page.screenshot(path=str(screenshot), full_page=True, animations="disabled")
         screenshot.chmod(0o600)
+        self._assert_browser_diagnostics()
+
+    def test_python_first_ui_routes_language_account_photos_and_responsive_widths(self):
+        """Exercise the redesigned shell, pet media, and screens at target widths."""
+        self._login("admin")
+        with get_connection() as connection:
+            pet = fetch_one(
+                connection,
+                "SELECT id FROM pets WHERE tenant_id = %s AND code = %s",
+                (self.tenant_id, "PET-001"),
+            )
+        self.assertIsNotNone(pet, "The synthetic QA seed should contain its cat and dog samples.")
+        routes = (
+            ("dashboard", "/dashboard?period=30d"),
+            ("customers", "/customers/"),
+            ("pets", "/pets/"),
+            ("pet-detail", f"/pets/{pet['id']}"),
+            ("image-search", "/pets/find-similar"),
+            ("products", "/products/"),
+            ("purchasing", "/purchasing/"),
+            ("pos", "/invoices/new"),
+            ("invoices", "/invoices/"),
+            ("reports", "/reports/?period=7d"),
+            ("settings", "/store/settings"),
+            ("accounts", "/users/"),
+            ("account-settings", "/account/settings"),
+            ("activity", "/activity/"),
+        )
+        evidence_root = ROOT / "docs" / "assets" / "python-first-v2" / "after"
+        evidence_root.mkdir(parents=True, exist_ok=True)
+
+        # Capture the redesigned pages at desktop width, then run each screen
+        # at every requested viewport and assert the document has no overflow.
+        for name, path in routes:
+            response = self.page.goto(BASE_URL + path, wait_until="domcontentloaded")
+            self.assertEqual(response.status, 200, f"GET {path}")
+            self.assertEqual(
+                self.page.evaluate("document.documentElement.lang"), "vi",
+                f"Expected Vietnamese locale on {path}",
+            )
+            self._accessibility_smoke()
+            if name == "dashboard":
+                expect(self.page.locator(".chart-axis-label").first).to_be_visible()
+                expect(self.page.locator(".chart-legend")).to_be_visible()
+                expect(self.page.locator('.business-chart-controls [aria-current="page"]')).to_contain_text("30 ngày")
+                vi_period = self.page.locator(".business-panel > .panel-heading > .soft-badge").inner_text()
+                vi_revenue = self.page.locator(".business-comparison > strong").inner_text()
+                self.assertRegex(vi_period, r"\d{2}/\d{2}/\d{4}")
+                self.assertIn("VND", vi_revenue)
+                self.assertRegex(vi_revenue, r"\d\.\d{3}")
+            if name in {"dashboard", "pets", "products", "pos", "reports", "account-settings"}:
+                self._axe_audit(f"python-first-{name}")
+            if name in {"pets", "pet-detail"}:
+                self._wait_for_loaded_images(".pet-thumbnail, .profile-art img")
+                fit_values = self.page.locator(".pet-thumbnail, .profile-art img").evaluate_all(
+                    "images => images.filter(image => image.complete && image.naturalWidth > 0).map(image => getComputedStyle(image).objectFit)"
+                )
+                self.assertTrue(fit_values, f"Expected sample pet photos on {path}.")
+                self.assertTrue(all(value == "contain" for value in fit_values), fit_values)
+                image_boxes = self.page.locator(".pet-thumbnail, .profile-art img").evaluate_all(
+                    "images => images.filter(image => image.complete && image.naturalWidth > 0).map(image => {"
+                    "const media = image.closest('.pet-card-art, .profile-art');"
+                    "const imageBox = image.getBoundingClientRect();"
+                    "const mediaBox = media.getBoundingClientRect();"
+                    "return {image: [imageBox.width, imageBox.height], media: [mediaBox.width, mediaBox.height]};"
+                    "})"
+                )
+                self.assertTrue(
+                    all(
+                        abs(box["image"][axis] - box["media"][axis]) < 1
+                        for box in image_boxes
+                        for axis in (0, 1)
+                    ),
+                    f"Pet photo element must stay inside its aspect-ratio media box: {image_boxes}",
+                )
+            screenshot = evidence_root / f"{name}-1440.png"
+            self.page.screenshot(path=str(screenshot), full_page=True, animations="disabled")
+            screenshot.chmod(0o644)
+
+        # Verify direct language change, navigation persistence, and keyboard
+        # operation of the account menu without submitting the logout form.
+        self.page.goto(BASE_URL + "/dashboard?period=30d", wait_until="domcontentloaded")
+        self.page.locator("[data-language-select]").select_option("en")
+        expect(self.page.locator("html")).to_have_attribute("lang", "en")
+        expect(self.page.get_by_role("heading", name="Daily revenue")).to_be_visible()
+        self.page.goto(BASE_URL + "/customers/", wait_until="domcontentloaded")
+        expect(self.page.get_by_role("heading", name="Customers", exact=True)).to_be_visible()
+        self.assertEqual(self.page.evaluate("document.documentElement.lang"), "en")
+        english_routes = (
+            ("/pets/", "Pets"),
+            ("/pets/find-similar", "Find pets by image"),
+            ("/products/", "Products"),
+            ("/purchasing/", "Purchase orders"),
+            ("/invoices/", "Invoices"),
+            ("/reports/", "Reports"),
+            ("/store/settings", "Store settings"),
+            ("/users/", "Team"),
+            ("/activity/", "Activity log"),
+            ("/account/settings", "Account settings"),
+        )
+        for path, heading in english_routes:
+            response = self.page.goto(BASE_URL + path, wait_until="domcontentloaded")
+            self.assertEqual(response.status, 200, f"English GET {path}")
+            self.assertEqual(self.page.evaluate("document.documentElement.lang"), "en")
+            expect(self.page.get_by_role("heading", name=heading, exact=True)).to_be_visible()
+            if path == "/reports/":
+                en_period = self.page.locator(".business-panel > .panel-heading > .soft-badge").inner_text()
+                en_revenue = self.page.locator(".business-comparison > strong").inner_text()
+                self.assertRegex(en_period, r"[A-Z][a-z]{2} \d{1,2}, \d{4}")
+                self.assertIn("VND", en_revenue)
+                self.assertRegex(en_revenue, r"\d,\d{3}")
+        self.page.locator("[data-language-select]").select_option("vi")
+        expect(self.page.locator("html")).to_have_attribute("lang", "vi")
+        account_summary = self.page.locator("[data-account-menu] > summary")
+        account_summary.focus()
+        self.page.keyboard.press("Enter")
+        self.assertTrue(self.page.locator("[data-account-menu]").evaluate("menu => menu.open"))
+        self.page.keyboard.press("Tab")
+        expect(self.page.locator("[data-account-menu] .account-menu-action").first).to_be_focused()
+        self.page.keyboard.press("Escape")
+        self.assertFalse(self.page.locator("[data-account-menu]").evaluate("menu => menu.open"))
+        expect(account_summary).to_be_focused()
+        logout = self.page.locator("[data-account-menu] form[action$='/logout']")
+        self.assertEqual(logout.get_attribute("method"), "post")
+        self.assertTrue(logout.locator('input[name="csrf_token"]').input_value())
+
+        # Run the actual local image-comparison workflow against supplied
+        # synthetic dogs and cats; no external provider or real customer image.
+        image_queries = (
+            ("dog", ROOT / "assets" / "demo" / "pets" / "demo-dog-01.png"),
+            ("cat", ROOT / "assets" / "demo" / "pets" / "demo-cat-01.png"),
+        )
+        for name, image_path in image_queries:
+            self.page.goto(BASE_URL + "/pets/find-similar", wait_until="domcontentloaded")
+            self.page.locator('input[name="photo"]').set_input_files(str(image_path))
+            self.page.locator(".visual-search-form button[type='submit']").click()
+            expect(self.page.locator(".visual-search-comparison img").first).to_be_visible(timeout=15_000)
+            expect(self.page.locator(".match-score-label").first).to_be_visible()
+            self._wait_for_loaded_images(".visual-search-comparison img", required=2)
+            screenshot = evidence_root / f"image-search-{name}-1440.png"
+            self.page.screenshot(path=str(screenshot), full_page=True, animations="disabled")
+            screenshot.chmod(0o644)
+
+        responsive_routes = ("/dashboard", "/customers/", "/pets/", f"/pets/{pet['id']}",
+                             "/pets/find-similar", "/products/", "/purchasing/",
+                             "/invoices/new", "/invoices/", "/reports/",
+                             "/store/settings", "/users/", "/account/settings", "/activity/")
+        for width in (320, 390, 768, 1024, 1440):
+            self.page.set_viewport_size({"width": width, "height": 960})
+            for path in responsive_routes:
+                response = self.page.goto(BASE_URL + path, wait_until="domcontentloaded")
+                self.assertEqual(response.status, 200, f"GET {path} at {width}px")
+                overflow = self.page.evaluate(
+                    "({viewport: innerWidth, document: document.documentElement.scrollWidth})"
+                )
+                self.assertLessEqual(
+                    overflow["document"], width,
+                    f"Horizontal overflow on {path} at {width}px: {overflow}",
+                )
+                if path == "/dashboard" and width <= 390:
+                    chart = self.page.locator(".revenue-chart")
+                    if chart.evaluate("element => element.scrollWidth > element.clientWidth + 1"):
+                        self.assertEqual(chart.get_attribute("tabindex"), "0")
+                self._accessibility_smoke()
+            self.page.goto(BASE_URL + "/pets/", wait_until="domcontentloaded")
+            screenshot = evidence_root / f"pets-{width}.png"
+            self.page.screenshot(path=str(screenshot), full_page=True, animations="disabled")
+            screenshot.chmod(0o644)
+
         self._assert_browser_diagnostics()
 
     def test_staff_role_restriction_and_allowed_customer_access(self):
@@ -856,12 +1038,20 @@ class BrowserSmokeTests(unittest.TestCase):
         )
         product_id = product_service.create_product(
             self.admin_id,
-            {"code": f"P55-{suffix}", "name": f"000 Phase55 low stock {suffix}",
+            {"code": f"P55-{suffix}", "name": f"000 Phase55 PO covered {suffix}",
              "category": "Synthetic QA", "description": "Isolated browser overview fixture",
              "unit_price": "1000", "stock_qty": "0", "reorder_level": "0"},
             tenant_id=self.tenant_id,
         )
         fixture["product_ids"].append(product_id)
+        warning_product_id = product_service.create_product(
+            self.admin_id,
+            {"code": f"P55U-{suffix}", "name": f"000 Phase55 uncovered low stock {suffix}",
+             "category": "Synthetic QA", "description": "Isolated inventory recommendation fixture",
+             "unit_price": "1000", "stock_qty": "0", "reorder_level": "0"},
+            tenant_id=self.tenant_id,
+        )
+        fixture["product_ids"].append(warning_product_id)
         order_id = purchase_service.create_purchase_order(
             self.admin_id,
             {"supplier_id": str(fixture["supplier_id"]), "note": "Phase55 synthetic overview fixture"},
@@ -904,8 +1094,11 @@ class BrowserSmokeTests(unittest.TestCase):
         inventory = overview.locator('section[aria-label="Ưu tiên bổ sung tồn"]')
         purchasing = overview.locator('section[aria-label="Đơn nhập cần xử lý"]')
         sales = overview.locator('section[aria-label="Ngữ cảnh bán hàng · 7 ngày gần nhất"]')
-        expect(inventory).to_contain_text("000 Phase55 low stock")
-        expect(inventory.locator(f'a[href="/products/{product_id}"]')).to_be_visible()
+        # The fixture has no sales history, but its open four-unit PO fully
+        # covers the existing reorder threshold, so it is not a second reorder alert.
+        expect(inventory).not_to_contain_text("000 Phase55 PO covered")
+        expect(inventory).to_contain_text("000 Phase55 uncovered low stock")
+        expect(inventory.locator(f'a[href="/products/{warning_product_id}"]')).to_be_visible()
         expect(purchasing).to_contain_text("đang đặt 1")
         expect(purchasing.locator(f'a[href="/purchasing/{order_id}"]')).to_be_visible()
         expect(purchasing.locator('a[href="/purchasing/"]')).to_be_visible()
@@ -953,8 +1146,8 @@ class BrowserSmokeTests(unittest.TestCase):
         self._save_phase55_screenshot("operations-overview-mobile-bottom.png")
 
         with self.page.expect_navigation(wait_until="domcontentloaded"):
-            inventory.locator(f'a[href="/products/{product_id}"]').click()
-        self.assertRegex(self.page.url, rf"/products/{product_id}$")
+            inventory.locator(f'a[href="/products/{warning_product_id}"]').click()
+        self.assertRegex(self.page.url, rf"/products/{warning_product_id}$")
         self.page.goto(BASE_URL + "/dashboard", wait_until="domcontentloaded")
         self.page.get_by_role("button", name="Hỏi trợ lý").click()
         self.page.locator("#assistant-input").fill("Tổng quan cần chú ý ở cửa hàng")
