@@ -357,3 +357,58 @@ test("scope toggle resets conversation and network failure exposes working retry
   h.requests[2].resolve({ok: true, json: async () => ({reply: "Đã phục hồi", response_type: "answer"})});
   await settle();
 });
+
+test("immediate submit during pending reset awaits fresh conversation_id and renders combined_operational insights", async () => {
+  const h = buildWorkspaceTree({lang: "en", initialScope: "workspace"});
+
+  // Click reset and immediately submit before /assistant/reset resolves
+  h.resetBtn.click();
+  assert.equal(h.requests.length, 1);
+  assert.equal(h.requests[0].url, "/assistant/reset");
+
+  h.input.value = "Show top-selling products and inventory forecast";
+  h.form.dispatchEvent(new UIEvent("submit"));
+  // Chat fetch waits until /assistant/reset resolves with fresh conversation_id
+  assert.equal(h.requests.length, 1);
+
+  h.requests[0].resolve({
+    ok: true,
+    json: async () => ({ok: true, conversation_id: "conv_fresh_after_reset"}),
+  });
+  await settle();
+
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].url, "/assistant/chat");
+  assert.equal(JSON.parse(h.requests[1].options.body).conversation_id, "conv_fresh_after_reset");
+
+  h.requests[1].resolve({
+    ok: true,
+    json: async () => ({
+      reply: "Combined store operational summary:",
+      response_type: "operational_insight",
+      insight: {
+        kind: "combined_operational",
+        sections: [
+          {
+            kind: "top_products",
+            period: "week",
+            start_date: "2026-11-09",
+            end_date: "2026-11-13",
+            items: [{name: "Salmon Cat Food", code: "FOOD-002", quantity_sold: 4, revenue_label: "1,280,000 VND", url: "/products/11"}],
+          },
+          {
+            kind: "inventory_forecast",
+            target_days: 14,
+            total: 1,
+            items: [{name: "Tofu Cat Litter", code: "CARE-002", stock_qty: 2, suggested_qty: 6, url: "/products/15"}],
+          },
+        ],
+      },
+    }),
+  });
+  await settle();
+
+  const opsSections = h.stream.querySelectorAll(".ai-ops-insight");
+  assert.equal(opsSections.length, 2);
+  assert.equal(h.stream.querySelectorAll(".ai-turn-bot").length, 1);
+});

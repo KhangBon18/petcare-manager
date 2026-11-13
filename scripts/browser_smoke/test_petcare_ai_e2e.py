@@ -68,9 +68,9 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
             "MAIL_HOST": "",
             "MEDIA_STORAGE_BACKEND": "local",
             "TENANT_EXPORT_STORAGE_BACKEND": "local",
-            "PRODUCT_IMAGE_DIR": str(ARTIFACT_DIR / "products"),
-            "PET_IMAGE_DIR": os.environ.get("PET_IMAGE_DIR", str(ARTIFACT_DIR / "pets")),
-            "TENANT_EXPORT_DIR": str(ARTIFACT_DIR / "exports"),
+            "PRODUCT_IMAGE_DIR": os.environ.get("PRODUCT_IMAGE_DIR", str(Config.PRODUCT_IMAGE_DIR)),
+            "PET_IMAGE_DIR": os.environ.get("PET_IMAGE_DIR", str(Config.PET_IMAGE_DIR)),
+            "TENANT_EXPORT_DIR": os.environ.get("TENANT_EXPORT_DIR", str(ARTIFACT_DIR / "exports")),
             "PLAYWRIGHT_ARTIFACT_DIR": str(ARTIFACT_DIR),
         })
         cls.runtime_log = (ARTIFACT_DIR / "petcare-ai-runtime.log").open("ab")
@@ -315,6 +315,183 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
                     if v.get("impact") in {"serious", "critical"}
                 ]
                 self.assertEqual(serious_or_critical, [])
+            self.assertEqual(console_errors, [])
+        finally:
+            context.close()
+
+    def test_ai_2_1_vet_triage_multiturn_correction_multi_intent_and_floating_widget(self):
+        # Part A: Existing floating widget + keyboard Enter/Escape + Vietnamese multi-intent & slot-removal corrections
+        context, page, console_errors = self._new_logged_in_page(
+            "admin", DEMO_ADMIN_PASSWORD, width=1440, height=900
+        )
+        try:
+            # 1. Floating widget on /dashboard: open, keyboard submit colloquial query, Escape to close
+            expect(page.locator("#assistant-launcher")).to_be_visible()
+            page.click("#assistant-launcher")
+            expect(page.locator("#assistant-panel")).to_be_visible()
+            expect(page.locator("#assistant-input")).to_be_focused()
+
+            page.fill("#assistant-input", "rcm hạt cho mèo trưởng thành 4 xị quay đầu")
+            page.press("#assistant-input", "Enter")
+            expect(page.locator('#assistant-form[aria-busy="false"]')).to_be_visible()
+            expect(page.locator("#assistant-messages .assistant-result-card").first).to_be_visible()
+
+            page.keyboard.press("Escape")
+            expect(page.locator("#assistant-panel")).to_be_hidden()
+            expect(page.locator("#assistant-launcher")).to_have_attribute("aria-expanded", "false")
+
+            # 2. Full-page /assistant/chat: bounded multi-intent (cited KB + product cards in one turn)
+            page.goto(f"{self.base_url}/assistant/chat", wait_until="domcontentloaded")
+            page.fill(
+                "#ai-workspace-input",
+                "Cách chuyển đổi thức ăn mới cho mèo trong 7-10 ngày như thế nào và gợi ý hạt mèo trưởng thành dưới 400k?",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            assistant_msgs = page.locator(".ai-turn-bot:not(.is-loading)")
+            expect(assistant_msgs).to_have_count(1)
+            expect(assistant_msgs.nth(0).locator(".ai-citation-card").first).to_be_visible()
+            expect(assistant_msgs.nth(0).locator(".ai-rec-card").first).to_be_visible()
+            assistant_msgs.nth(0).locator(".ai-rec-card").first.scroll_into_view_if_needed()
+            page.screenshot(
+                path=str(ARTIFACT_DIR / "petcare-ai-2-1-multi-intent-desktop.png"),
+                full_page=False,
+            )
+
+            # 3. Reset & verify multi-turn slot-removal correction (remove chicken allergy + clear price ceiling)
+            page.click("#ai-workspace-reset")
+            expect(page.locator("#ai-welcome-panel")).to_be_visible()
+
+            page.fill("#ai-workspace-input", "Gợi ý hạt cho mèo trưởng thành dị ứng gà dưới 200k")
+            page.press("#ai-workspace-input", "Enter")
+            expect(assistant_msgs).to_have_count(1)
+            expect(page.locator('#ai-context-chips [data-slot="allergies"]')).to_contain_text("chicken")
+            expect(page.locator('#ai-context-chips [data-slot="budget"]')).to_contain_text("200.000")
+
+            page.fill(
+                "#ai-workspace-input",
+                "À nhầm, bé không dị ứng gà đâu và thôi bỏ giới hạn giá đi",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            expect(assistant_msgs).to_have_count(2)
+            expect(page.locator('#ai-context-chips [data-slot="species"]')).to_contain_text("Mèo")
+            expect(page.locator('#ai-context-chips [data-slot="life_stage"]')).to_contain_text("Trưởng thành")
+            expect(page.locator('#ai-context-chips [data-slot="allergies"]')).to_have_count(0)
+            expect(page.locator('#ai-context-chips [data-slot="budget"]')).to_have_count(0)
+            expect(assistant_msgs.nth(1).locator(".ai-rec-card").first).to_be_visible()
+            self.assertEqual(console_errors, [])
+        finally:
+            context.close()
+
+        # Part B: English descriptive veterinary triage (Desktop + Mobile) & staff permission boundaries
+        staff_ctx, staff_page, staff_errors = self._new_logged_in_page(
+            "staff1", DEMO_STAFF_PASSWORD, width=1440, height=900
+        )
+        try:
+            staff_page.goto(f"{self.base_url}/assistant/chat", wait_until="domcontentloaded")
+            with staff_page.expect_navigation(wait_until="domcontentloaded"):
+                staff_page.select_option("#language-select", "en")
+            expect(staff_page.locator("html")).to_have_attribute("lang", "en")
+
+            # 1. Descriptive urinary obstruction in English must render emergency alert + KB citation, NEVER cat litter cards
+            staff_page.fill(
+                "#ai-workspace-input",
+                "My male cat keeps straining in the litter box but has produced no urine since last night.",
+            )
+            staff_page.press("#ai-workspace-input", "Enter")
+            bot_turns = staff_page.locator(".ai-turn-bot:not(.is-loading)")
+            expect(bot_turns).to_have_count(1)
+            expect(bot_turns.nth(0).locator(".ai-safety-banner--emergency")).to_be_visible()
+            expect(bot_turns.nth(0).locator(".ai-citation-card").first).to_be_visible()
+            self.assertEqual(bot_turns.nth(0).locator(".ai-rec-card").count(), 0)
+            bot_turns.nth(0).locator(".ai-safety-banner--emergency").scroll_into_view_if_needed()
+            staff_page.screenshot(
+                path=str(ARTIFACT_DIR / "petcare-ai-2-1-vet-triage-desktop.png"),
+                full_page=False,
+            )
+
+            # Mobile 390x844 responsive check on emergency banner + citation cards
+            staff_page.set_viewport_size({"width": 390, "height": 844})
+            expect(bot_turns.nth(0).locator(".ai-safety-banner--emergency")).to_be_visible()
+            bot_turns.nth(0).locator(".ai-safety-banner--emergency").scroll_into_view_if_needed()
+            mobile_overflow = staff_page.evaluate(
+                "() => document.documentElement.scrollWidth - window.innerWidth"
+            )
+            self.assertLessEqual(mobile_overflow, 0)
+            staff_page.screenshot(
+                path=str(ARTIFACT_DIR / "petcare-ai-2-1-vet-triage-mobile-390.png"),
+                full_page=False,
+            )
+
+            # 2. Staff permission boundary on multi-operational query (sales allowed, 8-week inventory forecast admin-restricted)
+            staff_page.set_viewport_size({"width": 1440, "height": 900})
+            staff_page.fill(
+                "#ai-workspace-input",
+                "Show top-selling products this week and inventory forecast",
+            )
+            staff_page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(2)
+            expect(bot_turns.nth(1).locator(".ai-ops-insight").first).to_be_visible()
+            expect(bot_turns.nth(1)).to_contain_text("admin")
+            self.assertEqual(staff_errors, [])
+        finally:
+            with transaction() as conn:
+                cur = conn.cursor()
+                try:
+                    cur.execute("UPDATE users SET preferred_locale = 'vi' WHERE username IN ('admin', 'staff1')")
+                finally:
+                    cur.close()
+            staff_ctx.close()
+
+    def test_ai_2_2_head_pressing_triage_missing_data_and_budget_replacement(self):
+        context, page, console_errors = self._new_logged_in_page(
+            "admin", DEMO_ADMIN_PASSWORD, width=1440, height=900
+        )
+        try:
+            page.goto(f"{self.base_url}/assistant/chat", wait_until="domcontentloaded")
+            bot_turns = page.locator(".ai-turn-bot:not(.is-loading)")
+
+            # 1. Newly closed head-pressing + scleral icterus emergency -> emergency banner + citation, 0 pet cards
+            page.fill(
+                "#ai-workspace-input",
+                "My senior cat has been standing in the corner pressing her forehead flat against the wall for an hour and the whites of her eyes turned bright yellow.",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(1)
+            expect(bot_turns.nth(0).locator(".ai-safety-banner--emergency")).to_be_visible()
+            expect(bot_turns.nth(0).locator(".ai-citation-card").first).to_be_visible()
+            self.assertEqual(bot_turns.nth(0).locator(".ai-rec-card").count(), 0)
+
+            # 2. Undocumented feed-label nutrient % / taurine mg -> explicit .ai-missing-note without false medical boundary
+            page.fill(
+                "#ai-workspace-input",
+                "Túi hạt FOOD-004 có chính xác bao nhiêu phần trăm chất béo thô và bao nhiêu mg taurine?",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(2)
+            expect(bot_turns.nth(1).locator(".ai-missing-note")).to_be_visible()
+            self.assertEqual(bot_turns.nth(1).locator(".ai-safety-banner").count(), 0)
+            bot_turns.nth(1).locator(".ai-missing-note").scroll_into_view_if_needed()
+            page.screenshot(
+                path=str(ARTIFACT_DIR / "petcare-ai-2-2-safety-and-missing-data-desktop.png"),
+                full_page=False,
+            )
+
+            # 3. Simultaneous old budget cap removal + replacement in a single follow-up turn
+            page.click("#ai-workspace-reset")
+            expect(page.locator("#ai-welcome-panel")).to_be_visible()
+
+            page.fill("#ai-workspace-input", "Gợi ý mèo hiền hợp căn hộ dưới 5 triệu VND")
+            page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(1)
+            expect(page.locator('#ai-context-chips [data-slot="budget"]')).to_contain_text("5.000.000")
+
+            page.fill(
+                "#ai-workspace-input",
+                "Thôi bỏ mức trần 5 triệu cũ đi, nâng lên dưới 7 triệu rưỡi nhé",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(2)
+            expect(page.locator('#ai-context-chips [data-slot="budget"]')).to_contain_text("7.500.000")
             self.assertEqual(console_errors, [])
         finally:
             context.close()
