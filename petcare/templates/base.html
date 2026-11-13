@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
   {% block head %}{% endblock %}
 </head>
-<body class="{% if g.user %}app-body{% else %}auth-body{% endif %}{% if request.endpoint == 'pets.find_similar' %} pet-search-page{% endif %}{% if request.endpoint == 'purchasing.create' %} purchase-order-page{% endif %}{% if request.endpoint == 'invoices.detail' %} invoice-detail-page{% endif %}">
+<body class="{% if g.user %}app-body{% else %}auth-body{% endif %}{% if request.endpoint == 'pets.find_similar' %} pet-search-page{% endif %}{% if request.endpoint == 'purchasing.create' %} purchase-order-page{% endif %}{% if request.endpoint == 'invoices.detail' %} invoice-detail-page{% endif %}{% if request.endpoint == 'assistant.workspace' %} assistant-chat-page{% endif %}">
 <a class="skip-link" href="#main-content">{{ t('Bỏ qua điều hướng') }}</a>
 {% if g.user %}
 <div class="app-shell">
@@ -24,6 +24,7 @@
     <div class="side-caption">{{ t('CỬA HÀNG') }}</div>
     <nav class="side-nav" aria-label="{{ t('Điều hướng chính') }}">
       <a class="nav-link nav-link-dashboard {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}" {% if request.endpoint == 'main.dashboard' %}aria-current="page"{% endif %}>{{ icon('dashboard', 'nav-icon') }} <span class="nav-label">{{ t('Tổng quan') }}</span></a>
+      <a class="nav-link nav-link-assistant {% if request.blueprint == 'assistant' %}active{% endif %}" href="{{ url_for('assistant.workspace') }}" {% if request.blueprint == 'assistant' %}aria-current="page"{% endif %}>{{ icon('sparkle', 'nav-icon') }} <span class="nav-label">{{ t('Trợ lý AI') }}</span></a>
       <a class="nav-link nav-link-customers {% if request.blueprint == 'customers' %}active{% endif %}" href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers', 'nav-icon') }} <span class="nav-label">{{ t('Khách hàng') }}</span></a>
       <a class="nav-link nav-link-pets {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.index') }}" {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('pets', 'nav-icon') }} <span class="nav-label">{{ t('Thú cưng') }}</span></a>
       <a class="nav-link nav-link-search {% if request.endpoint == 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search', 'nav-icon') }} <span class="nav-label">{{ t('Tìm bằng ảnh') }}</span></a>
@@ -33,6 +34,7 @@
       <details class="mobile-nav-more" data-mobile-menu>
         <summary>{{ icon('menu') }}<span>{{ t('Thêm') }}</span></summary>
         <nav aria-label="{{ t('Điều hướng khác') }}">
+          <a href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers') }} {{ t('Khách hàng') }}</a>
           <a href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search') }} {{ t('Tìm bằng ảnh') }}</a>
           <a href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports') }} {{ t('Báo cáo') }}</a>
         </nav>
@@ -106,6 +108,7 @@
       {% if g.user.role == 'admin' %}{% if locale == 'en' %}<button type="button" data-assistant-prompt="Give me an overview of what needs attention in my store.">Store overview</button>{% else %}<button type="button" data-assistant-prompt="Tổng quan cần chú ý ở cửa hàng">Tổng quan cần chú ý</button>{% endif %}{% endif %}
       <button type="button" data-assistant-prompt="{{ t('Hướng dẫn lập hóa đơn') }}">{{ t('Cách lập hóa đơn') }}</button>
     </div>
+    <a class="assistant-quick-link" href="{{ url_for('assistant.workspace') }}">{{ icon('sparkle') }} {{ t('Mở không gian Trợ lý AI') }}</a>
     <a class="assistant-quick-link" href="{{ url_for('pets.find_similar') }}">{{ icon('search') }} {{ t('Mở tìm thú cưng bằng ảnh') }}</a>
   </div>
   <form class="assistant-form" id="assistant-form" action="{{ url_for('assistant.chat') }}" method="post">

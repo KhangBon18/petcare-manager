@@ -1,12 +1,14 @@
 {% set endpoint = request.endpoint or '' %}
 {% set blueprint = request.blueprint or '' %}
 {% set section_labels = {
+  'assistant': 'Trợ lý AI',
   'customers': 'Khách hàng', 'pets': 'Thú cưng', 'products': 'Sản phẩm',
   'invoices': 'Hóa đơn', 'reports': 'Báo cáo', 'purchasing': 'Nhập hàng',
   'store': 'Cài đặt cửa hàng', 'users': 'Tài khoản', 'audit': 'Nhật ký hoạt động',
   'account': 'Tài khoản'
 } %}
 {% set section_routes = {
+  'assistant': 'assistant.workspace',
   'customers': 'customers.index', 'pets': 'pets.index', 'products': 'products.index',
   'invoices': 'invoices.index', 'reports': 'reports.index', 'purchasing': 'purchasing.index',
   'store': 'store.settings', 'users': 'users.index', 'audit': 'audit.index',

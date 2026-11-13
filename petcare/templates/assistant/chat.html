@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Trợ lý AI') }}{% endblock %}
+
+{% block content %}
+<div
+  class="ai-workspace"
+  id="ai-workspace"
+  data-chat-url="{{ url_for('assistant.chat') }}"
+  data-reset-url="{{ url_for('assistant.reset') }}"
+  data-conversation-id="{{ initial_conversation_id }}"
+  data-initial-scope="{{ initial_scope }}"
+  data-initial-prompt="{{ initial_prompt }}"
+  data-csrf-token="{{ csrf_token() }}"
+>
+  <header class="page-heading ai-workspace-header">
+    <div class="ai-workspace-title-block">
+      <span class="eyebrow">{{ t('PETCARE AI · TRỢ LÝ MUA SẮM & CHĂM SÓC THÚ CƯNG') }}</span>
+      <h1>{{ t('Trợ lý AI') }}</h1>
+      <p>{{ t('Tư vấn chọn thú cưng, gợi ý & so sánh sản phẩm theo đơn giá thực tế, tra cứu kiến thức chăm sóc có trích dẫn nguồn và phân tích vận hành theo quyền.') }}</p>
+      <div class="ai-status-strip">
+        <span class="ai-engine-badge" id="ai-engine-badge">
+          {{ icon('sparkle') }}
+          {% if workspace_meta.provider.active_mode == 'real_llm' %}
+            {{ t('AI tạo sinh đã phê duyệt · Có kiểm chứng MySQL') }}
+          {% else %}
+            {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}
+          {% endif %}
+        </span>
+        <span class="ai-readonly-badge">{{ icon('check') }} {{ 'Chỉ đọc · An toàn theo cửa hàng' if locale == 'vi' else 'Read-only · Tenant isolated' }}</span>
+      </div>
+    </div>
+
+    <div class="ai-workspace-controls">
+      <div class="ai-scope-switcher" role="group" aria-label="{{ t('Phạm vi truy cập') }}">
+        <button
+          type="button"
+          class="ai-scope-btn {% if initial_scope != 'shopper_preview' %}is-active{% endif %}"
+          data-scope-value="workspace"
+          aria-pressed="{{ 'true' if initial_scope != 'shopper_preview' else 'false' }}"
+        >
+          {{ t('Không gian cửa hàng') }}
+        </button>
+        <button
+          type="button"
+          class="ai-scope-btn {% if initial_scope == 'shopper_preview' %}is-active{% endif %}"
+          data-scope-value="shopper_preview"
+          aria-pressed="{{ 'true' if initial_scope == 'shopper_preview' else 'false' }}"
+        >
+          {{ t('Xem thử khách mua (QA)') }}
+        </button>
+      </div>
+      <button type="button" class="button button-light ai-reset-btn" id="ai-workspace-reset">
+        {{ icon('refresh') }} <span>{{ t('Cuộc trò chuyện mới') }}</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="panel ai-context-bar" id="ai-context-bar" aria-label="{{ t('Ngữ cảnh ưu tiên đang nhớ') }}">
+    <div class="ai-context-chips-wrap">
+      <strong class="ai-context-title">{{ t('Ngữ cảnh ưu tiên đang nhớ') }}:</strong>
+      <div class="ai-context-chips" id="ai-context-chips">
+        <span class="ai-context-empty" id="ai-context-empty">{{ t('Chưa có bộ lọc ưu tiên nào được ghim trong phiên này.') }}</span>
+      </div>
+    </div>
+    <div class="ai-context-actions">
+      <div class="ai-compare-tray" id="ai-compare-tray" hidden>
+        <span class="ai-compare-count" id="ai-compare-count">0</span>
+        <button type="button" class="button button-primary button-small" id="ai-compare-submit">
+          {{ t('So sánh các sản phẩm đã chọn') }}
+        </button>
+        <button type="button" class="button button-light button-small" id="ai-compare-clear">
+          {{ t('Bỏ chọn') }}
+        </button>
+      </div>
+      <button type="button" class="text-link ai-clear-slots-btn" id="ai-clear-slots" hidden>
+        {{ t('Xóa ngữ cảnh') }}
+      </button>
+    </div>
+  </section>
+
+  <div class="ai-workspace-grid">
+    <section class="panel ai-chat-panel" aria-label="{{ t('Trợ lý AI PetCare') }}">
+      <div class="ai-stream" id="ai-workspace-messages" role="log" aria-live="polite" aria-relevant="additions text">
+        <div class="ai-welcome-card" id="ai-welcome-panel">
+          <div class="ai-welcome-lead">
+            <span class="ai-welcome-icon" aria-hidden="true">{{ icon('sparkle') }}</span>
+            <div>
+              <h2>{{ t('Trợ lý AI tư vấn & gợi ý thông minh') }}</h2>
+              <p id="ai-scope-banner-copy">
+                {% if initial_scope == 'shopper_preview' %}
+                  {{ 'Đang ở chế độ Xem thử khách mua (QA): chỉ truy cập thú cưng đang bán, sản phẩm còn hoạt động và kho tri thức chăm sóc. Doanh thu, tồn kho nội bộ và đơn nhập hàng được khóa.' if locale == 'vi' else 'Shopper Preview (QA) active: strictly scoped to available pets, active products, and reviewed pet-care knowledge. Internal store KPIs and purchase orders are blocked.' }}
+                {% else %}
+                  {{ 'Kết hợp tư vấn chọn thú cưng có giải thích điểm, gợi ý & so sánh sản phẩm theo đơn giá quy đổi, kiến thức chăm sóc có nguồn duyệt và tra cứu vận hành theo quyền hiện tại.' if locale == 'vi' else 'Combines explainable pet matching, normalized unit-price product recommendations & comparisons, cited pet-care articles, and role-scoped store insights.' }}
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <div class="ai-prompt-groups">
+            {% for group in workspace_meta.prompt_categories %}
+            <section
+              class="ai-prompt-group"
+              {% if group.workspace_only %}data-workspace-only="true"{% endif %}
+              {% if group.workspace_only and initial_scope == 'shopper_preview' %}hidden{% endif %}
+              aria-label="{{ group.title }}"
+            >
+              <h3>{{ group.title }}</h3>
+              <div class="ai-prompt-list">
+                {% for prompt_text in group.prompts %}
+                <button type="button" class="ai-prompt-chip" data-ai-prompt="{{ prompt_text }}">
+                  <span>{{ prompt_text }}</span>
+                  <b aria-hidden="true">→</b>
+                </button>
+                {% endfor %}
+              </div>
+            </section>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <form class="ai-composer" id="ai-workspace-form" action="{{ url_for('assistant.chat') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="visually-hidden" for="ai-workspace-input">{{ t('Câu hỏi cho trợ lý') }}</label>
+        <div class="ai-composer-row">
+          <textarea
+            id="ai-workspace-input"
+            name="message"
+            rows="2"
+            maxlength="1000"
+            placeholder="{{ t('Nhập nhu cầu tư vấn thú cưng, sản phẩm cần so sánh hoặc câu hỏi chăm sóc…') }}"
+            required
+          ></textarea>
+          <button type="submit" class="button button-primary ai-send-btn" id="ai-workspace-send">
+            {{ icon('send') }} <span>{{ t('Gửi') }}</span>
+          </button>
+        </div>
+        <div class="ai-composer-meta">
+          <small>{{ t('Enter để gửi · Shift+Enter xuống dòng · Chỉ đọc dữ liệu đã xác thực') }}</small>
+          <small class="ai-char-count" id="ai-char-count">0 / 1000</small>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel ai-side-rail" aria-label="{{ t('Nguyên tắc minh bạch & an toàn') }}">
+      <div class="ai-rail-section">
+        <span class="eyebrow">{{ 'CAM KẾT CHẤT LƯỢNG DỮ LIỆU' if locale == 'vi' else 'GROUNDED AI PRINCIPLES' }}</span>
+        <h2>{{ t('Nguyên tắc minh bạch & an toàn') }}</h2>
+        <ul class="ai-guardrail-list">
+          <li>{{ t('Không suy đoán tính cách theo giống; thuộc tính chưa ghi nhận được báo rõ.') }}</li>
+          <li>{{ t('Giá bán, đơn giá quy đổi và tồn kho lấy trực tiếp từ MySQL cửa hàng hiện tại.') }}</li>
+          <li>{{ t('Kiến thức chăm sóc trích dẫn nguồn duyệt (WSAVA, AVMA, AAFP, ASPCA); không chẩn đoán hay kê đơn thuốc.') }}</li>
+          <li>{{ t('Chỉ đọc (Read-only): không tự lập hóa đơn, đặt đơn hàng hay sửa tồn kho khi chưa có người xác nhận.') }}</li>
+        </ul>
+      </div>
+
+      <div class="ai-rail-section ai-rail-links">
+        <span class="eyebrow">{{ 'CÔNG CỤ LIÊN QUAN' if locale == 'vi' else 'CONNECTED TOOLS' }}</span>
+        <a class="ai-rail-link" href="{{ url_for('pets.find_similar') }}">
+          {{ icon('search') }}
+          <span>
+            <strong>{{ t('Mở tìm thú cưng bằng ảnh') }}</strong>
+            <small>{{ 'Đối chiếu đặc trưng thị giác cục bộ' if locale == 'vi' else 'Local visual similarity matching' }}</small>
+          </span>
+        </a>
+        <a class="ai-rail-link" href="{{ url_for('pets.index') }}">
+          {{ icon('pets') }}
+          <span>
+            <strong>{{ t('Thú cưng') }}</strong>
+            <small>{{ 'Xem toàn bộ hồ sơ thú cưng' if locale == 'vi' else 'Browse full pet catalog' }}</small>
+          </span>
+        </a>
+        <a class="ai-rail-link" href="{{ url_for('products.index') }}">
+          {{ icon('products') }}
+          <span>
+            <strong>{{ t('Sản phẩm') }}</strong>
+            <small>{{ 'Tra cứu danh mục & tồn kho' if locale == 'vi' else 'Inspect SKUs & live stock' }}</small>
+          </span>
+        </a>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/assistant_workspace.js') }}" defer></script>
+{% endblock %}

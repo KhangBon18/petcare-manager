@@ -67,6 +67,7 @@
     <div class="panel-heading"><div><span class="eyebrow">{{ t('BẮT ĐẦU NHANH') }}</span><h2>{{ t('Cửa hàng hôm nay') }}</h2></div><span class="soft-badge">{{ t('Tổng quan') }}</span></div>
     <p class="muted">{{ t('Chọn một việc bạn muốn làm để tiếp tục quản lý cửa hàng.') }}</p>
     <div class="quick-grid">
+      <a class="quick-card quick-card-ai" href="{{ url_for('assistant.workspace') }}"><span class="quick-icon">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý AI') }}</strong><small>{{ t('Tư vấn chọn thú cưng & sản phẩm bằng Python') }}</small></span><b>{{ icon('arrow') }}</b></a>
       <a class="quick-card" href="{{ url_for('customers.create') }}"><span class="quick-icon">{{ icon('customers') }}</span><span><strong>{{ t('Thêm khách hàng') }}</strong><small>{{ t('Lưu thông tin người mua') }}</small></span><b>{{ icon('arrow') }}</b></a>
       <a class="quick-card" href="{{ url_for('invoices.create') }}"><span class="quick-icon">{{ icon('invoice') }}</span><span><strong>{{ t('Tạo hóa đơn') }}</strong><small>{{ t('Bán sản phẩm hoặc thú cưng') }}</small></span><b>{{ icon('arrow') }}</b></a>
       <a class="quick-card" href="{{ url_for('products.index') }}"><span class="quick-icon">{{ icon('products') }}</span><span><strong>{{ t('Kiểm tra tồn kho') }}</strong><small>{% if metrics.low_stock == 1 %}{{ t('1 mặt hàng cần chú ý') }}{% else %}{{ metrics.low_stock }} {{ t('mặt hàng cần chú ý') }}{% endif %}</small></span><b>{{ icon('arrow') }}</b></a>

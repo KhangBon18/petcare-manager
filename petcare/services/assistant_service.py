@@ -9,6 +9,7 @@ from datetime import timedelta
 from flask import current_app, has_app_context
 
 from petcare.ai import client as ai_client
+from petcare.ai import orchestrator as ai_orchestrator
 from petcare.database.connection import read_connection
 from petcare.i18n import current_locale
 from petcare.repositories import assistant_repo
@@ -150,24 +151,56 @@ def _provider_context(question: str, context: dict) -> dict:
     return payload
 
 
-def answer(actor_id, raw_question, history=None, locale=None, tenant_id=None):
+def answer(
+    actor_id,
+    raw_question,
+    history=None,
+    locale=None,
+    tenant_id=None,
+    *,
+    scope=None,
+    conversation_id=None,
+):
     question = text_value(raw_question, "Câu hỏi", 1000)
     locale = locale if locale in {"vi", "en"} else current_locale()
     locale = locale if locale in {"vi", "en"} else "vi"
+
+    orchestrated = ai_orchestrator.try_orchestrate_turn(
+        actor_id,
+        question,
+        history=history,
+        locale=locale,
+        tenant_id=tenant_id,
+        scope_raw=scope,
+        conversation_id_raw=conversation_id,
+    )
+    if orchestrated is not None:
+        return orchestrated
+
     top_period = _top_products_period(question)
     capability_kind = assistant_capabilities.classify(question)
     if top_period is not None and capability_kind is not None:
-        return assistant_capabilities._clarification("ambiguous", locale)
+        return ai_orchestrator.enrich_legacy_response(
+            assistant_capabilities._clarification("ambiguous", locale),
+            scope_raw=scope,
+            conversation_id_raw=conversation_id,
+            locale=locale,
+        )
     if top_period == "unsupported":
-        return {
-            "reply": (
-                "Hãy chọn hôm nay, 7 ngày gần nhất, tuần này/tuần trước hoặc tháng này/tháng trước để xem thứ hạng."
-                if locale == "vi" else
-                "Choose today, the last 7 days, this/last week, or this/last month for a sales ranking."
-            ),
-            "mode": "local",
-            "status": "clarification",
-        }
+        return ai_orchestrator.enrich_legacy_response(
+            {
+                "reply": (
+                    "Hãy chọn hôm nay, 7 ngày gần nhất, tuần này/tuần trước hoặc tháng này/tháng trước để xem thứ hạng."
+                    if locale == "vi" else
+                    "Choose today, the last 7 days, this/last week, or this/last month for a sales ranking."
+                ),
+                "mode": "local",
+                "status": "clarification",
+            },
+            scope_raw=scope,
+            conversation_id_raw=conversation_id,
+            locale=locale,
+        )
     if top_period:
         insight = report_service.top_products_for_period(
             actor_id, top_period, tenant_id=tenant_id
@@ -183,16 +216,26 @@ def answer(actor_id, raw_question, history=None, locale=None, tenant_id=None):
                 for item in insight["items"]
             ],
         }
-        return {
-            "reply": top_products_answer(insight, locale),
-            "mode": "local",
-            "insight": api_insight,
-        }
+        return ai_orchestrator.enrich_legacy_response(
+            {
+                "reply": top_products_answer(insight, locale),
+                "mode": "local",
+                "insight": api_insight,
+            },
+            scope_raw=scope,
+            conversation_id_raw=conversation_id,
+            locale=locale,
+        )
     capability_response = assistant_capabilities.answer(
         actor_id, question, locale=locale, tenant_id=tenant_id
     )
     if capability_response is not None:
-        return capability_response
+        return ai_orchestrator.enrich_legacy_response(
+            capability_response,
+            scope_raw=scope,
+            conversation_id_raw=conversation_id,
+            locale=locale,
+        )
     query = _normalize(question)
     period = query_period(query)
     with read_connection() as connection:
@@ -270,14 +313,29 @@ def answer(actor_id, raw_question, history=None, locale=None, tenant_id=None):
         messages.extend(_safe_history(history))
         messages.append({"role": "user", "content": question})
         try:
-            return {"reply": ai_client.complete(messages), "mode": "ai", **extra}
+            return ai_orchestrator.enrich_legacy_response(
+                {"reply": ai_client.complete(messages), "mode": "ai", **extra},
+                scope_raw=scope,
+                conversation_id_raw=conversation_id,
+                locale=locale,
+            )
         except ai_client.AIProviderError:
             fallback = catalog_reply(catalog_result, locale) if catalog_result else local_answer(question, context, locale)
-            return {
-                "reply": ("The AI service is temporarily unavailable. " if locale == "en" else "AI đang tạm thời không kết nối; ") + fallback,
-                "mode": "local", **extra,
-            }
-    return {"reply": catalog_reply(catalog_result, locale) if catalog_result else local_answer(question, context, locale), "mode": "local", **extra}
+            return ai_orchestrator.enrich_legacy_response(
+                {
+                    "reply": ("The AI service is temporarily unavailable. " if locale == "en" else "AI đang tạm thời không kết nối; ") + fallback,
+                    "mode": "local", **extra,
+                },
+                scope_raw=scope,
+                conversation_id_raw=conversation_id,
+                locale=locale,
+            )
+    return ai_orchestrator.enrich_legacy_response(
+        {"reply": catalog_reply(catalog_result, locale) if catalog_result else local_answer(question, context, locale), "mode": "local", **extra},
+        scope_raw=scope,
+        conversation_id_raw=conversation_id,
+        locale=locale,
+    )
 
 
 def catalog_reply(result, locale="vi"):
