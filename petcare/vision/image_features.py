@@ -194,6 +194,9 @@ def _compute_subject_coat_profile(image: Image.Image) -> tuple[float, ...]:
     return tuple(round(counts[k] / denom, 5) for k in COAT_PROFILE_BUCKETS)
 
 
+compute_subject_coat_profile = _compute_subject_coat_profile
+
+
 def hamming_hex64(left: str | None, right: str | None) -> int | None:
     if (
         not isinstance(left, str)

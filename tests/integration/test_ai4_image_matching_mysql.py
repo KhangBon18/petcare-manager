@@ -189,30 +189,59 @@ class AI4ImageMatchingMySQLIntegrationTests(unittest.TestCase):
 
     def test_absent_orange_cat_and_cross_tenant_isolation(self):
         absent_orange_bytes = (DEMO_PETS_DIR / "demo-cat-25.png").read_bytes()
+        real_dog_bytes = (ROOT / "tests" / "fixtures" / "vision_ai4" / "real_pack" / "real-dog-golden-cal-01.jpg").read_bytes()
+        real_multi_bytes = (ROOT / "tests" / "fixtures" / "vision_ai4" / "real_pack" / "real-multi-catdog-hold-01.jpg").read_bytes()
         with self.app.app_context():
-            # Even though demo-cat-25.png is PET-157 in 'main', branch tenant must NOT see it!
-            unfiltered = pet_image_service.search_similar(
+            # AI-4.0b: Even though demo-cat-25.png is PET-157 in 'main', branch tenant NEVER sees PET-157,
+            # automatically detects one_cat without manual species, and returns only branch orange cats!
+            auto_out = pet_image_service.search_similar(
                 self.branch_user_id,
                 absent_orange_bytes,
                 species="",
                 tenant_id=self.branch_tenant_id,
             )
-            self.assertEqual(unfiltered["results"], [])
-            self.assertEqual(unfiltered["match_outcome"], "no_confident_match")
-            self.assertEqual(unfiltered["abstention_reason"], "species_unverified")
+            self.assertEqual(auto_out["verified_species"], "cat")
+            self.assertEqual(auto_out["verified_species_source"], "local_detector")
+            self.assertGreaterEqual(len(auto_out["results"]), 1)
+            returned_codes = {r["pet"]["code"] for r in auto_out["results"]}
+            self.assertTrue(returned_codes.issubset({"BR-CAT-01", "BR-CAT-02"}))
+            for item in auto_out["results"]:
+                self.assertEqual(item["match_tier"], "visually_similar_candidate")
+                self.assertEqual(item["pet"]["species"], "Mèo")
 
-            filtered = pet_image_service.search_similar(
+            # Phase 6 guardrail: manual species='Mèo' on a verified dog photo must reject as species_contradiction
+            contradicted = pet_image_service.search_similar(
                 self.branch_user_id,
-                absent_orange_bytes,
+                real_dog_bytes,
                 species="Mèo",
                 tenant_id=self.branch_tenant_id,
             )
-            self.assertGreaterEqual(len(filtered["results"]), 1)
-            returned_codes = {r["pet"]["code"] for r in filtered["results"]}
-            self.assertTrue(returned_codes.issubset({"BR-CAT-01", "BR-CAT-02"}))
-            for item in filtered["results"]:
-                self.assertEqual(item["match_tier"], "visually_similar_candidate")
-                self.assertEqual(item["pet"]["species"], "Mèo")
+            self.assertEqual(contradicted["results"], [])
+            self.assertEqual(contradicted["abstention_reason"], "species_contradiction")
+
+            # Multi-animal photo is rejected cleanly
+            multi_out = pet_image_service.search_similar(
+                self.branch_user_id,
+                real_multi_bytes,
+                species="",
+                tenant_id=self.branch_tenant_id,
+            )
+            self.assertEqual(multi_out["results"], [])
+            self.assertEqual(multi_out["abstention_reason"], "multiple_animals_detected")
+
+            # When AI_LOCAL_SPECIES_GATE_ENABLED=False, preserves AI-4.0a species_unverified abstention
+            self.app.config["AI_LOCAL_SPECIES_GATE_ENABLED"] = False
+            try:
+                gate_off = pet_image_service.search_similar(
+                    self.branch_user_id,
+                    absent_orange_bytes,
+                    species="",
+                    tenant_id=self.branch_tenant_id,
+                )
+                self.assertEqual(gate_off["results"], [])
+                self.assertEqual(gate_off["abstention_reason"], "species_unverified")
+            finally:
+                self.app.config["AI_LOCAL_SPECIES_GATE_ENABLED"] = True
 
         # HTTP check: branch owner cannot download main store's pet photo
         branch_client = self._login_client(self.branch_user, self.branch_pw, store_slug=self.branch_slug)

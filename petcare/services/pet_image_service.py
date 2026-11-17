@@ -30,6 +30,16 @@ from petcare.vision.image_features import (
     sha256_hex,
     similarity_components,
 )
+from petcare.vision.local_pet_detector import (
+    SUBJECT_AMBIGUOUS,
+    SUBJECT_MULTIPLE_ANIMALS,
+    SUBJECT_NO_RELIABLE_ANIMAL,
+    SUBJECT_ONE_CAT,
+    SUBJECT_ONE_DOG,
+    SUBJECT_OTHER_ANIMAL,
+    SpeciesGateDecision,
+    analyze_pet_image,
+)
 from petcare.vision.species_taxonomy import (
     canonicalize_species,
     coat_groups_compatible,
@@ -74,6 +84,7 @@ NEAR_DUP_MIN_STRUCTURE_SCORE = 0.96
 # - UI/document/solid/cartoon calibration negatives flat_pixel_ratio: 0.754 .. 1.000
 SIMILAR_MAX_FLAT_PIXEL_RATIO = 0.68
 SIMILAR_MIN_COMBINED_SCORE = 0.68
+SIMILAR_MIN_DETECTOR_BBOX_SCORE = 0.60
 MAX_SIMILAR_CANDIDATES = 5
 _VISION_FIELD_LIMITS = {
     "species": 80,
@@ -355,8 +366,9 @@ def rank_pet_candidates_ai4a(
     explicit_species: str | None = None,
     analysis: dict | None = None,
     include_similar: bool = True,
+    species_gate: SpeciesGateDecision | None = None,
 ) -> dict:
-    """Precision-first AI-4.0a pet photo matcher with exact priority, hard species gating, and abstention."""
+    """Precision-first AI-4.0b/a pet photo matcher with exact priority, automatic local species gate, and safe abstention."""
     has_reference_photos = False
     materialized: list[tuple[dict, ImageDescriptor | None, float | None]] = []
 
@@ -368,15 +380,42 @@ def rank_pet_candidates_ai4a(
         visual_score = compare_images(query, saved) if saved is not None else compare_images_from_json(query, raw_desc)
         materialized.append((pet, saved, visual_score))
 
-    # Pass 1: Exact and calibrated near-duplicate detection (never penalized by metadata_score)
+    subject_status = species_gate.subject_status if species_gate is not None else None
+
+    # Guardrail (Phase 6): A manual species filter must NEVER override a verified species contradiction
+    if (
+        species_gate is not None
+        and explicit_species is not None
+        and species_gate.verified_species is not None
+        and explicit_species != species_gate.verified_species
+    ):
+        return {
+            "results": [],
+            "has_reference_photos": has_reference_photos,
+            "match_outcome": MATCH_OUTCOME_NONE,
+            "abstention_reason": "species_contradiction",
+            "verified_species": species_gate.verified_species,
+            "verified_species_source": "local_detector",
+            "subject_status": subject_status,
+        }
+
+    # Pass 1: Tier 0 (Exact SHA-256) and Tier 1 (Calibrated near-duplicate)
     exact_hits: list[dict] = []
     near_dup_hits: list[dict] = []
 
     for pet, saved, visual_score in materialized:
         pet_species = canonicalize_species(pet.get("species"))
-        if explicit_species is not None and pet_species != explicit_species:
-            continue
         if _is_exact_descriptor_match(query, saved, visual_score):
+            if explicit_species is not None and pet_species != explicit_species:
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "abstention_reason": "species_contradiction",
+                    "verified_species": pet_species,
+                    "verified_species_source": "matched_store_photo",
+                    "subject_status": subject_status,
+                }
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
             exact_hits.append({
                 "pet": pet,
@@ -388,6 +427,8 @@ def rank_pet_candidates_ai4a(
                 "match_tier": MATCH_TIER_EXACT,
             })
         elif _is_near_duplicate_match(query, saved, visual_score) and visual_score is not None:
+            if explicit_species is not None and pet_species != explicit_species:
+                continue
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
             bounded = max(0.90, min(0.99, visual_score))
             near_dup_hits.append({
@@ -403,18 +444,86 @@ def rank_pet_candidates_ai4a(
     exact_hits.sort(key=lambda r: (r["sort_score"], str(r["pet"].get("name", "")), -int(r["pet"]["id"])), reverse=True)
     near_dup_hits.sort(key=lambda r: (r["sort_score"], str(r["pet"].get("name", "")), -int(r["pet"]["id"])), reverse=True)
 
-    # Resolve verified query species without silent guessing
+    # Resolve verified query species using exact/near-dup store match, local species gate, or safe manual fallback
     verified_species: str | None = None
     verified_species_source: str | None = None
-    if explicit_species is not None:
-        verified_species = explicit_species
-        verified_species_source = "user_filter"
-    elif exact_hits:
+
+    if exact_hits:
         verified_species = canonicalize_species(exact_hits[0]["pet"].get("species"))
         verified_species_source = "matched_store_photo"
     elif near_dup_hits:
         verified_species = canonicalize_species(near_dup_hits[0]["pet"].get("species"))
         verified_species_source = "matched_store_photo"
+    elif species_gate is not None:
+        if species_gate.subject_status in (SUBJECT_ONE_CAT, SUBJECT_ONE_DOG):
+            verified_species = species_gate.verified_species
+            verified_species_source = "local_detector"
+        elif species_gate.subject_status == SUBJECT_MULTIPLE_ANIMALS:
+            return {
+                "results": [],
+                "has_reference_photos": has_reference_photos,
+                "match_outcome": MATCH_OUTCOME_NONE,
+                "abstention_reason": "multiple_animals_detected",
+                "verified_species": None,
+                "verified_species_source": None,
+                "subject_status": subject_status,
+            }
+        elif species_gate.subject_status == SUBJECT_NO_RELIABLE_ANIMAL:
+            return {
+                "results": [],
+                "has_reference_photos": has_reference_photos,
+                "match_outcome": MATCH_OUTCOME_NONE,
+                "abstention_reason": species_gate.detail_reason,
+                "verified_species": None,
+                "verified_species_source": None,
+                "subject_status": subject_status,
+            }
+        elif species_gate.subject_status == SUBJECT_OTHER_ANIMAL:
+            if explicit_species in (None, "cat", "dog"):
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "abstention_reason": "unsupported_other_animal",
+                    "verified_species": None,
+                    "verified_species_source": None,
+                    "subject_status": subject_status,
+                }
+            verified_species = explicit_species
+            verified_species_source = "user_filter"
+        elif species_gate.subject_status == SUBJECT_AMBIGUOUS:
+            if explicit_species is None:
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "abstention_reason": "ambiguous_subject",
+                    "verified_species": None,
+                    "verified_species_source": None,
+                    "subject_status": subject_status,
+                }
+            if (
+                explicit_species in ("cat", "dog")
+                and species_gate.candidate_species_support
+                and explicit_species not in species_gate.candidate_species_support
+            ):
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "abstention_reason": "species_contradiction",
+                    "verified_species": None,
+                    "verified_species_source": None,
+                    "subject_status": subject_status,
+                }
+            verified_species = explicit_species
+            verified_species_source = "user_filter"
+        elif explicit_species is not None:
+            verified_species = explicit_species
+            verified_species_source = "user_filter"
+    elif explicit_species is not None:
+        verified_species = explicit_species
+        verified_species_source = "user_filter"
 
     if verified_species is not None:
         near_dup_hits = [
@@ -435,11 +544,26 @@ def rank_pet_candidates_ai4a(
             "abstention_reason": abstention_reason,
             "verified_species": None,
             "verified_species_source": None,
+            "subject_status": subject_status,
         }
 
     direct_ids = {int(r["pet"]["id"]) for r in (*exact_hits, *near_dup_hits)}
     similar_hits: list[dict] = []
     non_photo_rejected = query.flat_pixel_ratio > SIMILAR_MAX_FLAT_PIXEL_RATIO
+
+    use_fg_bbox = bool(
+        species_gate is not None
+        and species_gate.foreground_coat_profile
+        and species_gate.foreground_descriptor is not None
+    )
+    active_coat_profile = (
+        species_gate.foreground_coat_profile
+        if use_fg_bbox and species_gate is not None
+        else query.subject_coat_profile
+    )
+    min_sim_threshold = (
+        SIMILAR_MIN_DETECTOR_BBOX_SCORE if use_fg_bbox else SIMILAR_MIN_COMBINED_SCORE
+    )
 
     if include_similar and not non_photo_rejected:
         for pet, saved, visual_score in materialized:
@@ -450,17 +574,24 @@ def rank_pet_candidates_ai4a(
                 continue
             if saved is None or visual_score is None:
                 continue
-            coat_sim = compare_coat_profiles(query.subject_coat_profile, saved.subject_coat_profile)
-            effective_coat_sim = coat_sim if coat_sim is not None else visual_score
+            best_vis = visual_score
+            if use_fg_bbox and species_gate is not None and species_gate.foreground_descriptor is not None:
+                bbox_vis = compare_images(species_gate.foreground_descriptor, saved)
+                best_vis = max(visual_score, bbox_vis)
+            coat_sim = compare_coat_profiles(active_coat_profile, saved.subject_coat_profile)
+            effective_coat_sim = coat_sim if coat_sim is not None else best_vis
             if not coat_groups_compatible(
-                query.subject_coat_profile,
+                active_coat_profile,
                 pet.get("coat_color"),
                 pet.get("appearance_tags"),
                 saved.subject_coat_profile,
             ):
                 continue
-            combined_sim = 0.55 * visual_score + 0.45 * effective_coat_sim
-            if combined_sim < SIMILAR_MIN_COMBINED_SCORE:
+            if use_fg_bbox:
+                combined_sim = 0.45 * best_vis + 0.55 * effective_coat_sim
+            else:
+                combined_sim = 0.55 * best_vis + 0.45 * effective_coat_sim
+            if combined_sim < min_sim_threshold:
                 continue
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
             capped_score = min(89, max(1, round(combined_sim * 100)))
@@ -469,7 +600,7 @@ def rank_pet_candidates_ai4a(
                 "saved": saved,
                 "score": capped_score,
                 "sort_score": combined_sim,
-                "visual_score": round(visual_score * 100),
+                "visual_score": round(best_vis * 100),
                 "coat_score": round(effective_coat_sim * 100),
                 "attribute_score": round(metadata_score * 100),
                 "match_tier": MATCH_TIER_SIMILAR,
@@ -529,7 +660,11 @@ def rank_pet_candidates_ai4a(
         "abstention_reason": abstention,
         "verified_species": verified_species,
         "verified_species_source": verified_species_source,
+        "subject_status": subject_status,
     }
+
+
+rank_pet_candidates_ai4b = rank_pet_candidates_ai4a
 
 
 def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:
@@ -595,10 +730,18 @@ def search_similar(
     query = describe_image(normalized, raw_sha256=raw_sha, normalized_sha256=norm_sha)
     analysis, warning, _provider_status = _analysis_from_model(normalized)
     explicit_species = canonicalize_species(species)
+    local_gate_enabled = bool(current_app.config.get("AI_LOCAL_SPECIES_GATE_ENABLED", True))
+    species_gate = (
+        analyze_pet_image(normalized, flat_pixel_ratio=query.flat_pixel_ratio)
+        if isinstance(query, ImageDescriptor) and local_gate_enabled
+        else None
+    )
     search_scope = "full"
 
     with read_connection() as connection:
         require_actor(connection, actor_id, tenant_id=tenant_id)
+        # Note: When explicit species is provided, still scan available candidates if we need to detect
+        # an exact stored photo contradiction when local_gate_enabled is False, otherwise iter_filtered_for_image_search.
         filtered = bool(species or status != "available")
         has_reference_photos = (
             False if filtered else pet_repo.has_available_reference_photos(connection)
@@ -628,6 +771,7 @@ def search_similar(
                 explicit_species=explicit_species,
                 analysis=analysis,
                 include_similar=include_similar,
+                species_gate=species_gate,
             )
             results = outcome["results"]
             has_reference_photos = has_reference_photos or outcome["has_reference_photos"]
@@ -635,12 +779,14 @@ def search_similar(
             abstention_reason = outcome["abstention_reason"]
             verified_species = outcome["verified_species"]
             verified_species_source = outcome["verified_species_source"]
+            subject_status = outcome["subject_status"]
         else:
             results = _legacy_stream_rank(query, candidates, analysis)
             match_outcome = "visually_similar_only" if results else MATCH_OUTCOME_NONE
             abstention_reason = None if results else "below_similarity_threshold"
             verified_species = explicit_species
             verified_species_source = "user_filter" if explicit_species else None
+            subject_status = None
 
     return {
         "filters": {"species": species, "status": status},
@@ -657,6 +803,19 @@ def search_similar(
         "abstention_reason": abstention_reason,
         "verified_species": verified_species,
         "verified_species_source": verified_species_source,
+        "subject_status": subject_status,
+        "species_gate": (
+            {
+                "subject_status": species_gate.subject_status,
+                "verified_species": species_gate.verified_species,
+                "detail_reason": species_gate.detail_reason,
+                "animal_count": species_gate.animal_count,
+                "detector_label": species_gate.detector_label,
+                "inference_ms": species_gate.inference_ms,
+            }
+            if species_gate is not None
+            else None
+        ),
         # The normalized query is rendered only in this authenticated response;
         # it is not persisted with pet records or sent to a remote provider.
         "query_preview": "data:image/jpeg;base64," + base64.b64encode(normalized).decode("ascii"),
