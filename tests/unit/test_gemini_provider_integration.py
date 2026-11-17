@@ -1234,6 +1234,69 @@ class GeminiSafetyAndRateLimitTests(unittest.TestCase):
             self.assertEqual(qa_web_app.config["AI_MAX_TOOL_ROUNDS"], 2)
             self.assertEqual(qa_web_app.config["AI_HTTP_STEP_TIMEOUT_SECONDS"], 50.0)
 
+    def test_ai33_kibble_allergy_product_routing_and_floating_drawer_gemini_privacy_banner(self) -> None:
+        import os
+        from flask import g, render_template_string
+        from petcare.ai.nlu import interpret_turn
+        from scripts.run_gemini_qa_web import build_gemini_qa_web_app
+
+        # 1. Colloquial Vietnamese kibble + apartment cat + chicken allergy routes to product_recommendation (not pet_recommendation)
+        q_vi = "Mình nuôi mèo trưởng thành ở căn hộ, bé dị ứng thịt gà, ngân sách dưới 400k, gợi ý hạt giúp mình"
+        interp = interpret_turn(q_vi, PreferenceSlots())
+        self.assertEqual(interp.intent, "product_recommendation")
+        self.assertEqual(interp.slot_updates.product_category, "food")
+        self.assertIn("chicken", interp.slot_updates.allergies)
+
+        # 2. Floating assistant drawer context processor exposes `ai_provider_status` when AI_API_BASE_URL is auto-resolved for Gemini
+        probe_key = "".join(("AIza", "SyUnitTestFloatingBanner0001"))
+        with patch.dict(
+            os.environ,
+            {"APP_ENV": "development", "DB_NAME": "petcare_gemini_qa_test", "GEMINI_API_KEY": probe_key},
+            clear=False,
+        ):
+            qa_web_app = build_gemini_qa_web_app()
+            with qa_web_app.test_request_context("/dashboard"):
+                g.locale = "vi"
+                rendered = render_template_string(
+                    "{{ ai_provider_status.active_mode.value }}|{{ ai_provider_status.provider_family }}"
+                )
+                self.assertEqual(rendered, "real_llm|gemini")
+
+        # 3. MySQL DECIMAL(12,4) prices serialize cleanly without trailing `.0000` for Gemini synthesis
+        from decimal import Decimal
+        from petcare.ai.contracts import RecommendationCard
+        from petcare.ai.llm_tool_agent import TurnGroundingLedger
+        from petcare.ai.recommender_products import ProductRecommendationResult
+
+        ledger = TurnGroundingLedger()
+        obs = ledger.record_tool_output(
+            "recommend_products",
+            ProductRecommendationResult(
+                cards=[
+                    RecommendationCard(
+                        kind="product",
+                        entity_id=1,
+                        code="FOOD-001",
+                        name="Thức ăn cho mèo 1kg",
+                        subtitle="Thức ăn",
+                        price=Decimal("100000.0000"),
+                        currency_code="VND",
+                        availability_status="active",
+                        score=95,
+                        stock_qty=10,
+                    )
+                ],
+                no_primary_match=False,
+                out_of_stock_names=[],
+                missing_data_notes=[],
+                reasoning_summary="OK",
+                follow_up_questions=[],
+            ),
+            "vi",
+        )
+        self.assertEqual(obs["items"][0]["price"], "100000")
+        self.assertEqual(obs["items"][0]["price_formatted"], "100.000 VND")
+
 
 if __name__ == "__main__":
     unittest.main()

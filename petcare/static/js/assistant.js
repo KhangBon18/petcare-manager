@@ -419,8 +419,10 @@
           ? (payload.status === "partial"
             ? (english ? "Read-only overview · some data sources unavailable" : "Tổng quan chỉ đọc · một số nguồn dữ liệu chưa tải được")
             : (english ? "Read-only overview · current tenant business services" : "Tổng quan chỉ đọc · service nghiệp vụ của tenant hiện tại"))
-          : payload.mode === "ai"
+          : (payload.engine_mode === "real_llm" && !payload.fallback_used) || (payload.mode === "ai" && !payload.fallback_used)
           ? (english ? "Generative AI · scoped store context" : "AI tạo sinh · tham chiếu dữ liệu cửa hàng liên quan")
+          : payload.fallback_used
+          ? (english ? "Offline Python fallback · MySQL grounded" : "Dự phòng Offline Python · dữ liệu MySQL xác thực")
           : (english ? "Local lookup · current MySQL data" : "Tra cứu cục bộ · dữ liệu MySQL hiện tại");
         pending.append(source);
       }

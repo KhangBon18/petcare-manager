@@ -6,20 +6,24 @@ import json
 import os
 from pathlib import Path
 import re
+import sys
 import tempfile
 import time
 from urllib.parse import urlsplit
 from uuid import uuid4
 
-from playwright.sync_api import expect, sync_playwright
-
-from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD
-from petcare.config import Config
-from petcare.database.connection import get_connection
-from petcare.repositories.base import fetch_one
-
-
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from playwright.sync_api import expect, sync_playwright  # noqa: E402
+
+from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD  # noqa: E402
+from petcare.config import Config  # noqa: E402
+from petcare.database.connection import get_connection  # noqa: E402
+from petcare.repositories.base import fetch_one  # noqa: E402
+
+
 BASE_URL = os.environ.get("PETCARE_DEMO_BASE_URL", "").rstrip("/")
 VISION_IMAGE = ROOT / "tests" / "fixtures" / "vision" / "synthetic-cat-black.png"
 OUTPUT = Path(os.environ.get(

@@ -407,6 +407,8 @@ _PRODUCT_CATEGORY_KEYWORDS: dict[str, tuple[str, ...]] = {
         "food", "foods", "kibble", "dry food", "wet food", "pate", "pouch", "treat", "treats",
         "snack", "snacks", "supplement", "calcium", "nutrition", "feed",
         "thuc an", "hat kho", "hat cho", "hat meo", "bich hat", "hat ca hoi", "hat ga",
+        "goi y hat", "tu van hat", "chon hat", "mua hat", "tim hat", "loai hat",
+        "tui hat", "bao hat", "hat trong nha", "hat dinh duong", "cho an hat", "doi hat",
         "an dam", "banh thuong", "dinh duong", "bo sung canxi",
     ),
     "toy": (
@@ -886,6 +888,11 @@ def extract_preference_slots(raw_question: str) -> tuple[PreferenceSlots, bool, 
                 detected_allergies.append(allergen)
         if detected_allergies:
             slots.allergies = tuple(dict.fromkeys(detected_allergies))
+            if slots.product_category is None and not re.search(
+                r"\b(?:adopt|muon\s+nuoi|chon\s+thu\s+cung|tim\s+thu\s+cung)\b",
+                norm,
+            ):
+                slots.product_category = "food"
 
     return slots, explicit_species, explicit_budget
 

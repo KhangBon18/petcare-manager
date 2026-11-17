@@ -541,6 +541,17 @@ class TurnGroundingLedger:
                 "sections": [self.insight, clean],
             }
 
+    def _format_price_for_llm(self, raw_val: Any, currency_code: str, locale: str) -> tuple[str, str]:
+        try:
+            dec = Decimal(str(raw_val))
+            rounded = int(dec.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+            clean_num = str(rounded) if dec == dec.to_integral_value() else format(dec.normalize(), "f")
+            sep_txt = f"{rounded:,}".replace(",", ".") if locale != "en" else f"{rounded:,}"
+            return clean_num, f"{sep_txt} {currency_code}"
+        except (InvalidOperation, ValueError):
+            s = str(raw_val)
+            return s, f"{s} {currency_code}"
+
     def record_tool_output(self, tool_name: str, result: Any, locale: str) -> dict[str, Any]:
         """Ingest a Python tool output into the grounding ledger and return minimized JSON for the LLM."""
         self.had_successful_tool = True
@@ -569,7 +580,8 @@ class TurnGroundingLedger:
                         "code": c.code,
                         "name": c.name,
                         "subtitle": c.subtitle,
-                        "price": str(c.price),
+                        "price": self._format_price_for_llm(c.price, c.currency_code, locale)[0],
+                        "price_formatted": self._format_price_for_llm(c.price, c.currency_code, locale)[1],
                         "currency_code": c.currency_code,
                         "score": c.score,
                         "verified_attributes": c.verified_attributes,
@@ -612,7 +624,8 @@ class TurnGroundingLedger:
                         "id": c.entity_id,
                         "code": c.code,
                         "name": c.name,
-                        "price": str(c.price),
+                        "price": self._format_price_for_llm(c.price, c.currency_code, locale)[0],
+                        "price_formatted": self._format_price_for_llm(c.price, c.currency_code, locale)[1],
                         "currency_code": c.currency_code,
                         "unit_price_display": c.unit_price_display,
                         "stock_qty": c.stock_qty,

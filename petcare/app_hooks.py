@@ -152,6 +152,8 @@ def register_error_handlers(app):
 def register_template_helpers(app):
     @app.context_processor
     def inject_helpers():
+        from petcare.ai.provider import get_provider_status
+
         def format_money(amount, currency_code=None):
             code = currency_code or (g.tenant or {}).get("default_currency", "VND")
             locale = "en_US" if current_locale() == "en" else "vi_VN"
@@ -188,4 +190,5 @@ def register_template_helpers(app):
             "locale_labels": LOCALE_LABELS,
             "t": translate,
             "translate_audit_summary": translate_audit_summary,
+            "ai_provider_status": get_provider_status(),
         }
