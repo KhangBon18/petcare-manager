@@ -55,6 +55,7 @@ from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD
 # on 2026-10-14 (scheduled shutdown 2027-01-14); `gpt-6-luna` ($0.10 / $0.50, cached $0.01) is the active
 # cost-efficient candidate (`reasoning_effort="none"` required for `/v1/chat/completions` function calling).
 MODEL_PRICING_USD_PER_1M: dict[str, tuple[Decimal, Decimal]] = {
+    "gemini-3.5-flash-lite": (Decimal("0.00"), Decimal("0.00")),
     "gpt-6-luna": (Decimal("0.10"), Decimal("0.50")),
     "gemini-3.1-flash-lite": (Decimal("0.10"), Decimal("0.40")),
     "gemini-2.5-flash-lite": (Decimal("0.10"), Decimal("0.40")),
@@ -64,6 +65,7 @@ MODEL_PRICING_USD_PER_1M: dict[str, tuple[Decimal, Decimal]] = {
     "gpt-4o": (Decimal("2.50"), Decimal("10.00")),
 }
 MODEL_CACHED_INPUT_USD_PER_1M: dict[str, Decimal] = {
+    "gemini-3.5-flash-lite": Decimal("0.00"),
     "gpt-6-luna": Decimal("0.01"),
     "gpt-4o-mini": Decimal("0.075"),
     "gpt-4.1-mini": Decimal("0.20"),
@@ -71,6 +73,7 @@ MODEL_CACHED_INPUT_USD_PER_1M: dict[str, Decimal] = {
     "gpt-4o": Decimal("1.25"),
 }
 MODEL_LIFECYCLE_STATUS: dict[str, str] = {
+    "gemini-3.5-flash-lite": "recommended_free_tier_active (Google AI Studio Free Tier: $0, ~15 RPM / 250k TPM / 500 RPD)",
     "gpt-6-luna": "recommended_active (chat/completions tools require reasoning_effort='none')",
     "gemini-3.1-flash-lite": "active_openai_compatible",
     "gemini-2.5-flash-lite": "active_openai_compatible",
@@ -179,6 +182,7 @@ def scrub_pilot_report_secrets(obj: Any) -> Any:
             key_str = str(k)
             if _SENSITIVE_KEY_RE.search(key_str) and key_str not in {
                 "api_key_present",
+                "api_key_source",
                 "zero_secret_leakage",
                 "prompt_tokens",
                 "cached_prompt_tokens",
@@ -197,7 +201,12 @@ def scrub_pilot_report_secrets(obj: Any) -> Any:
     if isinstance(obj, (list, tuple)):
         return [scrub_pilot_report_secrets(item) for item in obj]
     if isinstance(obj, str):
-        return _SECRET_VALUE_TOKEN_RE.sub("[REDACTED_SECRET]", obj)
+        scrubbed = _SECRET_VALUE_TOKEN_RE.sub("[REDACTED_SECRET]", obj)
+        for env_name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "AI_API_KEY"):
+            secret_val = os.getenv(env_name, "").strip()
+            if len(secret_val) >= 8 and secret_val in scrubbed:
+                scrubbed = scrubbed.replace(secret_val, "[REDACTED_SECRET]")
+        return scrubbed
     if isinstance(obj, Decimal):
         return str(obj)
     return obj
@@ -1137,6 +1146,7 @@ def run_controlled_pilot(config: PilotRunConfig | None = None) -> dict[str, Any]
                             adapter = OpenAICompatibleToolCallingAdapter(
                                 cfg.model_name,
                                 max_output_tokens=cfg.max_output_tokens,
+                                provider_family=provider_validation.provider_family,
                             )
 
                         old_adapter = current_app.config.get("AI_TOOL_CALLING_ADAPTER")
@@ -1164,7 +1174,7 @@ def run_controlled_pilot(config: PilotRunConfig | None = None) -> dict[str, Any]
                             current_app.config["AI_MAX_INPUT_TOKENS"] = old_in_cap
                             current_app.config["AI_TIMEOUT_SECONDS"] = old_timeout
 
-                        if isinstance(adapter, MockToolCallingAdapter):
+                        if hasattr(adapter, "recorded_requests"):
                             recorded_adapter_requests.extend(adapter.recorded_requests)
 
                         latencies_ms.append(elapsed_ms)
@@ -1400,3 +1410,480 @@ def run_controlled_pilot(config: PilotRunConfig | None = None) -> dict[str, Any]
         "cases": case_reports,
     }
     return scrub_pilot_report_secrets(report)
+
+
+@dataclass(frozen=True, slots=True)
+class GeminiFreeTierSmokeConfig:
+    """Bounded 2-call (or 1-call prose) QA smoke configuration for Google AI Studio Free Tier (`gemini-3.5-flash-lite`)."""
+
+    mode: str = "dry_run"  # "dry_run" | "mock" | "live"
+    preset: str = "quick-2calls"  # "quick-2calls" (recommended tool-calling) | "single-1call" (prose-only Mode B)
+    model_name: str = "gemini-3.5-flash-lite"
+    confirm_live_gemini: bool = False
+    max_api_calls: int = 3
+    max_input_tokens: int = 5000
+    max_output_tokens: int = 1536
+    timeout_seconds: float = 50.0  # Per-HTTP-request timeout for Gemini QA smoke (45-60s recommended)
+    kill_switch_file: Path | None = None
+
+
+def run_gemini_free_tier_smoke(config: GeminiFreeTierSmokeConfig | None = None) -> dict[str, Any]:
+    """Prepare or execute a controlled synthetic QA smoke test for Google Gemini Free Tier."""
+    cfg = config or GeminiFreeTierSmokeConfig()
+    if cfg.mode not in {"dry_run", "mock", "live"}:
+        raise ValueError(f"Unsupported smoke mode: {cfg.mode}")
+    if cfg.preset not in {"single-1call", "quick-2calls"}:
+        raise ValueError(f"Unsupported smoke preset: {cfg.preset}")
+
+    bounded_max_calls = max(1, min(int(cfg.max_api_calls), 3))
+    if cfg.preset == "quick-2calls" and bounded_max_calls < 2:
+        raise PilotIsolationError(
+            "Preset 'quick-2calls' requires --max-api-calls >= 2 because LLM function calling executes "
+            "2 API steps (Step 1: tool selection + thought_signature, Step 2: grounded Vietnamese answer)."
+        )
+    if cfg.kill_switch_file and Path(cfg.kill_switch_file).exists():
+        raise PilotKillSwitchError("Kill-switch file detected; aborting Gemini smoke run.")
+    if os.getenv("AI_PILOT_KILL_SWITCH", "0").strip() == "1" or (
+        has_app_context() and current_app.config.get("AI_PILOT_KILL_SWITCH")
+    ):
+        raise PilotKillSwitchError("AI_PILOT_KILL_SWITCH is active; aborting Gemini smoke run.")
+
+    qa_db_name = str(current_app.config.get("DB_NAME", Config.DB_NAME)) if has_app_context() else str(Config.DB_NAME)
+    app_env = (
+        str(current_app.config.get("APP_ENV", Config.APP_ENV)).strip().lower()
+        if has_app_context()
+        else str(Config.APP_ENV).strip().lower()
+    )
+    vision_enabled = (
+        bool(current_app.config.get("AI_VISION_ENABLED", False))
+        if has_app_context()
+        else bool(Config.AI_VISION_ENABLED)
+    )
+    is_test_db = bool(re.fullmatch(r"[A-Za-z0-9_]+_test", qa_db_name))
+
+    provider_validation = validate_provider_configuration(
+        require_approval=(cfg.mode == "live"),
+        require_tool_calling=(cfg.mode == "live" and cfg.preset == "quick-2calls"),
+    )
+
+    bounded_step_timeout = max(1.0, min(float(cfg.timeout_seconds), 60.0))
+    smoke_turn_deadline = max(60.0, bounded_step_timeout * 2.0 + 10.0)
+
+    planned_requests = 1 if cfg.preset == "single-1call" else 2
+    if cfg.mode == "dry_run":
+        with patch(
+            "petcare.ai.client.build_opener",
+            side_effect=PilotIsolationError("External HTTP socket blocked in dry_run mode."),
+        ):
+            report_dry = {
+                "execution_mode": "dry_run",
+                "preset": cfg.preset,
+                "live_network_calls_made": 0,
+                "planned_gemini_api_calls": planned_requests,
+                "hard_max_api_calls": bounded_max_calls,
+                "timeout_policy": {
+                    "per_http_request_timeout_seconds": bounded_step_timeout,
+                    "turn_deadline_seconds": smoke_turn_deadline,
+                    "final_synthesis_tool_choice": "none",
+                    "final_synthesis_strategy": "gemini_tool_free_verified_json",
+                },
+                "target_database": qa_db_name,
+                "is_isolated_test_db": is_test_db,
+                "provider_validation": provider_validation.to_dict(),
+                "free_tier_policy": {
+                    "billing_upgrade_allowed": False,
+                    "paid_model_fallback_allowed": False,
+                    "nominal_google_ai_studio_limits": {
+                        "rpm": 15,
+                        "tpm": 250000,
+                        "rpd": 500,
+                    },
+                    "enforced_conservative_guard": {
+                        "rpm": int(current_app.config.get("AI_RATE_LIMIT_RPM", Config.AI_RATE_LIMIT_RPM))
+                        if has_app_context()
+                        else Config.AI_RATE_LIMIT_RPM,
+                        "tpm": int(current_app.config.get("AI_RATE_LIMIT_TPM", Config.AI_RATE_LIMIT_TPM))
+                        if has_app_context()
+                        else Config.AI_RATE_LIMIT_TPM,
+                        "rpd": int(current_app.config.get("AI_RATE_LIMIT_RPD", Config.AI_RATE_LIMIT_RPD))
+                        if has_app_context()
+                        else Config.AI_RATE_LIMIT_RPD,
+                        "min_interval_ms": int(
+                            current_app.config.get("AI_MIN_REQUEST_INTERVAL_MS", Config.AI_MIN_REQUEST_INTERVAL_MS)
+                        )
+                        if has_app_context()
+                        else Config.AI_MIN_REQUEST_INTERVAL_MS,
+                    },
+                },
+                "what_will_be_tested": [
+                    "Multi-turn shopping context retention (pre-seeded apartment cat session)",
+                    "Vietnamese product recommendation with chicken-allergy & 400k VND budget constraints",
+                    "Authorized read-only Python tool calling (recommend_products in shopper_preview)",
+                    "Gemini thought_signature (extra_content.google.thought_signature) multi-turn preservation",
+                    "MySQL price/SKU grounding & zero PII/secret exposure",
+                ],
+            }
+            return scrub_pilot_report_secrets(report_dry)
+
+    if app_env == "production":
+        raise PilotIsolationError("Refusing to run Gemini smoke test when APP_ENV='production'.")
+    if vision_enabled:
+        raise PilotIsolationError("Refusing to run Gemini text/tool smoke test while AI_VISION_ENABLED is active.")
+    if not is_test_db:
+        raise PilotIsolationError(
+            f"Refusing to run Gemini smoke mode '{cfg.mode}' against '{qa_db_name}'; DB_NAME must end with '_test'."
+        )
+
+    if cfg.mode == "live":
+        if not cfg.confirm_live_gemini:
+            raise PilotIsolationError(
+                "Live Gemini smoke test blocked: pass --confirm-live-gemini after explicit user approval."
+            )
+        if not provider_validation.ok:
+            raise PilotIsolationError(
+                f"Live Gemini configuration failed preflight validation: {list(provider_validation.errors)}"
+            )
+        if provider_validation.provider_family != "gemini":
+            raise PilotIsolationError(
+                f"Expected provider_family='gemini' for Gemini Free Tier smoke test, got '{provider_validation.provider_family}'."
+            )
+
+    with get_connection() as conn:
+        tenant_row = fetch_one(conn, "SELECT id FROM tenants WHERE slug = %s", ("main",))
+        if not tenant_row:
+            raise RuntimeError("Seeded 'main' tenant missing in isolated QA database.")
+        main_tid = int(tenant_row["id"])
+        staff_row = fetch_one(
+            conn,
+            "SELECT u.id FROM users u JOIN tenant_users tu ON tu.user_id = u.id "
+            "WHERE tu.tenant_id = %s AND tu.role = 'staff' AND u.active = 1 ORDER BY u.id LIMIT 1",
+            (main_tid,),
+        )
+    if not staff_row:
+        raise RuntimeError("Seeded active staff account required in isolated QA database.")
+    staff_id = int(staff_row["id"])
+
+    MEMORY_STORE.clear_all()
+    conv_id = f"gemini-smoke-{uuid4().hex[:8]}"
+
+    # Seed Turn 1 in session memory (0 external API calls) so Turn 2 verifies multi-turn shopping context!
+    from petcare.ai.contracts import AssistantScope, PreferenceSlots
+    seeded_state = MEMORY_STORE.get_or_create(
+        tenant_id=main_tid,
+        user_id=staff_id,
+        scope=AssistantScope.SHOPPER_PREVIEW,
+        conversation_id=conv_id,
+    )
+    seeded_state.slots = PreferenceSlots(
+        species="cat",
+        living_space="apartment",
+        life_stage="adult",
+        allergies=("chicken",),
+        active_domain="product",
+    )
+    seeded_state.record_turn(
+        "user",
+        "Mình đang nuôi một bé mèo trưởng thành bị dị ứng thịt gà ở căn hộ chung cư nhỏ.",
+    )
+    seeded_state.record_turn(
+        "assistant",
+        "Mình đã ghi nhận bạn nuôi mèo trưởng thành ở căn hộ và cần tránh thành phần thịt gà. Bạn muốn tìm thức ăn hay phụ kiện gì cho bé?",
+    )
+
+    api_calls_started = 0
+
+    def _smoke_step_guard(round_idx: int, est_in_tokens: int, _usage: dict[str, Any]) -> None:
+        nonlocal api_calls_started
+        if cfg.kill_switch_file and Path(cfg.kill_switch_file).exists():
+            raise PilotKillSwitchError("Kill-switch file detected before Gemini API step.")
+        if est_in_tokens > cfg.max_input_tokens:
+            raise PilotBudgetExceededError(
+                f"Estimated input tokens ({est_in_tokens}) exceed smoke cap ({cfg.max_input_tokens})."
+            )
+        if api_calls_started >= bounded_max_calls:
+            raise PilotBudgetExceededError(
+                f"Gemini smoke hard API-call ceiling ({bounded_max_calls}) reached before round {round_idx + 1}."
+            )
+        api_calls_started += 1
+
+    def _build_gemini_mock_adapter() -> MockToolCallingAdapter:
+        def _step_fn(messages: list[dict[str, Any]], tools: list[dict[str, Any]], step_idx: int) -> ModelTurnOutput:
+            # Verify Gemini-sanitized schemas contain zero unsupported keywords
+            serialized_tools = json.dumps(tools)
+            if '"additionalProperties"' in serialized_tools or '"minLength"' in serialized_tools:
+                raise AssertionError("Unsupported JSON Schema keys leaked into Gemini tool declarations.")
+            if step_idx == 0:
+                return ModelTurnOutput(
+                    tool_calls=(
+                        ProposedToolCall(
+                            call_id="function-call-gemini-smoke-1",
+                            tool_name="recommend_products",
+                            raw_arguments={
+                                "species": "cat",
+                                "life_stage": "adult",
+                                "product_category": "food",
+                                "allergies": ["chicken"],
+                                "budget_max": 400000,
+                            },
+                            extra_content={
+                                "google": {
+                                    "thought_signature": "CvcQAdHN2OekGemini35FlashLiteSmokeSig=="
+                                }
+                            },
+                        ),
+                    ),
+                    prompt_tokens=920,
+                    completion_tokens=48,
+                    total_tokens=968,
+                    reasoning_tokens=18,
+                    usage_source="provider_reported",
+                )
+            # Round 2: verify thought_signature was echoed back in assistant message history
+            assistant_msgs = [m for m in messages if m.get("role") == "assistant" and m.get("tool_calls")]
+            sig = (
+                ((assistant_msgs[-1]["tool_calls"][0].get("extra_content") or {}).get("google") or {}).get(
+                    "thought_signature"
+                )
+                if assistant_msgs
+                else None
+            )
+            if sig != "CvcQAdHN2OekGemini35FlashLiteSmokeSig==":
+                raise AssertionError("Gemini thought_signature missing on Round 2 tool-call history.")
+            return ModelTurnOutput(
+                assistant_text=_compose_grounded_mock_prose(messages, "vi"),
+                prompt_tokens=1240,
+                completion_tokens=64,
+                total_tokens=1304,
+                reasoning_tokens=12,
+                usage_source="provider_reported",
+            )
+
+        return MockToolCallingAdapter(
+            _step_fn,
+            model_name=cfg.model_name,
+            provider_family="gemini",
+        )
+
+    socket_guard = (
+        patch(
+            "petcare.ai.client.build_opener",
+            side_effect=PilotIsolationError("External HTTP socket blocked in mock mode."),
+        )
+        if cfg.mode == "mock"
+        else contextlib.nullcontext()
+    )
+
+    question_vi = "Gợi ý giúp mình thức ăn hạt không chứa thịt gà dưới 400k đang còn hàng cho bé nhé."
+    _missing = object()
+    old_cfg_snapshot = {
+        k: current_app.config.get(k, _missing)
+        for k in (
+            "AI_TOOL_CALLING_ADAPTER",
+            "AI_PILOT_STEP_GUARD",
+            "AI_MAX_INPUT_TOKENS",
+            "AI_MAX_OUTPUT_TOKENS",
+            "AI_TIMEOUT_SECONDS",
+            "AI_HTTP_STEP_TIMEOUT_SECONDS",
+            "AI_MAX_HTTP_TIMEOUT_SECONDS",
+            "AI_MAX_TURN_TIMEOUT_SECONDS",
+            "AI_MAX_TOOL_ROUNDS",
+            "AI_ENFORCE_TEST_RATE_LIMIT",
+        )
+    }
+    provider_diagnostics: list[dict[str, Any]] = []
+    actual_api_calls = 0
+    try:
+        with socket_guard:
+            if cfg.preset == "single-1call":
+                # Prose-only Mode B (1 API call over deterministic Python facts; does NOT test LLM tool selection)
+                det_res = assistant_service.answer(
+                    staff_id,
+                    question_vi,
+                    locale="vi",
+                    tenant_id=main_tid,
+                    scope="shopper_preview",
+                    conversation_id=conv_id,
+                    _force_offline=True,
+                )
+                grounded_facts = {
+                    "cards": [
+                        {
+                            "code": c.get("code"),
+                            "name": c.get("name"),
+                            "price": c.get("price"),
+                            "stock_qty": c.get("stock_qty"),
+                        }
+                        for c in (det_res.get("cards") or [])
+                    ],
+                    "context_state": det_res.get("context_state"),
+                }
+                t0 = time.perf_counter()
+                if cfg.mode == "mock":
+                    api_calls_started = 1
+                    actual_api_calls = 1
+                    reply_txt = det_res.get("reply") or ""
+                    eng_mode = EngineMode.OFFLINE
+                    fb_used = False
+                    fb_reason = None
+                    llm_usage_out: dict[str, Any] = {
+                        "model_name": cfg.model_name,
+                        "rounds_completed": 1,
+                        "provider_reported_rounds": 0,
+                        "estimated_rounds": 1,
+                        "prompt_tokens": 580,
+                        "cached_prompt_tokens": 0,
+                        "completion_tokens": 95,
+                        "reasoning_tokens": 0,
+                        "total_tokens": 675,
+                    }
+                    provider_diagnostics = [{"step_index": 0, "http_status": 200, "error_category": None, "simulated": True}]
+                    recorded_reqs: list[dict[str, Any]] = [
+                        {
+                            "step_index": 0,
+                            "messages": [
+                                {
+                                    "role": "user",
+                                    "content": json.dumps(grounded_facts, ensure_ascii=False) + "\n\n" + question_vi,
+                                }
+                            ],
+                        }
+                    ]
+                else:
+                    current_app.config["AI_ENFORCE_TEST_RATE_LIMIT"] = True
+                    current_app.config["AI_TIMEOUT_SECONDS"] = bounded_step_timeout
+                    current_app.config["AI_MAX_HTTP_TIMEOUT_SECONDS"] = bounded_step_timeout
+                    current_app.config["AI_MAX_TURN_TIMEOUT_SECONDS"] = int(smoke_turn_deadline)
+                    api_calls_started = 1
+                    actual_api_calls = 1
+                    from petcare.ai.provider import synthesize_approved_llm_reply_detailed
+
+                    detailed = synthesize_approved_llm_reply_detailed(
+                        question=question_vi,
+                        locale="vi",
+                        grounded_facts=grounded_facts,
+                        fallback_reply=det_res.get("reply") or "",
+                    )
+                    reply_txt = detailed["reply"]
+                    eng_mode = detailed["engine_mode"]
+                    fb_used = bool(detailed["fallback_used"])
+                    fb_reason = detailed["fallback_reason"]
+                    llm_usage_out = detailed["llm_usage"]
+                    if detailed.get("provider_diagnostic"):
+                        provider_diagnostics = [{"step_index": 0, **detailed["provider_diagnostic"]}]
+                    recorded_reqs = (
+                        [{"step_index": 0, "messages": detailed["outbound_messages"]}]
+                        if detailed.get("outbound_messages")
+                        else []
+                    )
+                elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                res = {
+                    **det_res,
+                    "reply": reply_txt,
+                    "engine_mode": eng_mode.value,
+                    "fallback_used": fb_used,
+                    "fallback_reason": fb_reason,
+                    "llm_usage": llm_usage_out,
+                }
+            else:
+                adapter_obj: Any = (
+                    _build_gemini_mock_adapter()
+                    if cfg.mode == "mock"
+                    else OpenAICompatibleToolCallingAdapter(
+                        cfg.model_name,
+                        max_output_tokens=cfg.max_output_tokens,
+                        provider_family="gemini",
+                        max_retries=0 if bounded_step_timeout >= 30.0 else 1,
+                    )
+                )
+                current_app.config["AI_TOOL_CALLING_ADAPTER"] = adapter_obj
+                current_app.config["AI_PILOT_STEP_GUARD"] = _smoke_step_guard
+                current_app.config["AI_MAX_INPUT_TOKENS"] = cfg.max_input_tokens
+                current_app.config["AI_MAX_OUTPUT_TOKENS"] = cfg.max_output_tokens
+                current_app.config["AI_HTTP_STEP_TIMEOUT_SECONDS"] = bounded_step_timeout
+                current_app.config["AI_MAX_HTTP_TIMEOUT_SECONDS"] = max(15.0, bounded_step_timeout)
+                current_app.config["AI_MAX_TURN_TIMEOUT_SECONDS"] = int(smoke_turn_deadline)
+                current_app.config["AI_TIMEOUT_SECONDS"] = smoke_turn_deadline
+                current_app.config["AI_MAX_TOOL_ROUNDS"] = 2
+                if cfg.mode == "live":
+                    current_app.config["AI_ENFORCE_TEST_RATE_LIMIT"] = True
+
+                t0 = time.perf_counter()
+                res = assistant_service.answer(
+                    staff_id,
+                    question_vi,
+                    locale="vi",
+                    tenant_id=main_tid,
+                    scope="shopper_preview",
+                    conversation_id=conv_id,
+                )
+                elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+                actual_api_calls = int(getattr(adapter_obj, "call_count", api_calls_started))
+                recorded_reqs = list(getattr(adapter_obj, "recorded_requests", []))
+                provider_diagnostics = list(getattr(adapter_obj, "provider_diagnostics", []))
+                if not provider_diagnostics and cfg.mode == "mock":
+                    provider_diagnostics = [
+                        {"step_index": idx, "http_status": 200, "error_category": None, "simulated": True}
+                        for idx in range(actual_api_calls)
+                    ]
+    finally:
+        for k, v in old_cfg_snapshot.items():
+            if v is _missing:
+                current_app.config.pop(k, None)
+            else:
+                current_app.config[k] = v
+        MEMORY_STORE.clear_all()
+
+    cards = res.get("cards") or []
+    ctx = res.get("context_state") or {}
+    privacy_audit = _audit_outbound_messages_privacy(recorded_reqs)
+    checks = {
+        "within_1_to_3_api_calls": 1 <= actual_api_calls <= bounded_max_calls,
+        "retained_apartment_context": ctx.get("living_space") == "apartment",
+        "retained_cat_species": ctx.get("species") == "cat",
+        "retained_chicken_allergy_slot": "chicken" in (ctx.get("allergies") or []),
+        "applied_budget_400k": str(ctx.get("budget_max") or "") in {"400000", "400000.00"},
+        "returned_grounded_cards": len(cards) >= 1,
+        "excluded_chicken_allergen": all("gà" not in str(c.get("name") or "").lower() for c in cards),
+        "all_cards_within_400k": all(Decimal(str(c.get("price") or "0")) <= Decimal("400000") for c in cards),
+        "privacy_audit_passed": privacy_audit["passed"] and privacy_audit["audited_adapter_requests"] >= 1,
+        "llm_usage_recorded": isinstance(res.get("llm_usage"), dict),
+        "live_engine_confirmed": (
+            True
+            if cfg.mode != "live"
+            else (res.get("engine_mode") == "real_llm" and not res.get("fallback_used"))
+        ),
+    }
+
+    smoke_report = {
+        "execution_mode": cfg.mode,
+        "preset": cfg.preset,
+        "model_name": cfg.model_name,
+        "target_database": qa_db_name,
+        "live_network_calls_made": 0 if cfg.mode != "live" else actual_api_calls,
+        "simulated_or_live_api_steps": actual_api_calls,
+        "hard_max_api_calls": bounded_max_calls,
+        "passed": all(checks.values()),
+        "checks": checks,
+        "latency_ms": elapsed_ms,
+        "timeout_policy": {
+            "per_http_request_timeout_seconds": bounded_step_timeout,
+            "turn_deadline_seconds": smoke_turn_deadline,
+            "final_synthesis_tool_choice": "none",
+            "final_synthesis_strategy": "gemini_tool_free_verified_json",
+        },
+        "provider_diagnostics": provider_diagnostics,
+        "response_summary": {
+            "engine_mode": res.get("engine_mode"),
+            "fallback_used": bool(res.get("fallback_used", False)),
+            "fallback_reason": res.get("fallback_reason"),
+            "response_type": res.get("response_type"),
+            "reply": res.get("reply"),
+            "card_codes": [c.get("code") for c in cards],
+            "tool_trace": res.get("tool_trace") or [],
+            "context_state": ctx,
+            "llm_usage": res.get("llm_usage"),
+        },
+        "rate_limiter_snapshot": ai_client.GLOBAL_PROVIDER_RATE_LIMITER.snapshot("gemini"),
+        "outbound_privacy_audit": privacy_audit,
+    }
+    return scrub_pilot_report_secrets(smoke_report)

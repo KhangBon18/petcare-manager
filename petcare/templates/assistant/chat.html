@@ -11,6 +11,7 @@
   data-conversation-id="{{ initial_conversation_id }}"
   data-initial-scope="{{ initial_scope }}"
   data-initial-prompt="{{ initial_prompt }}"
+  data-request-timeout-ms="{{ (workspace_meta.provider.timeout_seconds * 1000) if workspace_meta.provider.active_mode == 'real_llm' else 20000 }}"
   data-csrf-token="{{ csrf_token() }}"
 >
   <header class="page-heading ai-workspace-header">

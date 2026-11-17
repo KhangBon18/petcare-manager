@@ -72,6 +72,21 @@ _EXTERNAL_URL_RE = re.compile(r"https?://[^\s)>\"]+", re.IGNORECASE)
 class MalformedModelOutputError(RuntimeError):
     """Raised when an LLM adapter returns structurally invalid or unparseable output."""
 
+    def __init__(self, message: str, *, error_category: str = "malformed_model_output", finish_reason: str | None = None):
+        super().__init__(message)
+        self.error_category = error_category
+        self.finish_reason = finish_reason
+
+    def to_diagnostic_dict(self) -> dict[str, Any]:
+        return {
+            "error_category": self.error_category,
+            "http_status": 200,
+            "upstream_error_code": None,
+            "finish_reason": self.finish_reason,
+            "retryable": False,
+            "sanitized_detail": str(self)[:160],
+        }
+
 
 class ToolExecutionTimeoutError(TimeoutError):
     """Raised when a Python tool exceeds the per-tool or per-turn execution budget."""
@@ -79,11 +94,12 @@ class ToolExecutionTimeoutError(TimeoutError):
 
 @dataclass(frozen=True, slots=True)
 class ProposedToolCall:
-    """One structured tool invocation requested by an LLM."""
+    """One structured tool invocation requested by an LLM (preserving Gemini `extra_content` thought signatures)."""
 
     call_id: str
     tool_name: str
     raw_arguments: str | dict[str, Any]
+    extra_content: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,6 +110,7 @@ class ModelTurnOutput:
     tool_calls: tuple[ProposedToolCall, ...] = ()
     safety_escalation: str | None = None  # "vet_emergency" | "vet_medical_boundary" | "vet_nonurgent_referral"
     follow_up_questions: tuple[str, ...] = ()
+    assistant_extra_content: dict[str, Any] | None = None
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -101,6 +118,28 @@ class ModelTurnOutput:
     reasoning_tokens: int = 0
     usage_source: str = "estimated"  # "provider_reported" | "estimated"
     provider_latency_ms: float = 0.0
+
+
+def _sanitize_provider_extra_content(
+    raw_extra: Any,
+    *,
+    direct_thought_signature: Any = None,
+) -> dict[str, Any] | None:
+    """Preserve bounded JSON-serializable `extra_content` (e.g., Gemini `google.thought_signature`)."""
+    candidate: dict[str, Any] | None = None
+    if isinstance(raw_extra, dict) and raw_extra:
+        candidate = raw_extra
+    elif isinstance(direct_thought_signature, str) and direct_thought_signature.strip():
+        candidate = {"google": {"thought_signature": direct_thought_signature.strip()}}
+    if candidate is None:
+        return None
+    try:
+        serialized = json.dumps(candidate, ensure_ascii=False)
+    except (TypeError, ValueError):
+        return None
+    if len(serialized) > 16_384:
+        return None
+    return json.loads(serialized)
 
 
 def estimate_messages_tokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> int:
@@ -121,6 +160,7 @@ class ToolCallingAdapter(Protocol):
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         timeout_seconds: float,
+        tool_choice: str = "auto",
     ) -> ModelTurnOutput: ...
 
 
@@ -135,8 +175,10 @@ class MockToolCallingAdapter:
         ),
         *,
         model_name: str = "mock-tool-calling-v1",
+        provider_family: str | None = None,
     ) -> None:
         self.model_name = model_name
+        self.provider_family = provider_family
         self._steps = steps
         self.call_count = 0
         self.recorded_requests: list[dict[str, Any]] = []
@@ -147,6 +189,7 @@ class MockToolCallingAdapter:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         timeout_seconds: float,
+        tool_choice: str = "auto",
     ) -> ModelTurnOutput:
         t0 = time.perf_counter()
         step_index = self.call_count
@@ -155,6 +198,8 @@ class MockToolCallingAdapter:
             "step_index": step_index,
             "messages": json.loads(json.dumps(messages, default=str)),
             "tool_names": [t["function"]["name"] for t in tools],
+            "tools": json.loads(json.dumps(tools, default=str)),
+            "tool_choice": tool_choice,
             "timeout_seconds": timeout_seconds,
         })
         if callable(self._steps):
@@ -178,6 +223,7 @@ class MockToolCallingAdapter:
                 tool_calls=out.tool_calls,
                 safety_escalation=out.safety_escalation,
                 follow_up_questions=out.follow_up_questions,
+                assistant_extra_content=out.assistant_extra_content,
                 prompt_tokens=out.prompt_tokens,
                 completion_tokens=out.completion_tokens,
                 total_tokens=total_tok,
@@ -206,6 +252,7 @@ class MockToolCallingAdapter:
             tool_calls=out.tool_calls,
             safety_escalation=out.safety_escalation,
             follow_up_questions=out.follow_up_questions,
+            assistant_extra_content=out.assistant_extra_content,
             prompt_tokens=est_prompt,
             completion_tokens=est_comp,
             total_tokens=est_prompt + est_comp,
@@ -214,15 +261,28 @@ class MockToolCallingAdapter:
 
 
 class OpenAICompatibleToolCallingAdapter:
-    """Approved HTTPS OpenAI-compatible function-calling adapter.
+    """Approved HTTPS OpenAI-compatible & Google Gemini function-calling adapter.
 
     Strictly gated behind `AI_PROVIDER_APPROVED=1` AND `AI_TOOL_CALLING_ENABLED=1` AND
-    `ai_client.is_configured()`. Never called during automated offline test runs.
+    `ai_client.is_configured()`. Preserves Gemini 3/3.5 `extra_content.google.thought_signature`
+    blocks across multi-turn tool calls. Never called during automated offline test runs.
     """
 
-    def __init__(self, model_name: str, *, max_output_tokens: int | None = None) -> None:
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        max_output_tokens: int | None = None,
+        provider_family: str | None = None,
+        max_retries: int = 1,
+    ) -> None:
         self.model_name = model_name
         self.max_output_tokens = max_output_tokens
+        self.provider_family = provider_family
+        self.max_retries = min(max(int(max_retries), 0), 1)
+        self.call_count = 0
+        self.recorded_requests: list[dict[str, Any]] = []
+        self.provider_diagnostics: list[dict[str, Any]] = []
 
     def complete_step(
         self,
@@ -230,44 +290,112 @@ class OpenAICompatibleToolCallingAdapter:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]],
         timeout_seconds: float,
+        tool_choice: str = "auto",
     ) -> ModelTurnOutput:
         if not has_app_context():
             raise ai_client.AIProviderError("Tool-calling provider requires Flask application context.")
 
+        step_index = self.call_count
+        self.call_count += 1
+        eff_family = self.provider_family or ai_client.resolve_provider_connection_settings()["provider_family"]
+        is_gemini_tool_free_synthesis = str(eff_family) == "gemini" and tool_choice == "none"
+        if is_gemini_tool_free_synthesis:
+            outbound_messages = ai_client.build_gemini_final_synthesis_messages(messages)
+            recorded_tool_names: list[str] = []
+        else:
+            outbound_messages = ai_client.normalize_messages_for_provider(messages, str(eff_family))
+            recorded_tool_names = [t["function"]["name"] for t in tools]
+        self.recorded_requests.append({
+            "step_index": step_index,
+            "messages": json.loads(json.dumps(outbound_messages, default=str)),
+            "tool_names": recorded_tool_names,
+            "tool_choice": tool_choice,
+            "final_synthesis_tool_free": is_gemini_tool_free_synthesis,
+            "timeout_seconds": round(float(timeout_seconds), 3),
+        })
+
         t0 = time.perf_counter()
-        payload = ai_client.complete_chat_with_tools(
-            messages=messages,
-            tools=tools,
-            timeout_seconds=timeout_seconds,
-            max_retries=1,
-            max_output_tokens=self.max_output_tokens,
-        )
+        try:
+            payload = ai_client.complete_chat_with_tools(
+                messages=outbound_messages,
+                tools=tools,
+                timeout_seconds=timeout_seconds,
+                max_retries=self.max_retries,
+                max_output_tokens=self.max_output_tokens,
+                tool_choice=tool_choice,
+            )
+        except ai_client.AIProviderError as exc:
+            self.provider_diagnostics.append({"step_index": step_index, **exc.to_diagnostic_dict()})
+            raise
         elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 3)
         try:
-            msg = payload["choices"][0]["message"]
+            choice0 = payload["choices"][0]
+            msg = choice0["message"]
+            finish_reason = choice0.get("finish_reason")
         except (KeyError, IndexError, TypeError) as exc:
-            raise MalformedModelOutputError("Model returned malformed chat completion choices.") from exc
+            err_mal = MalformedModelOutputError(
+                "Model returned malformed chat completion choices.",
+                error_category="malformed_choices_schema",
+            )
+            self.provider_diagnostics.append({"step_index": step_index, **err_mal.to_diagnostic_dict()})
+            raise err_mal from exc
 
         if not isinstance(msg, dict):
-            raise MalformedModelOutputError("Model choice message is not an object.")
+            err_mal = MalformedModelOutputError(
+                "Model choice message is not an object.",
+                error_category="malformed_message_object",
+            )
+            self.provider_diagnostics.append({"step_index": step_index, **err_mal.to_diagnostic_dict()})
+            raise err_mal
+
+        assistant_extra = _sanitize_provider_extra_content(
+            msg.get("extra_content"),
+            direct_thought_signature=msg.get("thought_signature"),
+        )
 
         raw_tool_calls = msg.get("tool_calls") or []
         if not isinstance(raw_tool_calls, list):
-            raise MalformedModelOutputError("Model tool_calls field must be a list.")
+            err_mal = MalformedModelOutputError(
+                "Model tool_calls field must be a list.",
+                error_category="malformed_tool_calls_list",
+            )
+            self.provider_diagnostics.append({"step_index": step_index, **err_mal.to_diagnostic_dict()})
+            raise err_mal
 
         parsed_calls: list[ProposedToolCall] = []
         for idx, tc in enumerate(raw_tool_calls):
             if not isinstance(tc, dict) or tc.get("type", "function") != "function":
-                raise MalformedModelOutputError("Unsupported tool_call entry type.")
+                err_mal = MalformedModelOutputError(
+                    "Unsupported tool_call entry type.",
+                    error_category="unsupported_tool_call_type",
+                )
+                self.provider_diagnostics.append({"step_index": step_index, **err_mal.to_diagnostic_dict()})
+                raise err_mal
             fn = tc.get("function")
             if not isinstance(fn, dict) or not isinstance(fn.get("name"), str) or not fn["name"].strip():
-                raise MalformedModelOutputError("Tool call missing function name.")
-            call_id = str(tc.get("id") or f"call_{idx + 1}")[:64]
+                err_mal = MalformedModelOutputError(
+                    "Tool call missing function name.",
+                    error_category="missing_tool_function_name",
+                )
+                self.provider_diagnostics.append({"step_index": step_index, **err_mal.to_diagnostic_dict()})
+                raise err_mal
+            # Preserve exact string ID (including empty string `""` if returned by Gemini OpenAI shim)
+            if "id" in tc and isinstance(tc["id"], str):
+                call_id = tc["id"][:256]
+            elif tc.get("id") is not None:
+                call_id = str(tc.get("id"))[:256]
+            else:
+                call_id = f"call_{idx + 1}"
+            tc_extra = _sanitize_provider_extra_content(
+                tc.get("extra_content"),
+                direct_thought_signature=tc.get("thought_signature"),
+            )
             parsed_calls.append(
                 ProposedToolCall(
                     call_id=call_id,
                     tool_name=fn["name"].strip(),
                     raw_arguments=fn.get("arguments") if fn.get("arguments") is not None else {},
+                    extra_content=tc_extra,
                 )
             )
 
@@ -277,7 +405,45 @@ class OpenAICompatibleToolCallingAdapter:
         text_out = content.strip()[:MAX_FINAL_REPLY_CHARS] if isinstance(content, str) and content.strip() else None
 
         if not parsed_calls and text_out is None:
-            raise MalformedModelOutputError("Model returned neither tool_calls nor assistant text.")
+            trunc_cat = "response_truncated_length" if finish_reason == "length" else "empty_model_output"
+            err_mal = MalformedModelOutputError(
+                "Model output truncated at max_tokens before emitting tool_calls or content."
+                if finish_reason == "length"
+                else "Model returned neither tool_calls nor assistant text.",
+                error_category=trunc_cat,
+                finish_reason=str(finish_reason) if finish_reason is not None else None,
+            )
+            self.provider_diagnostics.append({"step_index": step_index, **err_mal.to_diagnostic_dict()})
+            raise err_mal
+
+        if tool_choice == "none" and parsed_calls:
+            unexpected_names = [tc.tool_name[:64] for tc in parsed_calls]
+            if text_out:
+                parsed_calls = []
+            else:
+                err_unexp = MalformedModelOutputError(
+                    f"Provider returned unexpected tool_calls {unexpected_names} during final synthesis (tool_choice='none').",
+                    error_category="unexpected_tool_call_on_final_synthesis",
+                    finish_reason=str(finish_reason) if finish_reason is not None else None,
+                )
+                self.provider_diagnostics.append({
+                    "step_index": step_index,
+                    **err_unexp.to_diagnostic_dict(),
+                    "unexpected_tool_names": unexpected_names,
+                })
+                raise err_unexp
+
+        self.provider_diagnostics.append({
+            "step_index": step_index,
+            "error_category": None,
+            "http_status": 200,
+            "finish_reason": finish_reason,
+            "tool_calls_count": len(parsed_calls),
+            "has_thought_signature": any(
+                bool(((tc.extra_content or {}).get("google") or {}).get("thought_signature"))
+                for tc in parsed_calls
+            ),
+        })
 
         usage_raw = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
         reported_prompt = int(usage_raw.get("prompt_tokens") or 0)
@@ -288,12 +454,22 @@ class OpenAICompatibleToolCallingAdapter:
         t_tok = int(usage_raw.get("total_tokens") or 0) or (p_tok + c_tok)
         p_details = usage_raw.get("prompt_tokens_details") if isinstance(usage_raw.get("prompt_tokens_details"), dict) else {}
         c_details = usage_raw.get("completion_tokens_details") if isinstance(usage_raw.get("completion_tokens_details"), dict) else {}
-        cached_tok = max(0, min(int(p_details.get("cached_tokens") or 0), p_tok))
-        reas_tok = max(0, int(c_details.get("reasoning_tokens") or 0))
+        cached_tok = max(
+            0,
+            min(
+                int(p_details.get("cached_tokens") or usage_raw.get("cached_content_token_count") or 0),
+                p_tok,
+            ),
+        )
+        reas_tok = max(
+            0,
+            int(c_details.get("reasoning_tokens") or usage_raw.get("thoughts_token_count") or 0),
+        )
 
         return ModelTurnOutput(
             assistant_text=text_out,
             tool_calls=tuple(parsed_calls),
+            assistant_extra_content=assistant_extra,
             prompt_tokens=p_tok,
             completion_tokens=c_tok,
             total_tokens=t_tok,
@@ -846,6 +1022,7 @@ def run_tool_calling_turn(
         calls_cap = max(1, min(int(max_total_tool_calls or cfg.get("AI_MAX_TOTAL_TOOL_CALLS", DEFAULT_MAX_TOTAL_TOOL_CALLS)), 6))
         per_tool_timeout = float(tool_timeout_seconds or cfg.get("AI_TOOL_TIMEOUT_SECONDS", DEFAULT_TOOL_TIMEOUT_SECONDS))
         total_timeout = float(turn_timeout_seconds or cfg.get("AI_TIMEOUT_SECONDS", DEFAULT_TURN_TIMEOUT_SECONDS))
+        configured_http_step_timeout = float(cfg.get("AI_HTTP_STEP_TIMEOUT_SECONDS", 0.0) or 0.0)
         input_tokens_cap = max(512, min(int(max_input_tokens or cfg.get("AI_MAX_INPUT_TOKENS", 6000)), 32000))
         kill_switch_active = bool(cfg.get("AI_PILOT_KILL_SWITCH", False))
     else:
@@ -853,6 +1030,7 @@ def run_tool_calling_turn(
         calls_cap = max(1, min(int(max_total_tool_calls or DEFAULT_MAX_TOTAL_TOOL_CALLS), 6))
         per_tool_timeout = float(tool_timeout_seconds or DEFAULT_TOOL_TIMEOUT_SECONDS)
         total_timeout = float(turn_timeout_seconds or DEFAULT_TURN_TIMEOUT_SECONDS)
+        configured_http_step_timeout = 0.0
         input_tokens_cap = max(512, min(int(max_input_tokens or 6000), 32000))
         kill_switch_active = False
 
@@ -903,7 +1081,13 @@ def run_tool_calling_turn(
     ledger.register_budget_slots(working_slots)
     traces: list[ToolExecutionTrace] = []
 
-    allowed_tools = list_openai_tools_for_actor(actor)
+    adapter_provider_family = getattr(adapter, "provider_family", None)
+    if not adapter_provider_family and has_app_context():
+        adapter_provider_family = ai_client.resolve_provider_connection_settings()["provider_family"]
+    allowed_tools = list_openai_tools_for_actor(
+        actor,
+        provider_family=str(adapter_provider_family or "openai"),
+    )
     messages: list[dict[str, Any]] = [{"role": "system", "content": _build_system_prompt(actor, working_slots)}]
     if session_state is not None and session_state.recent_turns:
         for past in session_state.recent_turns[-6:]:
@@ -941,14 +1125,52 @@ def run_tool_calling_turn(
             fallback_reason = "turn_timeout_exceeded"
             break
 
+        step_http_timeout = (
+            min(configured_http_step_timeout, remaining)
+            if configured_http_step_timeout > 0.0
+            else min(per_tool_timeout * 2.0, remaining)
+        )
+        # On the final synthesis round (after at least 1 tool succeeded), prohibit redundant tool calls
+        is_final_synthesis_step = bool(
+            ledger.had_successful_tool
+            and ((_round_idx >= rounds_cap - 1) or (total_calls_used >= calls_cap))
+        )
+        step_tool_choice = "none" if is_final_synthesis_step else "auto"
+
         try:
             step_out = adapter.complete_step(
                 messages=messages,
                 tools=allowed_tools,
-                timeout_seconds=min(per_tool_timeout * 2.0, remaining),
+                timeout_seconds=step_http_timeout,
+                tool_choice=step_tool_choice,
             )
         except (ai_client.AIProviderError, MalformedModelOutputError, TimeoutError) as exc:
-            fallback_reason = f"provider_error:{type(exc).__name__}"
+            if isinstance(exc, ai_client.AIRateLimitError) or getattr(exc, "status_code", None) == 429:
+                fallback_reason = "provider_rate_limited"
+                usage_totals["last_error"] = (
+                    exc.to_diagnostic_dict()
+                    if hasattr(exc, "to_diagnostic_dict")
+                    else {"error_category": "http_429_rate_limited", "http_status": 429}
+                )
+            elif isinstance(exc, ai_client.AIProviderError):
+                diag = exc.to_diagnostic_dict()
+                usage_totals["last_error"] = diag
+                if exc.status_code is not None:
+                    fallback_reason = f"provider_http_{exc.status_code}:{exc.error_category}"
+                elif exc.error_category and exc.error_category != "provider_error":
+                    fallback_reason = f"provider_error:{exc.error_category}"
+                else:
+                    fallback_reason = f"provider_error:{type(exc).__name__}"
+            elif isinstance(exc, MalformedModelOutputError):
+                diag = exc.to_diagnostic_dict()
+                usage_totals["last_error"] = diag
+                if exc.error_category in {"response_truncated_length", "unexpected_tool_call_on_final_synthesis"}:
+                    fallback_reason = f"provider_error:MalformedModelOutputError:{exc.error_category}"
+                else:
+                    fallback_reason = "provider_error:MalformedModelOutputError"
+            else:
+                usage_totals["last_error"] = {"error_category": "timeout", "http_status": None, "retryable": True}
+                fallback_reason = f"provider_error:{type(exc).__name__}"
             break
 
         usage_totals["rounds_completed"] += 1
@@ -996,9 +1218,9 @@ def run_tool_calling_turn(
             final_model_output = step_out
             break
 
-        messages.append({
+        assistant_turn_msg: dict[str, Any] = {
             "role": "assistant",
-            "content": step_out.assistant_text or "",
+            "content": step_out.assistant_text,
             "tool_calls": [
                 {
                     "id": tc.call_id,
@@ -1011,10 +1233,18 @@ def run_tool_calling_turn(
                             else json.dumps(tc.raw_arguments, ensure_ascii=False, default=str)
                         ),
                     },
+                    **(
+                        {"extra_content": tc.extra_content}
+                        if isinstance(tc.extra_content, dict) and tc.extra_content
+                        else {}
+                    ),
                 }
                 for tc in step_out.tool_calls
             ],
-        })
+        }
+        if isinstance(step_out.assistant_extra_content, dict) and step_out.assistant_extra_content:
+            assistant_turn_msg["extra_content"] = step_out.assistant_extra_content
+        messages.append(assistant_turn_msg)
 
         budget_exhausted = False
         for tc in step_out.tool_calls:
@@ -1096,6 +1326,12 @@ def run_tool_calling_turn(
                 )
                 traces.append(trace)
                 tool_obs = ledger.record_tool_output(tc.tool_name, raw_result, actor.locale)
+                if isinstance(tool_obs, dict) and tc.tool_name in {"recommend_products", "recommend_pets", "compare_products"}:
+                    slot_view = working_slots.to_public_dict(actor.locale)
+                    slot_view.pop("chips", None)
+                    tool_obs["applied_filters"] = {
+                        k: v for k, v in slot_view.items() if v not in (None, [], "")
+                    }
 
                 if session_state is not None:
                     if isinstance(raw_result, PetMatchResult):

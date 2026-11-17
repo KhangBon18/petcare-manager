@@ -49,13 +49,14 @@ def validate_app_configuration(app):
         # Do not trust forwarded host/port; the proxy must overwrite these
         # headers and must be the only network path to the application.
         app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
-    if not 1 <= int(settings.get("AI_TIMEOUT_SECONDS", 15)) <= 60:
-        raise RuntimeError("AI_TIMEOUT_SECONDS must be between 1 and 60 seconds.")
+    max_ai_timeout = min(max(60, int(settings.get("AI_MAX_TURN_TIMEOUT_SECONDS", 60) or 60)), 130)
+    if not 1 <= int(settings.get("AI_TIMEOUT_SECONDS", 15)) <= max_ai_timeout:
+        raise RuntimeError(f"AI_TIMEOUT_SECONDS must be between 1 and {max_ai_timeout} seconds.")
     if not 0 <= int(settings.get("AI_VISION_MAX_RETRIES", 1)) <= 1:
         raise RuntimeError("AI_VISION_MAX_RETRIES must be 0 or 1.")
     reasoning_effort = str(settings.get("AI_REASONING_EFFORT", "") or "").strip().lower()
-    if reasoning_effort and reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
-        raise RuntimeError("AI_REASONING_EFFORT must be one of none, low, medium, high, xhigh, or max.")
+    if reasoning_effort and reasoning_effort not in {"none", "minimal", "low", "medium", "high", "xhigh", "max"}:
+        raise RuntimeError("AI_REASONING_EFFORT must be one of none, minimal, low, medium, high, xhigh, or max.")
     if not 1 <= int(settings.get("DB_POOL_SIZE", 5)) <= 32:
         raise RuntimeError("DB_POOL_SIZE must be between 1 and 32 connections per process.")
     image_processing_concurrency = int(settings.get("IMAGE_PROCESSING_CONCURRENCY", 1))

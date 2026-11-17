@@ -192,8 +192,51 @@ TOOL_JSON_SCHEMAS: dict[str, dict[str, Any]] = {
 }
 
 
-def list_openai_tools_for_actor(actor: ActorContext) -> list[dict[str, Any]]:
-    """Return OpenAI function-calling tool definitions permitted for `actor`."""
+_GEMINI_UNSUPPORTED_SCHEMA_KEYS = frozenset({
+    "additionalProperties",
+    "pattern",
+    "minLength",
+    "maxLength",
+    "uniqueItems",
+})
+
+
+def sanitize_tool_schema_for_gemini(schema: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep-copied OpenAPI 3.0 subset schema accepted by Gemini `/v1beta/openai/` tools.
+
+    Google Gemini's function-declaration parser rejects `additionalProperties`, `pattern`,
+    `minLength`, and `maxLength` with `HTTP 400 INVALID_ARGUMENT`. Server-side validation in
+    `validate_and_build_tool_kwargs()` continues enforcing all strict regex, length, and
+    unknown-property checks in Python after the model proposes arguments.
+    """
+    def _clean(node: Any) -> Any:
+        if isinstance(node, dict):
+            out: dict[str, Any] = {}
+            pattern_hint = node.get("pattern") if isinstance(node.get("pattern"), str) else None
+            for k, v in node.items():
+                if k in _GEMINI_UNSUPPORTED_SCHEMA_KEYS:
+                    continue
+                out[k] = _clean(v)
+            if pattern_hint and "description" not in out:
+                out["description"] = "SKU code format like FOOD-001 or PET-001."
+            if out.get("type") == "object" and isinstance(out.get("properties"), dict) and not out["properties"]:
+                out.pop("properties", None)
+            return out
+        if isinstance(node, list):
+            return [_clean(item) for item in node]
+        return node
+
+    cleaned = _clean(schema)
+    return cleaned if isinstance(cleaned, dict) else {"type": "object"}
+
+
+def list_openai_tools_for_actor(
+    actor: ActorContext,
+    *,
+    provider_family: str = "openai",
+) -> list[dict[str, Any]]:
+    """Return OpenAI/Gemini-compatible function-calling tool definitions permitted for `actor`."""
+    is_gemini = str(provider_family or "").strip().lower() == "gemini"
     definitions: list[dict[str, Any]] = []
     for name, spec in TOOL_REGISTRY.items():
         if actor.scope not in spec.allowed_scopes:
@@ -203,14 +246,25 @@ def list_openai_tools_for_actor(actor: ActorContext) -> list[dict[str, Any]]:
         schema = TOOL_JSON_SCHEMAS.get(name)
         if schema is None:
             continue
-        definitions.append({
-            "type": "function",
-            "function": {
+        if is_gemini:
+            sanitized = sanitize_tool_schema_for_gemini(schema)
+            fn_def: dict[str, Any] = {
                 "name": name,
                 "description": spec.description,
-                "parameters": schema,
-            },
-        })
+            }
+            # Gemini rejects `type: object` with empty `properties: {}`; omit `parameters` for zero-arg tools
+            if sanitized.get("properties"):
+                fn_def["parameters"] = sanitized
+            definitions.append({"type": "function", "function": fn_def})
+        else:
+            definitions.append({
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": spec.description,
+                    "parameters": schema,
+                },
+            })
     return definitions
 
 

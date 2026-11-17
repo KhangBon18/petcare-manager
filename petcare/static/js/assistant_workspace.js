@@ -26,7 +26,11 @@
   const chatUrl = root.dataset.chatUrl || form.action || "/assistant/chat";
   const resetUrl = root.dataset.resetUrl || "/assistant/reset";
   const csrf = root.dataset.csrfToken || form.querySelector('[name="csrf_token"]')?.value || "";
-  const REQUEST_TIMEOUT_MS = 20000;
+  const parsedTimeoutMs = Number(root.dataset.requestTimeoutMs);
+  const REQUEST_TIMEOUT_MS =
+    Number.isFinite(parsedTimeoutMs) && parsedTimeoutMs >= 5000
+      ? Math.min(parsedTimeoutMs, 120000)
+      : 20000;
 
   let currentScope = root.dataset.initialScope === "shopper_preview" ? "shopper_preview" : "workspace";
   let conversationId = root.dataset.conversationId || `conv_${Date.now()}`;

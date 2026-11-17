@@ -19,7 +19,7 @@ _EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
 _PHONE_RE = re.compile(r"(?<!\d)(?:\+?84|0)\d[\d\s.-]{7,12}\d(?!\d)")
 _CARD_RE = re.compile(r"(?<!\d)(?:\d[ -]?){13,19}(?!\d)")
 _SECRET_RE = re.compile(
-    r"\b(?:sk-[A-Za-z0-9_-]{12,}|api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[A-Za-z0-9._-]+)",
+    r"\b(?:sk-[A-Za-z0-9_-]{12,}|AIza[0-9A-Za-z_-]{20,}|(?:gemini[_-]?)?api[_-]?key\s*[:=]\s*\S+|password\s*[:=]\s*\S+|bearer\s+[A-Za-z0-9._-]+)",
     re.IGNORECASE,
 )
 

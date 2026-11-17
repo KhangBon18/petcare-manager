@@ -67,11 +67,18 @@ class Config:
     MEDIA_S3_PREFIX = os.getenv("MEDIA_S3_PREFIX", "petcare").strip("/")
     MEDIA_S3_SERVER_SIDE_ENCRYPTION = os.getenv("MEDIA_S3_SERVER_SIDE_ENCRYPTION", "AES256").strip()
     MAX_CONTENT_LENGTH = 7 * 1024 * 1024
+    GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    DEFAULT_GEMINI_MODEL = "gemini-3.5-flash-lite"
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "").strip().lower()
     AI_API_BASE_URL = os.getenv("AI_API_BASE_URL", "").strip()
     AI_API_KEY = os.getenv("AI_API_KEY", "")
+    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     AI_MODEL = os.getenv("AI_MODEL", "").strip()
     AI_REASONING_EFFORT = os.getenv("AI_REASONING_EFFORT", "").strip().lower()
     AI_TIMEOUT_SECONDS = int(os.getenv("AI_TIMEOUT_SECONDS", "15"))
+    AI_HTTP_STEP_TIMEOUT_SECONDS = float(os.getenv("AI_HTTP_STEP_TIMEOUT_SECONDS", "0"))
+    AI_MAX_HTTP_TIMEOUT_SECONDS = float(os.getenv("AI_MAX_HTTP_TIMEOUT_SECONDS", "15"))
+    AI_MAX_TURN_TIMEOUT_SECONDS = int(os.getenv("AI_MAX_TURN_TIMEOUT_SECONDS", "30"))
     AI_VISION_MAX_RETRIES = int(os.getenv("AI_VISION_MAX_RETRIES", "1"))
     AI_VISION_ENABLED = os.getenv("AI_VISION_ENABLED", "0") == "1"
     AI_PROVIDER_APPROVED = os.getenv("AI_PROVIDER_APPROVED", "0") == "1"
@@ -81,6 +88,11 @@ class Config:
     AI_TOOL_TIMEOUT_SECONDS = max(0.05, min(float(os.getenv("AI_TOOL_TIMEOUT_SECONDS", "3.0")), 10.0))
     AI_MAX_INPUT_TOKENS = max(512, min(int(os.getenv("AI_MAX_INPUT_TOKENS", "6000")), 32000))
     AI_MAX_OUTPUT_TOKENS = max(128, min(int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")), 2048))
+    # Conservative client-side throttling for Google AI Studio Free Tier (~15 RPM / 250k TPM / 500 RPD)
+    AI_RATE_LIMIT_RPM = max(1, min(int(os.getenv("AI_RATE_LIMIT_RPM", "10")), 600))
+    AI_RATE_LIMIT_TPM = max(1000, min(int(os.getenv("AI_RATE_LIMIT_TPM", "180000")), 10_000_000))
+    AI_RATE_LIMIT_RPD = max(1, min(int(os.getenv("AI_RATE_LIMIT_RPD", "450")), 100_000))
+    AI_MIN_REQUEST_INTERVAL_MS = max(0, min(int(os.getenv("AI_MIN_REQUEST_INTERVAL_MS", "1200")), 10_000))
     AI_PILOT_MAX_COST_USD = max(0.01, min(float(os.getenv("AI_PILOT_MAX_COST_USD", "0.50")), 20.0))
     AI_PILOT_KILL_SWITCH = os.getenv("AI_PILOT_KILL_SWITCH", "0") == "1"
     AI_TEST_ALLOW_LOOPBACK_PROVIDER = os.getenv("AI_TEST_ALLOW_LOOPBACK_PROVIDER", "0") == "1"
