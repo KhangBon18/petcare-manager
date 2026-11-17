@@ -30,6 +30,7 @@ from petcare.ai.knowledge_base import (
     KnowledgeRetrievalResult,
     build_emergency_triage_response,
     build_medical_boundary_response,
+    build_nonurgent_vet_referral_response,
 )
 from petcare.ai.memory import SessionState, redact_sensitive_text
 from petcare.ai.recommender_pets import PetMatchResult
@@ -87,12 +88,23 @@ class ProposedToolCall:
 
 @dataclass(frozen=True, slots=True)
 class ModelTurnOutput:
-    """Normalized output of one LLM completion step."""
+    """Normalized output of one LLM completion step, including token & latency accounting."""
 
     assistant_text: str | None = None
     tool_calls: tuple[ProposedToolCall, ...] = ()
-    safety_escalation: str | None = None  # "vet_emergency" | "vet_medical_boundary"
+    safety_escalation: str | None = None  # "vet_emergency" | "vet_medical_boundary" | "vet_nonurgent_referral"
     follow_up_questions: tuple[str, ...] = ()
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+    provider_latency_ms: float = 0.0
+
+
+def estimate_messages_tokens(messages: list[dict[str, Any]], tools: list[dict[str, Any]] | None = None) -> int:
+    """Conservative UTF-8 token estimator (~4 chars/token) for preflight input-token budget guards."""
+    msg_chars = len(json.dumps(messages, ensure_ascii=False, default=str))
+    tool_chars = len(json.dumps(tools or [], ensure_ascii=False, default=str))
+    return max(1, (msg_chars + (tool_chars // 2)) // 4)
 
 
 class ToolCallingAdapter(Protocol):
@@ -133,6 +145,7 @@ class MockToolCallingAdapter:
         tools: list[dict[str, Any]],
         timeout_seconds: float,
     ) -> ModelTurnOutput:
+        t0 = time.perf_counter()
         step_index = self.call_count
         self.call_count += 1
         self.recorded_requests.append({
@@ -154,7 +167,44 @@ class MockToolCallingAdapter:
             raise MalformedModelOutputError("Adapter returned non-ModelTurnOutput object.")
         if not out.tool_calls and not (isinstance(out.assistant_text, str) and out.assistant_text.strip()) and not out.safety_escalation:
             raise MalformedModelOutputError("Adapter returned empty ModelTurnOutput.")
-        return out
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 3)
+        if out.total_tokens > 0 or out.prompt_tokens > 0 or out.completion_tokens > 0:
+            total_tok = out.total_tokens or (out.prompt_tokens + out.completion_tokens)
+            return ModelTurnOutput(
+                assistant_text=out.assistant_text,
+                tool_calls=out.tool_calls,
+                safety_escalation=out.safety_escalation,
+                follow_up_questions=out.follow_up_questions,
+                prompt_tokens=out.prompt_tokens,
+                completion_tokens=out.completion_tokens,
+                total_tokens=total_tok,
+                provider_latency_ms=out.provider_latency_ms or elapsed_ms,
+            )
+        est_prompt = estimate_messages_tokens(messages, tools)
+        est_comp = max(
+            8,
+            len(
+                json.dumps(
+                    {
+                        "text": out.assistant_text or "",
+                        "calls": [{"name": tc.tool_name, "args": tc.raw_arguments} for tc in out.tool_calls],
+                    },
+                    ensure_ascii=False,
+                    default=str,
+                )
+            )
+            // 4,
+        )
+        return ModelTurnOutput(
+            assistant_text=out.assistant_text,
+            tool_calls=out.tool_calls,
+            safety_escalation=out.safety_escalation,
+            follow_up_questions=out.follow_up_questions,
+            prompt_tokens=est_prompt,
+            completion_tokens=est_comp,
+            total_tokens=est_prompt + est_comp,
+            provider_latency_ms=elapsed_ms,
+        )
 
 
 class OpenAICompatibleToolCallingAdapter:
@@ -164,8 +214,9 @@ class OpenAICompatibleToolCallingAdapter:
     `ai_client.is_configured()`. Never called during automated offline test runs.
     """
 
-    def __init__(self, model_name: str) -> None:
+    def __init__(self, model_name: str, *, max_output_tokens: int | None = None) -> None:
         self.model_name = model_name
+        self.max_output_tokens = max_output_tokens
 
     def complete_step(
         self,
@@ -177,12 +228,15 @@ class OpenAICompatibleToolCallingAdapter:
         if not has_app_context():
             raise ai_client.AIProviderError("Tool-calling provider requires Flask application context.")
 
+        t0 = time.perf_counter()
         payload = ai_client.complete_chat_with_tools(
             messages=messages,
             tools=tools,
             timeout_seconds=timeout_seconds,
             max_retries=1,
+            max_output_tokens=self.max_output_tokens,
         )
+        elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 3)
         try:
             msg = payload["choices"][0]["message"]
         except (KeyError, IndexError, TypeError) as exc:
@@ -219,7 +273,19 @@ class OpenAICompatibleToolCallingAdapter:
         if not parsed_calls and text_out is None:
             raise MalformedModelOutputError("Model returned neither tool_calls nor assistant text.")
 
-        return ModelTurnOutput(assistant_text=text_out, tool_calls=tuple(parsed_calls))
+        usage_raw = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+        p_tok = int(usage_raw.get("prompt_tokens") or 0) or estimate_messages_tokens(messages, tools)
+        c_tok = int(usage_raw.get("completion_tokens") or 0) or max(8, len(text_out or "") // 4)
+        t_tok = int(usage_raw.get("total_tokens") or 0) or (p_tok + c_tok)
+
+        return ModelTurnOutput(
+            assistant_text=text_out,
+            tool_calls=tuple(parsed_calls),
+            prompt_tokens=p_tok,
+            completion_tokens=c_tok,
+            total_tokens=t_tok,
+            provider_latency_ms=elapsed_ms,
+        )
 
 
 @dataclass(slots=True)
@@ -519,6 +585,30 @@ class TurnGroundingLedger:
                 self._harvest_dict_codes_and_prices(item)
 
 
+_SAFETY_OVERRIDE_DISMISSAL_RE = re.compile(
+    r"\b(?:no\s+need\s+to\s+(?:see|visit|call)\s+a\s+vet(?:erinarian)?|"
+    r"do\s+not\s+(?:go\s+to|visit|call)\s+a\s+vet(?:erinarian)?|"
+    r"kh[oô]ng\s+c[aầ]n\s+(?:đi\s+)?(?:kh[aá]m|g[aặ]p)\s+(?:b[aá]c\s+s[iĩ]\s+)?th[uú]\s+y)\b",
+    re.IGNORECASE,
+)
+
+
+def _resolve_kb_safety_response(
+    outcome: str,
+    locale: str,
+    category: str | None = None,
+) -> tuple[KnowledgeRetrievalResult, ResponseType, str]:
+    if outcome == "vet_emergency":
+        return build_emergency_triage_response(locale, category=category), ResponseType.KNOWLEDGE_ANSWER, "ok"
+    if outcome == "vet_nonurgent_referral":
+        return (
+            build_nonurgent_vet_referral_response(locale, category=category),
+            ResponseType.KNOWLEDGE_ANSWER,
+            "clarification",
+        )
+    return build_medical_boundary_response(locale, category=category), ResponseType.UNSUPPORTED_REQUEST, "clarification"
+
+
 def verify_llm_answer_consistency(
     reply_text: str | None,
     ledger: TurnGroundingLedger,
@@ -533,8 +623,8 @@ def verify_llm_answer_consistency(
     if len(cleaned) > MAX_FINAL_REPLY_CHARS:
         return False, "reply_too_long"
 
-    # 1. Block unsafe veterinary dosages or human OTC drugs in model output
-    if _DOSAGE_OR_UNSAFE_MED_RE.search(cleaned):
+    # 1. Block unsafe veterinary dosages, human OTC drugs, or safety-dismissal overrides in model output
+    if _DOSAGE_OR_UNSAFE_MED_RE.search(cleaned) or _SAFETY_OVERRIDE_DISMISSAL_RE.search(cleaned):
         return False, "unsafe_medical_content"
 
     # 2. Block untrusted external URLs not present in verified citations
@@ -724,11 +814,13 @@ def run_tool_calling_turn(
     max_total_tool_calls: int | None = None,
     tool_timeout_seconds: float | None = None,
     turn_timeout_seconds: float | None = None,
+    max_input_tokens: int | None = None,
+    step_guard: Callable[[int, int, dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     """Execute the full secure LLM tool-calling pipeline with server-side validation and fallback.
 
     Sequence:
-    User question -> LLM structured interpretation -> Server-side schema validation ->
+    User question -> Safety triage -> LLM structured interpretation -> Server-side schema validation ->
     Permission-controlled Python tool execution -> Grounded tool result ledger ->
     LLM answer composition -> Final server-side consistency checks -> UI response.
     """
@@ -738,38 +830,44 @@ def run_tool_calling_turn(
         calls_cap = max(1, min(int(max_total_tool_calls or cfg.get("AI_MAX_TOTAL_TOOL_CALLS", DEFAULT_MAX_TOTAL_TOOL_CALLS)), 6))
         per_tool_timeout = float(tool_timeout_seconds or cfg.get("AI_TOOL_TIMEOUT_SECONDS", DEFAULT_TOOL_TIMEOUT_SECONDS))
         total_timeout = float(turn_timeout_seconds or cfg.get("AI_TIMEOUT_SECONDS", DEFAULT_TURN_TIMEOUT_SECONDS))
+        input_tokens_cap = max(512, min(int(max_input_tokens or cfg.get("AI_MAX_INPUT_TOKENS", 6000)), 32000))
+        kill_switch_active = bool(cfg.get("AI_PILOT_KILL_SWITCH", False))
     else:
         rounds_cap = max(1, min(int(max_tool_rounds or DEFAULT_MAX_TOOL_ROUNDS), 4))
         calls_cap = max(1, min(int(max_total_tool_calls or DEFAULT_MAX_TOTAL_TOOL_CALLS), 6))
         per_tool_timeout = float(tool_timeout_seconds or DEFAULT_TOOL_TIMEOUT_SECONDS)
         total_timeout = float(turn_timeout_seconds or DEFAULT_TURN_TIMEOUT_SECONDS)
+        input_tokens_cap = max(512, min(int(max_input_tokens or 6000), 32000))
+        kill_switch_active = False
 
     turn_deadline = time.monotonic() + max(0.05, total_timeout)
     working_slots = initial_slots.clone()
+    usage_totals: dict[str, Any] = {
+        "model_name": getattr(adapter, "model_name", "unknown"),
+        "rounds_completed": 0,
+        "prompt_tokens": 0,
+        "completion_tokens": 0,
+        "total_tokens": 0,
+        "provider_latency_ms": 0.0,
+    }
 
     # Defense-in-Depth Gate 1: Server-side veterinary safety triage executes BEFORE any LLM call or tool routing
     pre_triage = evaluate_veterinary_safety(question)
     if pre_triage.is_triggered:
-        kb_pre = (
-            build_emergency_triage_response(actor.locale, category=pre_triage.category)
-            if pre_triage.outcome == "vet_emergency"
-            else build_medical_boundary_response(actor.locale, category=pre_triage.category)
+        kb_pre, pre_rtype, pre_status = _resolve_kb_safety_response(
+            pre_triage.outcome, actor.locale, category=pre_triage.category
         )
         if session_state is not None:
             session_state.slots = working_slots
             session_state.record_turn("user", question)
             session_state.record_turn("assistant", kb_pre.reply)
-        return AssistantTurnResponse(
+        resp_pre = AssistantTurnResponse(
             reply=kb_pre.reply,
-            response_type=(
-                ResponseType.KNOWLEDGE_ANSWER
-                if pre_triage.outcome == "vet_emergency"
-                else ResponseType.UNSUPPORTED_REQUEST
-            ),
+            response_type=pre_rtype,
             mode="local",
             engine_mode=EngineMode.OFFLINE,
             scope=actor.scope,
-            status="ok" if pre_triage.outcome == "vet_emergency" else "clarification",
+            status=pre_status,
             conversation_id=conversation_id,
             currency_code=actor.currency_code,
             citations=kb_pre.citations,
@@ -778,6 +876,8 @@ def run_tool_calling_turn(
             tool_trace=[],
             context_state=working_slots.to_public_dict(actor.locale),
         ).to_api_dict()
+        resp_pre["llm_usage"] = usage_totals
+        return resp_pre
 
     ledger = TurnGroundingLedger()
     ledger.register_budget_slots(working_slots)
@@ -806,6 +906,16 @@ def run_tool_calling_turn(
     fallback_reason: str | None = None
 
     for _round_idx in range(rounds_cap):
+        est_step_input_tokens = estimate_messages_tokens(messages, allowed_tools)
+        if step_guard is not None:
+            step_guard(_round_idx, est_step_input_tokens, usage_totals)
+        if kill_switch_active or (has_app_context() and current_app.config.get("AI_PILOT_KILL_SWITCH")):
+            fallback_reason = "kill_switch_engaged"
+            break
+        if est_step_input_tokens > input_tokens_cap:
+            fallback_reason = "max_input_tokens_exceeded"
+            break
+
         remaining = turn_deadline - time.monotonic()
         if remaining <= 0:
             fallback_reason = "turn_timeout_exceeded"
@@ -821,26 +931,30 @@ def run_tool_calling_turn(
             fallback_reason = f"provider_error:{type(exc).__name__}"
             break
 
-        if step_out.safety_escalation in {"vet_emergency", "vet_medical_boundary"}:
-            kb_safety = (
-                build_emergency_triage_response(actor.locale)
-                if step_out.safety_escalation == "vet_emergency"
-                else build_medical_boundary_response(actor.locale)
+        usage_totals["rounds_completed"] += 1
+        usage_totals["prompt_tokens"] += int(step_out.prompt_tokens or 0)
+        usage_totals["completion_tokens"] += int(step_out.completion_tokens or 0)
+        usage_totals["total_tokens"] += int(step_out.total_tokens or (step_out.prompt_tokens + step_out.completion_tokens))
+        usage_totals["provider_latency_ms"] = round(
+            float(usage_totals["provider_latency_ms"]) + float(step_out.provider_latency_ms or 0.0),
+            3,
+        )
+
+        if step_out.safety_escalation in {"vet_emergency", "vet_medical_boundary", "vet_nonurgent_referral"}:
+            kb_safety, esc_rtype, esc_status = _resolve_kb_safety_response(
+                step_out.safety_escalation, actor.locale
             )
             if session_state is not None:
                 session_state.slots = working_slots
                 session_state.record_turn("user", question)
                 session_state.record_turn("assistant", kb_safety.reply)
-            return AssistantTurnResponse(
+            resp_esc = AssistantTurnResponse(
                 reply=kb_safety.reply,
-                response_type=(
-                    ResponseType.KNOWLEDGE_ANSWER
-                    if step_out.safety_escalation == "vet_emergency"
-                    else ResponseType.UNSUPPORTED_REQUEST
-                ),
+                response_type=esc_rtype,
                 mode="ai",
                 engine_mode=EngineMode.REAL_LLM,
                 scope=actor.scope,
+                status=esc_status,
                 conversation_id=conversation_id,
                 currency_code=actor.currency_code,
                 citations=kb_safety.citations,
@@ -849,6 +963,8 @@ def run_tool_calling_turn(
                 tool_trace=traces,
                 context_state=working_slots.to_public_dict(actor.locale),
             ).to_api_dict()
+            resp_esc["llm_usage"] = usage_totals
+            return resp_esc
 
         if not step_out.tool_calls:
             final_model_output = step_out
@@ -917,26 +1033,20 @@ def run_tool_calling_turn(
                                     scope=actor.scope.value,
                                 )
                             )
-                            kb_mid = (
-                                build_emergency_triage_response(actor.locale, category=arg_triage.category)
-                                if arg_triage.outcome == "vet_emergency"
-                                else build_medical_boundary_response(actor.locale, category=arg_triage.category)
+                            kb_mid, mid_rtype, mid_status = _resolve_kb_safety_response(
+                                arg_triage.outcome, actor.locale, category=arg_triage.category
                             )
                             if session_state is not None:
                                 session_state.slots = working_slots
                                 session_state.record_turn("user", question)
                                 session_state.record_turn("assistant", kb_mid.reply)
-                            return AssistantTurnResponse(
+                            resp_mid = AssistantTurnResponse(
                                 reply=kb_mid.reply,
-                                response_type=(
-                                    ResponseType.KNOWLEDGE_ANSWER
-                                    if arg_triage.outcome == "vet_emergency"
-                                    else ResponseType.UNSUPPORTED_REQUEST
-                                ),
+                                response_type=mid_rtype,
                                 mode="local",
                                 engine_mode=EngineMode.OFFLINE,
                                 scope=actor.scope,
-                                status="ok" if arg_triage.outcome == "vet_emergency" else "clarification",
+                                status=mid_status,
                                 conversation_id=conversation_id,
                                 currency_code=actor.currency_code,
                                 citations=kb_mid.citations,
@@ -945,6 +1055,8 @@ def run_tool_calling_turn(
                                 tool_trace=traces,
                                 context_state=working_slots.to_public_dict(actor.locale),
                             ).to_api_dict()
+                            resp_mid["llm_usage"] = usage_totals
+                            return resp_mid
 
                 if slot_candidate is not None:
                     working_slots = slot_candidate
@@ -1046,7 +1158,7 @@ def run_tool_calling_turn(
         if session_state is not None:
             session_state.record_turn("user", question)
             session_state.record_turn("assistant", denied_msg)
-        return AssistantTurnResponse(
+        resp_denied = AssistantTurnResponse(
             reply=denied_msg,
             response_type=ResponseType.PERMISSION_DENIED,
             mode="local",
@@ -1058,6 +1170,8 @@ def run_tool_calling_turn(
             tool_trace=traces,
             context_state=working_slots.to_public_dict(actor.locale),
         ).to_api_dict()
+        resp_denied["llm_usage"] = usage_totals
+        return resp_denied
 
     if fallback_reason is not None and not ledger.had_successful_tool and final_model_output is None:
         fallback_payload = offline_fallback_fn()
@@ -1065,6 +1179,7 @@ def run_tool_calling_turn(
         fallback_payload["tool_trace"] = [t.to_dict() for t in traces] + existing_trace
         fallback_payload["fallback_used"] = True
         fallback_payload["fallback_reason"] = fallback_reason
+        fallback_payload["llm_usage"] = usage_totals
         return fallback_payload
 
     candidate_reply = final_model_output.assistant_text if final_model_output is not None else None
@@ -1088,6 +1203,7 @@ def run_tool_calling_turn(
             fallback_payload["tool_trace"] = [t.to_dict() for t in traces] + existing_trace
             fallback_payload["fallback_used"] = True
             fallback_payload["fallback_reason"] = fallback_reason
+            fallback_payload["llm_usage"] = usage_totals
             return fallback_payload
 
     if session_state is not None:
@@ -1142,4 +1258,5 @@ def run_tool_calling_turn(
     resp_dict["fallback_used"] = used_fallback
     if fallback_reason:
         resp_dict["fallback_reason"] = fallback_reason
+    resp_dict["llm_usage"] = usage_totals
     return resp_dict

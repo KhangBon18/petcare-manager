@@ -506,6 +506,22 @@ def build_emergency_triage_response(
             "**Very pale or white gums/mucous membranes, or unusually cold extremities paired with weakness or lethargy**, are critical warning signs of poor circulation, severe anemia, or shock. "
             "PetCare AI cannot guide home treatment; keep your pet calm and warm and seek emergency veterinary care **immediately**."
         )
+    elif category == "medication_overdose_or_adverse_event":
+        msg = (
+            "Tình huống **tiêm/cho dùng lặp liều hoặc quá liều thuốc điều trị (như tiêm nhầm gấp đôi insulin gây loạng choạng, đờ đẫn hạ đường huyết cấp)** là **cấp cứu nội khoa thú y khẩn cấp**. "
+            "PetCare AI không gợi ý mua bánh thưởng hay tự điều chỉnh thuốc thay cho cấp cứu; hãy liên hệ và đưa thú cưng kèm lọ thuốc/lịch tiêm tới cơ sở thú y **ngay lập tức**."
+            if vi else
+            "**Accidental double dosing or overdose of therapeutic medication (such as injecting insulin twice with wobbling, blank staring, or weakness)** is an **urgent veterinary emergency** (e.g., severe acute hypoglycemia or drug toxicity). "
+            "PetCare AI will not suggest retail treats or home dosing in place of urgent care; contact and transport your pet with the medication vial to an emergency veterinary clinic **immediately**."
+        )
+    elif category == "post_operative_or_wound_emergency":
+        msg = (
+            "Dấu hiệu **bung chỉ khâu hậu phẫu / hở vết mổ hoặc lộ mô/thịt hồng bên trong** là tình huống **cấp cứu ngoại khoa thú y** có nguy cơ nhiễm trùng ổ bụng và thoát vị tạng. "
+            "PetCare AI không gợi ý mua loa chống liếm thay thế cho việc xử lý vết mổ; tuyệt đối không tự ấn mô lộ ra vào trong hay bôi thuốc tự ý, hãy ngăn bé liếm và đưa tới bác sĩ thú y **ngay lập tức**."
+            if vi else
+            "**Opened surgical stitches, incision dehiscence, or exposed underlying pink tissue** is an **urgent post-operative veterinary emergency** carrying immediate risk of infection or evisceration. "
+            "PetCare AI will not recommend retail cones in place of urgent surgical care; prevent licking, do not push exposed tissue back in or apply unprescribed ointments, and go to an emergency veterinary clinic **immediately**."
+        )
     else:
         msg = (
             "Triệu chứng bạn mô tả là dấu hiệu nguy cấp. PetCare AI không thể chẩn đoán hay hướng dẫn điều trị tại nhà cho tình huống này. "
@@ -632,6 +648,76 @@ def build_medical_boundary_response(
             ["Nguyên tắc chăm sóc vệ sinh cơ bản cho chó mèo", "Thực phẩm trong nhà cần tránh cho thú cưng"]
             if vi else
             ["Basic grooming and hygiene practices for pets", "Which household foods are unsafe for pets?"]
+        ),
+    )
+
+
+def build_nonurgent_vet_referral_response(
+    locale: str,
+    category: str | None = None,
+) -> KnowledgeRetrievalResult:
+    """Prefer safe veterinary referral and clinical clarification over shopping for active illness concerns."""
+    vi = locale != "en"
+    triage_doc = next(doc for doc in KNOWLEDGE_CORPUS if doc.doc_id == "KB-VET-009")
+
+    msg = (
+        "Dấu hiệu bạn mô tả (như bỏ ăn kéo dài kèm lừ đừ/sốt, sưng mủ/áp-xe, đi khập khiễng đau hoặc nôn/tiêu chảy nhiều lần) là **biểu hiện bất thường cần bác sĩ thú y thăm khám trực tiếp** để xác định nguyên nhân trước khi chọn thức ăn hay sản phẩm chăm sóc. "
+        "PetCare AI không tự động gợi ý mua hàng thay thế cho thăm khám thú y; vui lòng đưa bé đi kiểm tra sớm, và **đi cấp cứu ngay** nếu xuất hiện khó thở, nướu nhợt nhạt, co giật, bí tiểu hoặc có máu."
+        if vi else
+        "The clinical concern you described (such as prolonged refusal to eat with lethargy/fever, purulent swelling/abscess, painful lameness, or repeated vomiting/diarrhea) warrants **direct examination by a licensed veterinarian** before choosing retail food or care items. "
+        "PetCare AI prefers a safe veterinary referral rather than routing active illness to shopping; please schedule a veterinary evaluation promptly, and **seek immediate emergency care** if labored breathing, pale gums, blood, collapse, or urinary straining develops."
+    )
+    notice = SafetyNotice(
+        severity="vet_referral",
+        title=(
+            "Khuyến nghị thăm khám thú y trước khi chọn sản phẩm"
+            if vi else "Veterinary Referral Recommended Before Shopping"
+        ),
+        message=msg,
+        escalation_steps=(
+            (
+                "Ghi nhận thời điểm bắt đầu triệu chứng, tần suất ăn uống/đi vệ sinh và mức độ tỉnh táo để báo cho bác sĩ thú y.",
+                "Chỉ chọn thức ăn hỗ trợ hoặc sản phẩm vệ sinh sau khi bác sĩ thú y đã loại trừ bệnh lý cần điều trị.",
+            )
+            if vi else
+            (
+                "Record symptom onset, appetite/hydration changes, and bathroom frequency to share with your veterinarian.",
+                "Select supportive retail diets or care products only after a veterinarian has ruled out underlying illness.",
+            )
+        ),
+    )
+    reply = (
+        f"{notice.title}: {notice.message}\n"
+        + "\n".join(f"• {step}" for step in notice.escalation_steps)
+    )
+    return KnowledgeRetrievalResult(
+        matched=True,
+        reply=reply,
+        citations=[
+            KnowledgeCitation(
+                doc_id=triage_doc.doc_id,
+                title=triage_doc.title_vi if vi else triage_doc.title_en,
+                source_name=triage_doc.source_name,
+                source_url=triage_doc.source_url,
+                updated_at=triage_doc.updated_at,
+                topic=triage_doc.topic,
+                language="vi" if vi else "en",
+                review_status=triage_doc.review_status,
+                version=triage_doc.version,
+                relevance_score=8.0,
+            )
+        ],
+        safety_notice=notice,
+        follow_up_questions=(
+            [
+                "Dấu hiệu khẩn cấp nào cần đưa thú cưng đi cấp cứu ngay?",
+                "Sau khi bác sĩ thú y khám xong, tôi muốn tìm sản phẩm chăm sóc cơ bản",
+            ]
+            if vi else
+            [
+                "What urgent red-flag signs require immediate emergency veterinary care?",
+                "After a vet checkup, help me browse basic pet care supplies",
+            ]
         ),
     )
 

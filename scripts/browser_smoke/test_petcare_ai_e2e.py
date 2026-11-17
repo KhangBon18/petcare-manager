@@ -496,6 +496,52 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
         finally:
             context.close()
 
+    def test_ai_3_offline_diagnostics_vet_referral_and_structured_lists_mobile(self):
+        context, page, console_errors = self._new_logged_in_page(
+            "staff1", DEMO_STAFF_PASSWORD, width=390, height=844
+        )
+        try:
+            page.goto(f"{self.base_url}/assistant/chat?scope=shopper_preview", wait_until="domcontentloaded")
+            badge = page.locator("#ai-engine-badge")
+            expect(badge).to_be_visible()
+            self.assertEqual(badge.get_attribute("data-engine-state"), "offline_disabled")
+            self.assertNotIn("AI tạo sinh đang bật", badge.inner_text())
+
+            bot_turns = page.locator(".ai-turn-bot:not(.is-loading)")
+
+            # 1. Post-op suture dehiscence emergency -> emergency banner + structured bullet list + 0 shopping cards
+            page.fill(
+                "#ai-workspace-input",
+                "My female cat chewed open her spay stitches tonight and pink tissue is poking out of the belly incision — do you sell recovery cones?",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(1)
+            expect(bot_turns.nth(0).locator(".ai-safety-banner--emergency")).to_be_visible()
+            expect(bot_turns.nth(0).locator("ul.ai-reply-list")).to_be_visible()
+            self.assertEqual(bot_turns.nth(0).locator(".ai-rec-card").count(), 0)
+            self.assertEqual(
+                bot_turns.nth(0).locator(".ai-turn-footer").get_attribute("data-engine-mode"),
+                "offline",
+            )
+
+            # 2. Nonurgent clinical illness -> vet_referral banner + 0 shopping cards + no mobile horizontal overflow
+            page.fill(
+                "#ai-workspace-input",
+                "Mèo nhà mình bỏ ăn 3 ngày nay nằm ủ rũ sốt nhẹ, bên shop có pate nào kích thích ăn không?",
+            )
+            page.press("#ai-workspace-input", "Enter")
+            expect(bot_turns).to_have_count(2)
+            expect(bot_turns.nth(1).locator(".ai-safety-banner--vet_referral")).to_be_visible()
+            self.assertEqual(bot_turns.nth(1).locator(".ai-rec-card").count(), 0)
+
+            overflow = page.evaluate(
+                "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
+            )
+            self.assertLessEqual(overflow, 1)
+            self.assertEqual(console_errors, [])
+        finally:
+            context.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -113,10 +113,12 @@ class AssistantLocalAnswerTests(unittest.TestCase):
         self.assertNotIn("available_pets", context)
 
     def test_configured_ai_receives_english_response_instructions(self):
+        app = Flask("assistant-approved-en")
+        app.config.update(AI_PROVIDER_APPROVED=True)
         connection_scope = MagicMock()
         connection_scope.__enter__.return_value = object()
         connection_scope.__exit__.return_value = False
-        with patch(
+        with app.app_context(), patch(
             "petcare.services.assistant_service.read_connection", return_value=connection_scope
         ), patch("petcare.services.assistant_service.require_actor", return_value={
             "default_currency": "VND", "timezone": "Asia/Ho_Chi_Minh"
@@ -211,10 +213,12 @@ class AssistantLocalAnswerTests(unittest.TestCase):
                 "unit_price": 100,
             }],
         }
+        app = Flask("assistant-approved-vi")
+        app.config.update(AI_PROVIDER_APPROVED=True)
         connection_scope = MagicMock()
         connection_scope.__enter__.return_value = object()
         connection_scope.__exit__.return_value = False
-        with patch(
+        with app.app_context(), patch(
             "petcare.services.assistant_service.read_connection", return_value=connection_scope
         ), patch("petcare.services.assistant_service.require_actor", return_value={
             "default_currency": "VND", "timezone": "Asia/Ho_Chi_Minh"

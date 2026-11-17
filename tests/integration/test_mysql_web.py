@@ -3779,6 +3779,24 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 with patch.dict(
                     self.app.config,
                     {
+                        "AI_PROVIDER_APPROVED": False,
+                        "AI_API_BASE_URL": "https://example.test",
+                        "AI_MODEL": "test-only",
+                    },
+                ), patch(
+                    "petcare.ai.client.complete"
+                ) as unapproved_complete:
+                    unapproved_res = client.post(
+                        "/assistant/chat",
+                        json={"message": question},
+                        headers={"X-CSRFToken": token},
+                    ).get_json()
+                self.assertEqual(unapproved_res["mode"], "local")
+                unapproved_complete.assert_not_called()
+                with patch.dict(
+                    self.app.config,
+                    {
+                        "AI_PROVIDER_APPROVED": True,
                         "AI_API_BASE_URL": "https://example.test",
                         "AI_MODEL": "test-only",
                     },
@@ -3795,6 +3813,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
                 with patch.dict(
                     self.app.config,
                     {
+                        "AI_PROVIDER_APPROVED": True,
                         "AI_API_BASE_URL": "https://example.test",
                         "AI_MODEL": "test-only",
                     },

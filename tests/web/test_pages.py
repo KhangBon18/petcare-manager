@@ -310,6 +310,8 @@ class WebPageTests(unittest.TestCase):
 
     def test_assistant_discloses_question_scoped_data_sent_to_configured_ai(self):
         with patch.dict(self.app.config, {
+            "AI_PROVIDER_APPROVED": True,
+            "AI_PILOT_KILL_SWITCH": False,
             "AI_API_BASE_URL": "https://ai.example.test/v1",
             "AI_MODEL": "test-model",
         }), self.app.test_request_context("/"):
@@ -317,10 +319,24 @@ class WebPageTests(unittest.TestCase):
             g.tenant = SimpleNamespace(id=1, name="Test Store", slug="test-store")
             html = render_template("base.html")
 
+        self.assertIn("AI tạo sinh đang bật", html)
         self.assertIn("tối đa 8 tin nhắn gần nhất", html)
         self.assertIn("dữ liệu cửa hàng liên quan", html)
         self.assertIn("Hồ sơ khách hàng không tự gửi", html)
         self.assertIn("thông tin bạn nhập vào chat vẫn được gửi", html)
+
+    def test_assistant_never_claims_ai_connected_when_provider_unapproved(self):
+        with patch.dict(self.app.config, {
+            "AI_PROVIDER_APPROVED": False,
+            "AI_API_BASE_URL": "https://ai.example.test/v1",
+            "AI_MODEL": "test-model",
+        }), self.app.test_request_context("/"):
+            g.user = SimpleNamespace(role="staff", full_name="Test User", store_memberships=[])
+            g.tenant = SimpleNamespace(id=1, name="Test Store", slug="test-store")
+            html = render_template("base.html")
+
+        self.assertNotIn("AI tạo sinh đang bật", html)
+        self.assertIn("Không gọi endpoint AI bên ngoài", html)
 
     def test_assistant_discloses_local_only_mode_without_external_ai(self):
         with patch.dict(self.app.config, {"AI_API_BASE_URL": "", "AI_MODEL": ""}), self.app.test_request_context("/"):

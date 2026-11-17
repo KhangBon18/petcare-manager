@@ -79,6 +79,10 @@ class Config:
     AI_MAX_TOOL_ROUNDS = max(1, min(int(os.getenv("AI_MAX_TOOL_ROUNDS", "3")), 4))
     AI_MAX_TOTAL_TOOL_CALLS = max(1, min(int(os.getenv("AI_MAX_TOTAL_TOOL_CALLS", "4")), 6))
     AI_TOOL_TIMEOUT_SECONDS = max(0.05, min(float(os.getenv("AI_TOOL_TIMEOUT_SECONDS", "3.0")), 10.0))
+    AI_MAX_INPUT_TOKENS = max(512, min(int(os.getenv("AI_MAX_INPUT_TOKENS", "6000")), 32000))
+    AI_MAX_OUTPUT_TOKENS = max(128, min(int(os.getenv("AI_MAX_OUTPUT_TOKENS", "700")), 2048))
+    AI_PILOT_MAX_COST_USD = max(0.01, min(float(os.getenv("AI_PILOT_MAX_COST_USD", "0.50")), 20.0))
+    AI_PILOT_KILL_SWITCH = os.getenv("AI_PILOT_KILL_SWITCH", "0") == "1"
     AI_TEST_ALLOW_LOOPBACK_PROVIDER = os.getenv("AI_TEST_ALLOW_LOOPBACK_PROVIDER", "0") == "1"
     ASSISTANT_CONVERSATION_TTL_SECONDS = max(
         60, int(os.getenv("ASSISTANT_CONVERSATION_TTL_SECONDS", "1800"))

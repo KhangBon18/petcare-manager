@@ -52,10 +52,32 @@
     const body = document.createElement("div");
     body.className = "ai-reply-text";
     const lines = String(replyText || "").split("\n").filter(line => line.trim().length > 0);
-    for (const line of lines) {
-      const p = document.createElement("p");
-      appendFormattedText(p, line);
-      body.append(p);
+    let currentList = null;
+    let currentListTag = null;
+
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      const bulletMatch = trimmed.match(/^(?:[•*-])\s+(.+)$/);
+      const numberedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+
+      if (bulletMatch || numberedMatch) {
+        const neededTag = bulletMatch ? "ul" : "ol";
+        if (!currentList || currentListTag !== neededTag) {
+          currentList = document.createElement(neededTag);
+          currentList.className = "ai-reply-list";
+          currentListTag = neededTag;
+          body.append(currentList);
+        }
+        const li = document.createElement("li");
+        appendFormattedText(li, (bulletMatch ? bulletMatch[1] : numberedMatch[1]).trim());
+        currentList.append(li);
+      } else {
+        currentList = null;
+        currentListTag = null;
+        const p = document.createElement("p");
+        appendFormattedText(p, trimmed);
+        body.append(p);
+      }
     }
     parent.append(body);
   }
@@ -143,7 +165,7 @@
   function renderSafetyNotice(notice, parent) {
     if (!notice || typeof notice !== "object") return;
     const box = document.createElement("section");
-    const sev = ["emergency", "medical_boundary", "policy_boundary", "disclaimer"].includes(notice.severity)
+    const sev = ["emergency", "medical_boundary", "vet_referral", "policy_boundary", "disclaimer"].includes(notice.severity)
       ? notice.severity
       : "disclaimer";
     box.className = `ai-safety-banner ai-safety-banner--${sev}`;
@@ -592,12 +614,19 @@
   function renderProvenanceFooter(payload, parent) {
     const foot = document.createElement("footer");
     foot.className = "ai-turn-footer";
+    foot.dataset.engineMode = payload.engine_mode === "real_llm" ? "real_llm" : (payload.fallback_used ? "offline_fallback" : "offline");
     const parts = [];
-    parts.push(
-      payload.engine_mode === "real_llm"
-        ? (english ? "Approved LLM + MySQL Grounded" : "AI tạo sinh phê duyệt + MySQL xác thực")
-        : (english ? "Offline Python Engine · MySQL Grounded" : "Offline Python Engine · Dữ liệu MySQL xác thực")
-    );
+    if (payload.engine_mode === "real_llm") {
+      parts.push(english ? "Approved Real LLM + MySQL Grounded" : "AI tạo sinh phê duyệt + MySQL xác thực");
+    } else if (payload.fallback_used) {
+      parts.push(
+        english
+          ? "Offline Python Fallback · MySQL Grounded"
+          : "Dự phòng Offline Python · Dữ liệu MySQL xác thực"
+      );
+    } else {
+      parts.push(english ? "Offline Python Engine · MySQL Grounded" : "Offline Python Engine · Dữ liệu MySQL xác thực");
+    }
     parts.push(
       payload.scope === "shopper_preview"
         ? (english ? "Scope: Shopper Preview (QA)" : "Phạm vi: Khách mua (QA)")
@@ -606,6 +635,9 @@
     if (Array.isArray(payload.tool_trace) && payload.tool_trace.length) {
       const tools = payload.tool_trace.map(t => `${t.tool_name} (${t.duration_ms}ms)`).join(", ");
       parts.push(`${english ? "Tools" : "Công cụ"}: ${tools}`);
+    }
+    if (payload.engine_mode === "real_llm" && payload.llm_usage?.total_tokens > 0) {
+      parts.push(`Tokens: ${payload.llm_usage.total_tokens}`);
     }
     foot.textContent = parts.join(" · ");
     parent.append(foot);

@@ -1416,7 +1416,8 @@ form[aria-busy="true"] button[type="submit"] { cursor: progress; }
 .ai-turn-bot.is-error { border-color: #e4b4ad; background: #fff8f7; color: #6e231a; }
 
 .ai-reply-text { display: grid; gap: 7px; }
-.ai-reply-text p { margin: 0; font-size: 14px; color: #1d2b24; overflow-wrap: anywhere; }
+.ai-reply-text p { margin: 0; font-size: 14px; line-height: 1.55; color: #1d2b24; overflow-wrap: anywhere; }
+.ai-reply-list { margin: 0; padding-left: 20px; display: grid; gap: 5px; font-size: 14px; line-height: 1.5; color: #1d2b24; overflow-wrap: anywhere; }
 
 .ai-safety-banner { display: grid; gap: 6px; padding: 12px 14px; border-radius: 11px; border: 1px solid #d5e0da; font-size: 13px; }
 .ai-safety-banner strong { font-size: 13px; }
@@ -1424,6 +1425,7 @@ form[aria-busy="true"] button[type="submit"] { cursor: progress; }
 .ai-safety-banner ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 4px; }
 .ai-safety-banner--emergency { border-color: #d98278; background: #fdf1ef; color: #6d1d14; }
 .ai-safety-banner--medical_boundary { border-color: #dfbe82; background: #fef9ee; color: #5c410c; }
+.ai-safety-banner--vet_referral { border-color: #d9b66b; background: #fdf7e7; color: #573d08; }
 .ai-safety-banner--policy_boundary { border-color: #c7d6ce; background: #f4f7f5; color: #25382f; }
 .ai-safety-banner--disclaimer { border-color: #c8ddd2; background: #f3f9f5; color: #204637; }
 

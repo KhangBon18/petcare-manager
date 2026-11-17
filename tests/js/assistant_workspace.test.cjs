@@ -412,3 +412,62 @@ test("immediate submit during pending reset awaits fresh conversation_id and ren
   assert.equal(opsSections.length, 2);
   assert.equal(h.stream.querySelectorAll(".ai-turn-bot").length, 1);
 });
+
+test("renders structured bullet/numbered lists, vet_referral banner, and distinct real_llm vs offline_fallback diagnostics", async () => {
+  const h = buildWorkspaceTree({lang: "en"});
+  h.input.value = "Compare care options";
+  h.form.dispatchEvent(new UIEvent("submit"));
+  assert.equal(h.requests.length, 1);
+
+  h.requests[0].resolve({
+    ok: true,
+    json: async () => ({
+      reply: "Summary paragraph:\n- **First** grounded point\n- Second grounded point\n1. Step one\n2. Step two",
+      response_type: "knowledge_answer",
+      engine_mode: "real_llm",
+      scope: "shopper_preview",
+      llm_usage: {total_tokens: 412},
+      safety_notice: {
+        severity: "vet_referral",
+        title: "Veterinary Referral Recommended Before Shopping",
+        message: "Schedule a checkup before choosing retail food.",
+        escalation_steps: ["Monitor appetite and hydration."],
+      },
+      tool_trace: [{tool_name: "search_pet_care_knowledge", duration_ms: 3.2}],
+    }),
+  });
+  await settle();
+
+  const botTurn = h.stream.querySelector(".ai-turn-bot");
+  const replyLists = botTurn.querySelectorAll(".ai-reply-list");
+  assert.equal(replyLists.length, 2);
+  assert.equal(replyLists[0].tagName, "ul");
+  assert.equal(replyLists[0].children.length, 2);
+  assert.equal(replyLists[1].tagName, "ol");
+  assert.equal(replyLists[1].children.length, 2);
+  assert.ok(botTurn.querySelector(".ai-safety-banner--vet_referral"));
+  const footer1 = botTurn.querySelector(".ai-turn-footer");
+  assert.equal(footer1.dataset.engineMode, "real_llm");
+  assert.match(footer1.textContent, /Approved Real LLM/);
+  assert.match(footer1.textContent, /Tokens: 412/);
+
+  // Turn 2: Offline fallback provenance must never claim Real LLM
+  h.input.value = "Fallback check";
+  h.form.dispatchEvent(new UIEvent("submit"));
+  h.requests[1].resolve({
+    ok: true,
+    json: async () => ({
+      reply: "Verified local fallback reply.",
+      response_type: "answer",
+      engine_mode: "offline",
+      fallback_used: true,
+      scope: "shopper_preview",
+    }),
+  });
+  await settle();
+
+  const footers = h.stream.querySelectorAll(".ai-turn-footer");
+  assert.equal(footers[1].dataset.engineMode, "offline_fallback");
+  assert.match(footers[1].textContent, /Offline Python Fallback/);
+  assert.doesNotMatch(footers[1].textContent, /Approved Real LLM/);
+});

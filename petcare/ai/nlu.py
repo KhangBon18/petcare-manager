@@ -639,8 +639,10 @@ def detect_slot_removals(raw_question: str) -> tuple[bool, tuple[str, ...], bool
 
 
 def _extract_product_category(norm: str, raw_question: str) -> tuple[str | None, str | None]:
-    # Strip explicit SKU codes (e.g. FOOD-999) before matching generic category words
+    # Strip explicit SKU codes (e.g. FOOD-999) and Vietnamese "tài chính" (finance/budget, whose
+    # unaccented token "tai" collides with "nhỏ tai" = ear drops in phrases like "dáng nhỏ tài chính")
     cleaned_norm = _canonicalize_for_nlu(_PRODUCT_CODE_RE.sub(" ", raw_question))
+    cleaned_norm = re.sub(r"\btai\s+chinh\b", "ngan sach", cleaned_norm)
 
     # Vietnamese "cát" vs "cat" disambiguation (excluding exotic dust-baths like "tắm cát")
     if re.search(r"\bcát\b", raw_question, re.IGNORECASE) and not re.search(

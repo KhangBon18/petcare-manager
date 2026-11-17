@@ -169,6 +169,8 @@ class AssistantFallbackTests(unittest.TestCase):
         for configured, failure in ((False, False), (True, False), (True, True)):
             with self.subTest(
                 configured=configured, failure=failure
+            ), patch.dict(
+                app.config, {"AI_PROVIDER_APPROVED": configured}
             ), app.app_context(), patch.object(
                 assistant_service, "read_connection", connection
             ), patch.object(

@@ -32,10 +32,17 @@ def is_configured() -> bool:
     return bool(current_app.config.get("AI_API_BASE_URL") and current_app.config.get("AI_MODEL"))
 
 
-def _completion_url() -> str:
-    base_url = current_app.config["AI_API_BASE_URL"].strip().rstrip("/")
+def validate_endpoint_url(
+    base_url: str,
+    *,
+    app_env: str = "development",
+    allow_http_endpoint: bool = False,
+    allow_test_loopback: bool = False,
+) -> str:
+    """Validate an OpenAI-compatible base URL and enforce SSRF / TLS boundaries before socket egress."""
+    cleaned = str(base_url or "").strip().rstrip("/")
     try:
-        parsed = urlparse(base_url)
+        parsed = urlparse(cleaned)
         _ = parsed.port
     except ValueError as exc:
         raise AIProviderError("Địa chỉ AI endpoint không hợp lệ.") from exc
@@ -49,19 +56,49 @@ def _completion_url() -> str:
         or parsed.fragment
     ):
         raise AIProviderError("Địa chỉ AI endpoint cần dùng http hoặc https.")
+
+    host = parsed.hostname.strip().lower()
+    try:
+        ip_obj = ipaddress.ip_address(host)
+    except ValueError:
+        ip_obj = None
+
+    if ip_obj is not None:
+        if ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_unspecified:
+            raise AIProviderError("Địa chỉ AI endpoint thuộc dải IP nội bộ/metadata bị chặn (SSRF guard).")
+        if ip_obj.is_loopback:
+            allowed_loopback = (app_env == "test" and allow_test_loopback) or (
+                app_env != "production" and allow_http_endpoint
+            )
+            if not allowed_loopback and app_env == "production":
+                raise AIProviderError("Production không cho phép AI endpoint trỏ tới loopback nội bộ.")
+        elif ip_obj.is_private and not allow_http_endpoint:
+            raise AIProviderError("Địa chỉ AI endpoint IP riêng tư bị chặn trừ khi bật ngoại lệ mạng nội bộ tin cậy.")
+    elif host in {"metadata.google.internal", "metadata", "169.254.169.254"}:
+        raise AIProviderError("Địa chỉ AI endpoint thuộc dịch vụ metadata đám mây bị chặn (SSRF guard).")
+
     if (
-        current_app.config.get("APP_ENV") == "production"
+        app_env == "production"
         and parsed.scheme != "https"
-        and not current_app.config.get("AI_ALLOW_HTTP_ENDPOINT")
+        and not allow_http_endpoint
     ):
         raise AIProviderError(
             "Production chỉ gửi dữ liệu AI qua HTTPS; chỉ bật ngoại lệ cho endpoint mạng nội bộ tin cậy."
         )
-    if base_url.endswith("/chat/completions"):
-        return base_url
-    if base_url.endswith("/v1"):
-        return f"{base_url}/chat/completions"
-    return f"{base_url}/v1/chat/completions"
+    if cleaned.endswith("/chat/completions"):
+        return cleaned
+    if cleaned.endswith("/v1"):
+        return f"{cleaned}/chat/completions"
+    return f"{cleaned}/v1/chat/completions"
+
+
+def _completion_url() -> str:
+    return validate_endpoint_url(
+        current_app.config.get("AI_API_BASE_URL", ""),
+        app_env=str(current_app.config.get("APP_ENV", "development")).strip().lower(),
+        allow_http_endpoint=bool(current_app.config.get("AI_ALLOW_HTTP_ENDPOINT")),
+        allow_test_loopback=bool(current_app.config.get("AI_TEST_ALLOW_LOOPBACK_PROVIDER")),
+    )
 
 
 def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
@@ -70,6 +107,8 @@ def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
     The caller decides which information is included in messages. Images are
     sent only when the separate AI_VISION_ENABLED setting is enabled.
     """
+    if current_app.config.get("AI_PILOT_KILL_SWITCH"):
+        raise AIProviderError("Công tắc ngắt khẩn cấp AI_PILOT_KILL_SWITCH đang bật.")
     if not is_configured():
         raise AIProviderError("Chưa cấu hình mô hình AI.")
 
@@ -173,12 +212,15 @@ def complete_chat_with_tools(
     *,
     timeout_seconds: float | None = None,
     max_retries: int = 1,
+    max_output_tokens: int | None = None,
 ) -> dict:
     """Call an approved OpenAI-compatible chat completions endpoint with function tools.
 
-    Strictly gated behind `AI_PROVIDER_APPROVED=True` and `AI_TOOL_CALLING_ENABLED=True`
-    plus `_enforce_test_provider_guard(url)`. Never retries HTTP 4xx or malformed JSON.
+    Strictly gated behind `AI_PROVIDER_APPROVED=True` and `AI_TOOL_CALLING_ENABLED=True`,
+    kill-switch inactive, plus `_enforce_test_provider_guard(url)`. Never retries HTTP 4xx or malformed JSON.
     """
+    if current_app.config.get("AI_PILOT_KILL_SWITCH"):
+        raise AIProviderError("Công tắc ngắt khẩn cấp AI_PILOT_KILL_SWITCH đang bật.")
     if not (
         current_app.config.get("AI_PROVIDER_APPROVED")
         and current_app.config.get("AI_TOOL_CALLING_ENABLED")
@@ -190,13 +232,27 @@ def complete_chat_with_tools(
     url = _completion_url()
     _enforce_test_provider_guard(url)
 
+    configured_max_out = int(
+        max_output_tokens
+        if max_output_tokens is not None
+        else current_app.config.get("AI_MAX_OUTPUT_TOKENS", 700)
+    )
+    bounded_max_out = max(128, min(configured_max_out, 2048))
+
     try:
         request_body: dict = {
             "model": current_app.config["AI_MODEL"],
             "messages": messages,
             "temperature": 0.1,
-            "max_tokens": 700,
         }
+        reasoning_effort = str(current_app.config.get("AI_REASONING_EFFORT", "") or "").strip().lower()
+        if reasoning_effort:
+            if reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
+                raise AIProviderError("AI_REASONING_EFFORT configuration is invalid.")
+            request_body["reasoning_effort"] = reasoning_effort
+            request_body["max_completion_tokens"] = bounded_max_out
+        else:
+            request_body["max_tokens"] = bounded_max_out
         if tools:
             request_body["tools"] = tools
             request_body["tool_choice"] = "auto"

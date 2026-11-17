@@ -19,9 +19,15 @@
       <h1>{{ t('Trợ lý AI') }}</h1>
       <p>{{ t('Tư vấn chọn thú cưng, gợi ý & so sánh sản phẩm theo đơn giá thực tế, tra cứu kiến thức chăm sóc có trích dẫn nguồn và phân tích vận hành theo quyền.') }}</p>
       <div class="ai-status-strip">
-        <span class="ai-engine-badge" id="ai-engine-badge">
+        <span
+          class="ai-engine-badge"
+          id="ai-engine-badge"
+          data-engine-state="{{ workspace_meta.provider.diagnostic_state }}"
+        >
           {{ icon('sparkle') }}
-          {% if workspace_meta.provider.active_mode == 'real_llm' %}
+          {% if workspace_meta.provider.active_mode == 'real_llm' and workspace_meta.provider.tool_calling_enabled %}
+            {{ 'AI tạo sinh (Tool-Calling) đã phê duyệt · Có kiểm chứng MySQL' if locale == 'vi' else 'Approved Real LLM (Tool-Calling) · MySQL Grounded' }}
+          {% elif workspace_meta.provider.active_mode == 'real_llm' %}
             {{ t('AI tạo sinh đã phê duyệt · Có kiểm chứng MySQL') }}
           {% else %}
             {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}

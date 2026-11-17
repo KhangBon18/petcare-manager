@@ -17,6 +17,7 @@ from petcare.ai.contracts import (
 from petcare.ai.knowledge_base import (
     build_emergency_triage_response,
     build_medical_boundary_response,
+    build_nonurgent_vet_referral_response,
 )
 from petcare.ai.memory import MEMORY_STORE, SessionState, sanitize_conversation_id
 from petcare.ai.nlu import (
@@ -427,6 +428,20 @@ def try_orchestrate_turn(
             context_state=active_slots.to_public_dict(locale),
         ).to_api_dict()
 
+    if interpreted.intent == "vet_nonurgent_referral":
+        kb_res = build_nonurgent_vet_referral_response(locale, category=interpreted.safety_category)
+        return AssistantTurnResponse(
+            reply=kb_res.reply,
+            response_type=ResponseType.KNOWLEDGE_ANSWER,
+            scope=scope,
+            status="clarification",
+            conversation_id=conv_id,
+            citations=kb_res.citations,
+            safety_notice=kb_res.safety_notice,
+            follow_up_questions=kb_res.follow_up_questions,
+            context_state=active_slots.to_public_dict(locale),
+        ).to_api_dict()
+
     if interpreted.intent == "unsupported_species":
         reply = (
             "Danh mục sản phẩm xác thực và kho tri thức đã kiểm duyệt của PetCare AI hiện **chỉ bao gồm chó và mèo**, "
@@ -498,6 +513,10 @@ def try_orchestrate_turn(
                 context_state=active_slots.to_public_dict(locale),
             ).to_api_dict()
 
+        from flask import current_app as _cur_app, has_app_context as _has_ctx
+
+        pilot_step_guard = _cur_app.config.get("AI_PILOT_STEP_GUARD") if _has_ctx() else None
+
         return run_tool_calling_turn(
             adapter=active_adapter,
             actor=actor,
@@ -507,6 +526,7 @@ def try_orchestrate_turn(
             conversation_id=conv_id,
             offline_fallback_fn=offline_fallback_fn or _default_offline_fallback,
             history=history if isinstance(history, list) else None,
+            step_guard=pilot_step_guard,
         )
 
     # 4. Legacy Store Queries: Enforce strict Shopper Preview boundary or delegate in Workspace

@@ -1,21 +1,29 @@
-"""Dedicated Server-Side Veterinary Safety Triage Engine (AI-2.1 / AI-2.2).
+"""Dedicated Server-Side Veterinary Safety Triage Engine (AI-2.1 / AI-2.2 / AI-3).
 
 Executes deterministically BEFORE shopping intent routing, catalog search, product
-recommendations, or LLM tool selection. Uses clause-level compositional rules,
-negation/historical-resolution scope checks, and typo/slang canonicalization to catch:
-1. Urinary obstruction warning signs (e.g., straining in litter box with little/no urine).
-2. Breathing difficulty / respiratory distress.
-3. Suspected poisoning & acute ingestion of toxic foods, plants, chemicals, or foreign bodies.
-4. Dangerous human medications (OTC painkillers, antidiarrheals, human antibiotics) & unsafe home emetics.
-5. Severe or rapidly worsening neurological (seizures, head-pressing, acute ataxia), icterus/jaundice,
-   mucous-membrane pallor / circulatory shock, hemorrhagic, bloat (GDV), or trauma symptoms.
-6. Requests for prescription medications, mg/kg dosing, or clinical disease diagnosis (excluding
-   purely nutritional feed-label composition questions such as taurine/calcium mg in packaged food).
+recommendations, or LLM tool selection. Separates four explicit safety/care tiers:
+1. `"none"` — General pet-care knowledge, safe ingredient exclusions, dietary allergies,
+   resolved historical conditions, negated symptoms, and routine shopping.
+2. `"vet_nonurgent_referral"` — Active subacute or unrecognized clinical concerns
+   (e.g., multi-day anorexia with lethargy/fever, purulent swelling/abscess/mass,
+   acute non-weight-bearing lameness, persistent repeated vomiting/watery diarrhea)
+   where safe veterinary referral/clarification is preferred over retail shopping.
+3. `"vet_emergency"` — Urgent symptoms & acute incidents:
+   - Urinary obstruction / prolonged straining without urine output.
+   - Breathing difficulty / open-mouth breathing / orthopnea posture.
+   - Suspected poisoning & acute ingestion of toxic foods, plants, chemicals, or foreign bodies.
+   - Accidental therapeutic medication overdose / double administration (e.g., double insulin + neuro signs).
+   - Post-operative surgical wound dehiscence / ripped sutures / exposed underlying tissue.
+   - Severe neurological (seizures, head-pressing, acute ataxia), icterus/jaundice,
+     mucous-membrane pallor / circulatory shock, hemorrhagic, bloat (GDV), or trauma symptoms.
+4. `"vet_medical_boundary"` — Unsafe medical instructions: human OTC drugs, unsafe home
+   emetics, prescription requests, mg/kg drug dosing, or clinical disease diagnosis.
 
-Limitation notice: Rule-based triage improves recall on clinically documented red flags in Vietnamese
-and English (referenced against AVMA, ASPCA Poison Control, and Cornell Feline Health Center public
-triage guidance), but has not undergone independent clinical sign-off by a licensed veterinarian,
-cannot recognize every atypical veterinary presentation, and never diagnoses disease.
+Limitation notice: Rule-based and compositional symptom/incident triage improves recall on
+clinically documented red flags in Vietnamese and English (referenced against AVMA, ASPCA Poison
+Control, AAHA Diabetes Management Guidelines, and Cornell Feline Health Center public guidance),
+but has not undergone independent clinical sign-off by a licensed veterinarian (DVM), cannot
+recognize every atypical veterinary presentation, and never diagnoses disease.
 """
 
 from __future__ import annotations
@@ -30,14 +38,18 @@ from petcare.services.catalog_intent import _normalize
 class SafetyTriageDecision:
     """Structured output of the server-side pre-routing veterinary safety check."""
 
-    outcome: str  # "none" | "vet_emergency" | "vet_medical_boundary"
+    outcome: str  # "none" | "vet_nonurgent_referral" | "vet_emergency" | "vet_medical_boundary"
     category: str | None = None
     matched_signals: tuple[str, ...] = ()
     bypass_attempt_detected: bool = False
 
     @property
     def is_triggered(self) -> bool:
-        return self.outcome in {"vet_emergency", "vet_medical_boundary"}
+        return self.outcome in {
+            "vet_emergency",
+            "vet_medical_boundary",
+            "vet_nonurgent_referral",
+        }
 
 
 _CLAUSE_SPLIT_RE = re.compile(
@@ -116,11 +128,14 @@ _SYMPTOM_NEGATION_PREFIX_RE = re.compile(
 # --- 1. Urinary Obstruction Rules ---
 # Patterns whose own phrasing inherently expresses inability/absence of urine (must NOT be skipped by internal "khong"/"no")
 _URINARY_INHERENT_ABSENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"\bkhong\s+(?:di\s+)?(?:tieu|dai)\s+(?:duoc|ra)\b"),
-    re.compile(r"\b(?:tieu|dai)\s+khong\s+(?:ra|duoc)\b"),
-    re.compile(r"\bkhong\s+ra\s+(?:giot\s+|ti\s+|chut\s+)?nuoc\s+tieu\b"),
-    re.compile(r"\b(?:cannot|can t|cant|unable to)\s+(?:urinate|pee|pass urine)\b"),
-    re.compile(r"\b(?:produced|passing|passed|producing)\s+(?:no|zero|little|almost no)\s+urine\b"),
+    re.compile(r"\bkhong\s+(?:di\s+)?(?:tieu|dai)\s+(?:duoc|ra|noi)\b"),
+    re.compile(r"\b(?:tieu|dai)\s+khong\s+(?:ra|duoc|noi)\b"),
+    re.compile(
+        r"\bkhong\s+(?:ra|ri|nho|co|thay\s+ra)\s+(?:duoc\s+)?"
+        r"(?:giot\s+|ti\s+|chut\s+|mieng\s+)?(?:nuoc\s+)?(?:tieu|dai)(?:\s+nao)?\b"
+    ),
+    re.compile(r"\b(?:cannot|can t|cant|unable\s+to|failed\s+to)\s+(?:urinate|pee|pass(?:\s+any)?\s+urine)\b"),
+    re.compile(r"\b(?:produced|passing|passed|producing)\s+(?:no|zero|little|almost\s+no|scant)\s+(?:urine|pee)\b"),
 )
 
 # Presence-of-symptom urinary patterns (must respect clause-level negation such as "không bị bí tiểu", "no blood in urine")
@@ -139,33 +154,67 @@ _URINARY_META_NEGATION_RE = re.compile(
     r"not\s+straining|no\s+urinary\s+(?:issues?|blockage|problems?)|urinating\s+normally|peeing\s+normally)\b"
 )
 
+# Compositional urinary concepts: (a) straining / repeated agitated litter-box visits + (b) absent/scant urine or vocal pain
 _LITTER_OR_POSTURE_STRAIN_RE = re.compile(
-    r"\b(?:ngoi ran|cu ran|ran mai|co ran|ran dau|ran tieu|ran dai|"
-    r"(?:vao|ra vao)\s+(?:khay|chau|thau|hop|bon)\s+cat\s+(?:lien tuc|mai|nhieu lan|hoai)|"
-    r"(?:vao|ngoi trong)\s+(?:khay|chau|thau|hop)\s+cat.*ran|"
-    r"straining\s+in\s+(?:the\s+)?(?:litter\s*box|box)|squatting\s+(?:repeatedly\s+)?in\s+(?:the\s+)?(?:litter|box)|"
-    r"repeated\s+trips\s+to\s+(?:the\s+)?litter\s*box|in\s+and\s+out\s+of\s+(?:the\s+)?litter\s*box|"
-    r"crying\s+in\s+(?:the\s+)?litter\s*box)\b"
+    r"\b(?:ngoi\s+ran|cu\s+ran|ran\s+mai|ran\s+hoai|co\s+ran|ran\s+dau|ran\s+tieu|ran\s+dai|ran\s+nay\s+gio|"
+    r"(?:vao|ra\s+vao|nhay\s+ra\s+nhay\s+(?:vo|vao)|chui\s+ra\s+chui\s+(?:vo|vao)|leo\s+ra\s+leo\s+(?:vo|vao)|"
+    r"di\s+ra\s+di\s+vao|leo\s+vo|leo\s+vao|chui\s+vo|chui\s+vao|ngoi\s+trong)\s+"
+    r"(?:khay|chau|thau|hop|bon|nha)\s+(?:cat|ve\s+sinh)"
+    r"(?:[^.!?]{0,45}\b(?:lien\s+tuc|mai|hoai|nhieu\s+lan|gao|khoc|keu|ren|ran))?|"
+    r"straining(?:\s+hard|\s+repeatedly)?(?:\s+in\s+(?:the\s+)?(?:litter\s*box|box))?|"
+    r"squatting\s+(?:repeatedly\s+)?in\s+(?:the\s+)?(?:litter|box)|"
+    r"(?:repeated\s+trips\s+to|in\s+and\s+out\s+of|keeps?\s+(?:going|jumping|visiting)(?:\s+into|\s+to)?|"
+    r"crying\s+in|yowling\s+in)\s+(?:the\s+|his\s+|her\s+)?(?:litter\s*box|litter\s+tray|box))\b"
 )
 _LOW_URINE_OR_DISTRESS_RE = re.compile(
-    r"\b(?:khong ra|khong co|chua ra|chi ra vai giot|nho giot|tung giot|cat van kho|cat kho cong|khong thay uot|"
-    r"keu gao|keu dau|keu ren|dau bung|liem bo phan sinh duc|"
-    r"no urine|nothing comes out|nothing came out|only a few drops|just a drop|drops of urine|dry litter|completely dry|"
-    r"yowling|crying in pain|howling in pain|licking genitals)\b"
+    r"\b(?:khong\s+(?:ra|ri|nho|co|thay)(?:\s+duoc)?(?:\s+(?:giot|ti|chut|mieng))?|chua\s+ra|"
+    r"chi\s+(?:ra|ri)\s+(?:vai\s+giot|nho\s+giot|tung\s+giot)|nho\s+giot|tung\s+giot|"
+    r"cat\s+(?:van\s+)?kho|cat\s+kho\s+cong|khong\s+thay\s+uot|"
+    r"gao\s+khoc|keu\s+gao|keu\s+dau|keu\s+ren|dau\s+bung|liem\s+bo\s+phan\s+sinh\s+duc|"
+    r"no\s+(?:urine|pee)|nothing\s+(?:comes?|came|is\s+coming)\s+out|"
+    r"without\s+(?:passing\s+)?(?:any\s+)?(?:urine|pee|a\s+drop)|not\s+a\s+(?:single\s+)?drop|"
+    r"only\s+a\s+few\s+drops|just\s+a\s+drop|drops\s+of\s+urine|dry\s+(?:litter|clumps?)|completely\s+dry|"
+    r"yowling|crying\s+in\s+pain|howling\s+in\s+pain|licking\s+(?:his\s+|her\s+|its\s+)?genitals)\b"
 )
 
 
-# --- 2. Breathing / Respiratory Distress Rules ---
+# --- 2. Breathing / Respiratory Distress Rules (Direct + Order-Independent Compositional) ---
 _RESPIRATORY_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:kho tho|tho gap|tho doc|ha mieng tho|ha mom tho|meo tho bang mieng|tho bung|tho rut lom bung|ngat tho|nghet tho|ngop tho|hoc xuong.*tho)\b"),
     re.compile(r"\b(?:luoi tim|loi tim|nuou tim|niem mac tim tai|tim tai)\b"),
     re.compile(r"\bkhong\s+tho\s+(?:duoc|noi)\b"),
     re.compile(r"\b(?:difficulty|trouble|hard(?:\s+time)?|struggling)\s+(?:to\s+)?breath(?:e|ing)\b"),
     re.compile(r"\b(?:labored|open[-\s]mouth)\s+breathing\b"),
-    re.compile(r"\b(?:cat|kitten)\s+(?:is\s+)?panting\s+with\s+(?:its\s+|his\s+|her\s+)?mouth\s+open\b"),
-    re.compile(r"\bbreathing\s+with\s+(?:its\s+|his\s+|her\s+)?mouth\s+open\b"),
+    re.compile(
+        r"\b(?:cat|kitten)\s+(?:is\s+)?panting\s+with\s+(?:its\s+|his\s+|her\s+)?"
+        r"mouth\s+(?:wide\s+|fully\s+|still\s+|constantly\s+)?open\b"
+    ),
+    re.compile(
+        r"\bbreathing\s+(?:heavily\s+|rapidly\s+|fast\s+|hard\s+)?with\s+(?:its\s+|his\s+|her\s+)?"
+        r"mouth\s+(?:wide\s+|fully\s+|still\s+|constantly\s+)?open\b"
+    ),
     re.compile(r"\b(?:gasping\s+for\s+air|gasping|choking|blue\s+gums|purple\s+tongue|cyanotic|respiratory\s+distress)\b"),
     re.compile(r"\b(?:cannot|can t|cant)\s+breathe\b"),
+)
+
+# Compositional respiratory concepts (word-order independent across clauses)
+_RESPIRATORY_ACTIVITY_CONCEPT_RE = re.compile(
+    r"\b(?:breath(?:e|es|ing)|pant(?:s|ing)|wheez(?:e|es|ing)|respirations?|tho)\b"
+)
+_OPEN_MOUTH_CONCEPT_RE = re.compile(
+    r"\bmouth\s+(?:is\s+|stays?\s+|kept\s+|wide\s+|fully\s+|constantly\s+|still\s+|hanging\s+)*open\b"
+    r"|\bopen[-\s]+(?:wide\s+)?mouth\b"
+    r"|\b(?:ha|mo)\s+(?:rong\s+|to\s+)?(?:mieng|mom)\b"
+    r"|\b(?:mieng|mom)\s+(?:ha|mo)\s+(?:rong|to|lien\s+tuc)\b"
+)
+_ORTHOPNEA_POSTURE_CONCEPT_RE = re.compile(
+    r"\b(?:neck\s+(?:stretched|extended)(?:\s+out)?|sitting\s+hunched|crouched\s+with\s+elbows|"
+    r"elbows?\s+(?:abducted|out)|(?:abdomen|belly|sides?|chest)\s+heaving|nostrils?\s+flaring|"
+    r"vuon\s+(?:dai\s+)?co|duoi\s+thang\s+co|ngoi\s+co\s+ro|bung\s+phap\s+phong|canh\s+mui\s+phap\s+phong)\b"
+)
+_BENIGN_DENTAL_OR_POST_EXERCISE_RE = re.compile(
+    r"\b(?:brush(?:ing)?\s+teeth|tooth\s*brush|toothpaste|kem\s+danh\s+rang|danh\s+rang|"
+    r"after\s+(?:playing\s+fetch|running\s+at\s+the\s+park|vigorous\s+play)|sau\s+khi\s+chay\s+choi)\b"
 )
 
 
@@ -321,6 +370,88 @@ _DOSING_OR_PRESCRIPTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\b(?:chan\s+doan\s+benh|mac\s+benh\s+gi|bi\s+benh\s+gi|co\s+phai\s+benh\s+parvo|co\s+phai\s+benh\s+giam\s+bach\s+cau|co\s+phai\s+care)\b"),
 )
 
+# --- 6. Therapeutic Medication Overdose / Double Administration & Post-Operative Wound Dehiscence ---
+_THERAPEUTIC_OVERDOSE_EVENT_RE = re.compile(
+    r"\b(?:twice|two\s+doses|double\s+(?:the\s+)?(?:dose|dosed|shot|injection|amount)|2x\s+(?:the\s+)?dose|"
+    r"overdosed?|overdose\s+of|too\s+much\s+(?:insulin|medication|medicine|sedative)|"
+    r"accidentally\s+(?:gave|injected|administered|dosed)[^.!?]{0,45}\b(?:again|twice|double|extra|two\s+times)|"
+    r"second\s+(?:dose|shot|injection)\s+by\s+mistake|"
+    r"(?:tiem|chich|cho\s+uong|nho|dung)\s+(?:nham|lo|lap\s+lai)?[^.!?]{0,35}"
+    r"\b(?:hai\s+lan|2\s+lan|hai\s+mui|2\s+mui|gap\s+doi|qua\s+lieu|them\s+mot\s+(?:lieu|mui)\s+nua)|"
+    r"qua\s+lieu\s+thuoc|tiem\s+qua\s+lieu|uong\s+qua\s+lieu)\b"
+)
+_THERAPEUTIC_AGENT_RE = re.compile(
+    r"\b(?:insulin|insuline|thuoc\s+tieu\s+duong|medication|medicine|prescription|dose|injection|shot|"
+    r"sedative|anesthetic|phenobarbital|gabapentin|furosemide|heart\s+meds?|seizure\s+meds?|thyroid\s+meds?|"
+    r"thuoc|mui\s+tiem|vien\s+thuoc|lieu\s+thuoc)\b"
+)
+_INSULIN_AGENT_RE = re.compile(r"\b(?:insulin|insuline|thuoc\s+tieu\s+duong)\b")
+_HYPOGLYCEMIC_OR_TOXIC_NEURO_RE = re.compile(
+    r"\b(?:wobbling|wobbly|staggering|ataxia|staring\s+blankly|glassy[-\s]eyed|dazed|disoriented|"
+    r"trembling|shaking|twitching|weak|lethargic|limp|acting\s+drunk|"
+    r"loang\s+choang|lao\s+dao|do\s+dan|nhin\s+vo\s+hon|mat\s+phuong\s+huong|run\s+ray|met\s+la|ha\s+duong\s+huyet)\b"
+)
+
+_SURGICAL_OR_SUTURE_SITE_RE = re.compile(
+    r"\b(?:spay(?:ed)?|neuter(?:ed)?|castrat(?:ed|ion)|c[-\s]?section|surgery|surgical|post[-\s]?op(?:erative)?|"
+    r"stitches|sutures|staples|incision|belly\s+wound|abdominal\s+wound|"
+    r"triet\s+san|mo\s+de|phau\s+thuat|hau\s+phau|chi\s+khau|chi\s+mo|vet\s+mo|vet\s+khau|mui\s+khau)\b"
+)
+_WOUND_DEHISCENCE_OR_EXPOSED_TISSUE_RE = re.compile(
+    r"\b(?:chewed\s+(?:open|out|through|off)|ripped\s+(?:open|out)|pulled\s+out|popped\s+open|split\s+open|"
+    r"came\s+(?:open|undone|apart)|opened\s+up|gaping(?:\s+open)?|dehiscence|bleeding\s+heavily|oozing\s+pus|"
+    r"(?:pink\s+|red\s+|raw\s+)?(?:tissue|flesh|organ|organs|intestines?|bowels?|guts?|fat)\s+"
+    r"(?:is\s+|are\s+)?(?:poking|sticking|hanging|bulging|protruding|coming|exposed)|"
+    r"exposed\s+(?:tissue|flesh|muscle|bone|organs?)|"
+    r"bung\s+chi|dut\s+chi|tuot\s+chi|can\s+(?:dut|bung|rach)(?:\s+(?:chi|vet\s+mo|vet\s+khau))?|"
+    r"ho\s+(?:mieng|vet\s+mo|vet\s+khau|toac)|rach\s+(?:vet\s+mo|vet\s+khau)|bung\s+vet\s+mo|"
+    r"loi\s+(?:thit|mo|ruot|noi\s+tang)|thit\s+(?:do|hong)\s+loi\s+ra)\b"
+)
+_STANDALONE_SEVERE_WOUND_RE = re.compile(
+    r"\b(?:exposed\s+(?:bone|organs?|intestines?)|(?:intestines?|organs?|guts?)\s+(?:hanging|protruding|poking)\s+out|"
+    r"deep\s+gaping\s+wound|vet\s+thuong\s+ho\s+sau|loi\s+(?:ruot|noi\s+tang|xuong)\s+ra\s+ngoai)\b"
+)
+
+# --- 7. Nonurgent / Unrecognized Potentially Serious Clinical Concerns (Vet Referral Before Shopping) ---
+_PREVENTIVE_OR_DIETARY_CONTEXT_RE = re.compile(
+    r"\b(?:de\s+khong|tranh\s+bi|han\s+che|phong\s+ngua|prevent(?:ing)?|avoid(?:ing)?|"
+    r"khi\s+doi\s+(?:hat|thuc\s+an)|transition(?:ing)?\s+food|sensitive\s+stomach|bung\s+yeu|"
+    r"bui\s+long|hairballs?|di\s+ung|allergic|allergy)\b"
+)
+_NONURGENT_CLINICAL_CONCERN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        "prolonged_anorexia_or_lethargy",
+        re.compile(
+            r"\b(?:bo\s+an|khong\s+an\s+gi|nhin\s+an|stopped\s+eating|not\s+eating|refuses?\s+to\s+eat|hasn\s+t\s+eaten)\b"
+            r"[^.!?]{0,45}\b(?:\d+\s*(?:ngay|hom|days?)|may\s+ngay|tu\s+hom\s+qua|since\s+yesterday|"
+            r"nam\s+u\s+ru|met\s+moi|sot|fever|lethargic|hiding|sut\s+can|losing\s+weight)\b"
+        ),
+    ),
+    (
+        "purulent_discharge_or_swelling",
+        re.compile(
+            r"\b(?:chay\s+mu|co\s+mu|ap\s+xe|khoi\s+u\s+sung|cuc\s+u\s+to|mat\s+sung\s+hip|tai\s+chay\s+mu|"
+            r"oozing\s+pus|yellow\s+pus|green\s+pus|abscess|swollen\s+shut|foul[-\s]smelling\s+discharge|"
+            r"rapidly\s+growing\s+lump|bleeding\s+ulcer)\b"
+        ),
+    ),
+    (
+        "acute_pain_or_lameness",
+        re.compile(
+            r"\b(?:di\s+khap\s+khieng|co\s+chan\s+khong\s+cham\s+dat|keu\s+dau\s+khi\s+cham|"
+            r"limping\s+badly|won\s+t\s+put\s+weight\s+on|cannot\s+bear\s+weight|yelping\s+in\s+pain)\b"
+        ),
+    ),
+    (
+        "persistent_gi_or_febrile_illness",
+        re.compile(
+            r"\b(?:non\s+nhieu\s+lan|non\s+lien\s+tuc|tieu\s+chay\s+phan\s+nuoc|sot\s+cao|"
+            r"vomiting\s+repeatedly|throwing\s+up\s+all\s+(?:morning|day|night)|watery\s+diarrhea\s+for|"
+            r"high\s+fever)\b"
+        ),
+    ),
+)
+
 _DIETARY_NUTRIENT_RE = re.compile(
     r"\b(?:taurine|canxi|calcium|omega|epa|dha|glucosamine|chondroitin|phosphorus|photpho|"
     r"magnesium|magie|sodium|natri|zinc|kem|iron|sat|biotin|lysine|dam\s+tho|chat\s+beo|crude\s+protein|crude\s+fat)\b"
@@ -344,7 +475,7 @@ def _normalize_for_triage(raw_text: str) -> str:
 
 
 _INTERNAL_PREDICATE_NEGATION_RE = re.compile(
-    r"\b(?:khong(?!\s+(?:phan\s+ung|di\s+duoc)\b)|chua|not(?!\s+sure\b)|no|never|neither|nor|without)\b"
+    r"\b(?:khong(?!\s+(?:phan\s+ung|di\s+duoc|an\s+gi|cham\s+dat)\b)|chua|not(?!\s+(?:sure|eating)\b)|no|never|neither|nor|without)\b"
 )
 
 
@@ -357,6 +488,15 @@ def _is_match_negated_in_clause(clause: str, match_start: int, matched_span: str
     if matched_span and _INTERNAL_PREDICATE_NEGATION_RE.search(matched_span):
         return True
     return False
+
+
+def _has_non_negated_concept(clauses: list[str], pattern: re.Pattern[str], *, check_span: bool = False) -> str | None:
+    """Return the first non-negated match across active clauses, or `None`."""
+    for clause in clauses:
+        for m in pattern.finditer(clause):
+            if not _is_match_negated_in_clause(clause, m.start(), m.group(0) if check_span else ""):
+                return m.group(0)
+    return None
 
 
 def _is_resolved_historical_mention(full_norm: str) -> bool:
@@ -432,20 +572,16 @@ def evaluate_veterinary_safety(raw_question: str) -> SafetyTriageDecision:
                             bypass_attempt_detected=bypass_attempt,
                         )
 
-            has_non_negated_strain = any(
-                (m := _LITTER_OR_POSTURE_STRAIN_RE.search(clause)) is not None
-                and not _is_match_negated_in_clause(clause, m.start())
-                for clause in clauses
-            )
-            if has_non_negated_strain and _LOW_URINE_OR_DISTRESS_RE.search(sanitized_full):
+            strain_sig = _has_non_negated_concept(clauses, _LITTER_OR_POSTURE_STRAIN_RE)
+            if strain_sig and _LOW_URINE_OR_DISTRESS_RE.search(sanitized_full):
                 return SafetyTriageDecision(
                     outcome="vet_emergency",
                     category="urinary_obstruction",
-                    matched_signals=("litter_straining", "low_or_absent_urine_or_pain"),
+                    matched_signals=(strain_sig, "low_or_absent_urine_or_pain"),
                     bypass_attempt_detected=bypass_attempt,
                 )
 
-        # 2. Breathing / Respiratory Distress Check (Clause-level negation aware)
+        # 2. Breathing / Respiratory Distress Check (Direct patterns + order-independent compositional posture/mouth)
         for clause in clauses:
             for pat in _RESPIRATORY_PATTERNS:
                 m = pat.search(clause)
@@ -465,7 +601,59 @@ def evaluate_veterinary_safety(raw_question: str) -> SafetyTriageDecision:
                             bypass_attempt_detected=bypass_attempt,
                         )
 
-        # 3. Acute Poisoning, Toxic Substance, or Swallowed Human Drug Check
+        if not _BENIGN_DENTAL_OR_POST_EXERCISE_RE.search(sanitized_full):
+            resp_verb = _has_non_negated_concept(clauses, _RESPIRATORY_ACTIVITY_CONCEPT_RE)
+            if resp_verb is not None:
+                open_mouth_sig = _has_non_negated_concept(clauses, _OPEN_MOUTH_CONCEPT_RE)
+                orthopnea_sig = _has_non_negated_concept(clauses, _ORTHOPNEA_POSTURE_CONCEPT_RE)
+                if open_mouth_sig is not None or orthopnea_sig is not None:
+                    return SafetyTriageDecision(
+                        outcome="vet_emergency",
+                        category="respiratory_distress",
+                        matched_signals=tuple(s for s in (resp_verb, open_mouth_sig, orthopnea_sig) if s),
+                        bypass_attempt_detected=bypass_attempt,
+                    )
+
+        # 3a. Therapeutic Medication Overdose / Double Administration Incident (e.g., double insulin + neuro signs)
+        overdose_sig = _has_non_negated_concept(clauses, _THERAPEUTIC_OVERDOSE_EVENT_RE)
+        agent_sig = _has_non_negated_concept(clauses, _THERAPEUTIC_AGENT_RE)
+        if overdose_sig is not None and agent_sig is not None:
+            return SafetyTriageDecision(
+                outcome="vet_emergency",
+                category="medication_overdose_or_adverse_event",
+                matched_signals=(overdose_sig, agent_sig),
+                bypass_attempt_detected=bypass_attempt,
+            )
+        insulin_sig = _has_non_negated_concept(clauses, _INSULIN_AGENT_RE)
+        hypoglycemic_sig = _has_non_negated_concept(clauses, _HYPOGLYCEMIC_OR_TOXIC_NEURO_RE)
+        if insulin_sig is not None and hypoglycemic_sig is not None:
+            return SafetyTriageDecision(
+                outcome="vet_emergency",
+                category="medication_overdose_or_adverse_event",
+                matched_signals=(insulin_sig, hypoglycemic_sig),
+                bypass_attempt_detected=bypass_attempt,
+            )
+
+        # 3b. Post-Operative Surgical Wound Dehiscence / Exposed Underlying Tissue
+        standalone_wound = _has_non_negated_concept(clauses, _STANDALONE_SEVERE_WOUND_RE)
+        if standalone_wound is not None:
+            return SafetyTriageDecision(
+                outcome="vet_emergency",
+                category="post_operative_or_wound_emergency",
+                matched_signals=(standalone_wound,),
+                bypass_attempt_detected=bypass_attempt,
+            )
+        surg_site = _has_non_negated_concept(clauses, _SURGICAL_OR_SUTURE_SITE_RE)
+        dehiscence_sig = _has_non_negated_concept(clauses, _WOUND_DEHISCENCE_OR_EXPOSED_TISSUE_RE)
+        if surg_site is not None and dehiscence_sig is not None:
+            return SafetyTriageDecision(
+                outcome="vet_emergency",
+                category="post_operative_or_wound_emergency",
+                matched_signals=(surg_site, dehiscence_sig),
+                bypass_attempt_detected=bypass_attempt,
+            )
+
+        # 3c. Acute Poisoning, Toxic Substance, or Swallowed Human Drug Check
         has_acute_exposure = _has_non_negated_acute_ingestion(clauses)
         is_educational_query = bool(_GENERAL_EDUCATIONAL_TOXIN_RE.search(sanitized_full)) and not has_acute_exposure
 
@@ -599,5 +787,17 @@ def evaluate_veterinary_safety(raw_question: str) -> SafetyTriageDecision:
                         matched_signals=(m.group(0),),
                         bypass_attempt_detected=bypass_attempt,
                     )
+
+    # 6. Nonurgent / Unrecognized Potentially Serious Clinical Concerns -> Safe Vet Referral Over Shopping
+    if not is_resolved_history and not _PREVENTIVE_OR_DIETARY_CONTEXT_RE.search(sanitized_full):
+        for concern_cat, concern_pat in _NONURGENT_CLINICAL_CONCERN_PATTERNS:
+            sig = _has_non_negated_concept(clauses, concern_pat, check_span=True)
+            if sig is not None:
+                return SafetyTriageDecision(
+                    outcome="vet_nonurgent_referral",
+                    category=concern_cat,
+                    matched_signals=(sig,),
+                    bypass_attempt_detected=bypass_attempt,
+                )
 
     return SafetyTriageDecision(outcome="none", bypass_attempt_detected=bypass_attempt)
