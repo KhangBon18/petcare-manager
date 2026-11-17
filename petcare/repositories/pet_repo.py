@@ -325,15 +325,15 @@ def return_sold_pet(connection, pet_id, customer_id, sale_status):
 
 
 def iter_filtered_for_image_search(connection, species="", status="available", batch_size=250):
-    aliases = {"mèo": ("Mèo", "cat", "feline"), "cat": ("Mèo", "cat", "feline"),
-               "chó": ("Chó", "dog", "canine"), "dog": ("Chó", "dog", "canine"),
-               "thỏ": ("Thỏ", "rabbit", "bunny"), "rabbit": ("Thỏ", "rabbit", "bunny")}.get(species.casefold(), (species, species, species))
+    from petcare.vision.species_taxonomy import sql_species_aliases
+
+    aliases = sql_species_aliases(species) if species else ("",) * 7
     cursor = connection.cursor(dictionary=True, buffered=False)
     try:
         cursor.execute("SELECT id, code, name, species, breed, coat_color, eye_color, appearance_tags, "
                        "sale_status, photo_filename, photo_descriptor, sale_price FROM pets "
                        "WHERE tenant_id = @petcare_tenant_id "
-                       "AND (%s = '' OR species COLLATE utf8mb4_0900_ai_ci IN (%s, %s, %s)) "
+                       "AND (%s = '' OR species COLLATE utf8mb4_0900_ai_ci IN (%s, %s, %s, %s, %s, %s, %s)) "
                        "AND (%s = '' OR sale_status = %s) ORDER BY id", (species, *aliases, status, status))
         while rows := cursor.fetchmany(max(1, min(batch_size, 1000))):
             yield from rows

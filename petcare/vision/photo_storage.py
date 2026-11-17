@@ -14,6 +14,7 @@ from petcare.vision.image_features import (
     descriptor_to_json,
     normalize_image_bytes,
     read_upload,
+    sha256_hex,
 )
 from petcare.vision.media_storage import LocalMediaStorage
 
@@ -75,8 +76,12 @@ def store_pet_photo(
 ) -> StoredPhoto:
     """Validate and re-encode a user upload, stripping metadata and its name."""
     data = read_upload(upload.stream, max_bytes)
+    raw_sha = sha256_hex(data)
     normalized = normalize_image_bytes(data)
-    descriptor = describe_image(normalized)
+    norm_sha = sha256_hex(normalized)
+    descriptor = describe_image(
+        normalized, raw_sha256=raw_sha, normalized_sha256=norm_sha
+    )
 
     filename = _save_normalized_image(normalized, image_dir, tenant_id)
     return StoredPhoto(filename, descriptor, descriptor_to_json(descriptor))

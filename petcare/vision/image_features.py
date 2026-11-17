@@ -7,7 +7,9 @@ service and does not claim to identify an animal by itself.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 from dataclasses import asdict, dataclass
 from io import BytesIO
 from typing import BinaryIO
@@ -15,6 +17,7 @@ from typing import BinaryIO
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from petcare.services.exceptions import ValidationError
+from petcare.vision.species_taxonomy import COAT_PROFILE_BUCKETS
 
 
 MAX_PIXELS = 20_000_000
@@ -25,6 +28,12 @@ VISUAL_HASH_BITS = 64
 _HISTOGRAM_WEIGHT = 0.39
 _GRID_WEIGHT = 0.22
 _UINT64_MASK = (1 << 64) - 1
+_HEX64_RE_LEN = 16
+_SHA256_HEX_LEN = 64
+_DCT_COS = tuple(
+    tuple(math.cos((2 * x + 1) * u * math.pi / 64.0) for u in range(8))
+    for x in range(32)
+)
 
 
 def _make_visual_projections():
@@ -70,6 +79,142 @@ class ImageDescriptor:
     # Version 1 is a 64-bit SimHash used only to find likely image candidates.
     # The full descriptor remains authoritative for ranking.
     visual_hash: str = ""
+    # AI-4.0a cryptographic & perceptual signatures + backdrop-masked coat profile.
+    raw_sha256: str = ""
+    normalized_sha256: str = ""
+    dhash64: str = ""
+    phash64: str = ""
+    subject_coat_profile: tuple[float, ...] = ()
+    flat_pixel_ratio: float = 0.0
+
+
+def sha256_hex(data: bytes) -> str:
+    """Return lowercase 64-character SHA-256 hex digest for image byte comparison."""
+    return hashlib.sha256(data).hexdigest()
+
+
+def _compute_dhash64(image: Image.Image) -> str:
+    gray = list(_flatten_pixels(image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)))
+    bits = 0
+    for r in range(8):
+        row = gray[r * 9 : (r + 1) * 9]
+        for c in range(8):
+            bits = (bits << 1) | int(row[c] > row[c + 1])
+    return f"{bits:016x}"
+
+
+def _compute_phash64(image: Image.Image) -> str:
+    px = list(_flatten_pixels(image.convert("L").resize((32, 32), Image.Resampling.LANCZOS)))
+    tmp = [[0.0] * 8 for _ in range(32)]
+    for y in range(32):
+        row = px[y * 32 : (y + 1) * 32]
+        for u in range(8):
+            tmp[y][u] = sum(row[x] * _DCT_COS[x][u] for x in range(32))
+    coeffs: list[float] = []
+    for v in range(8):
+        for u in range(8):
+            if u == 0 and v == 0:
+                continue
+            coeffs.append(sum(tmp[y][u] * _DCT_COS[y][v] for y in range(32)))
+    median = sorted(coeffs)[len(coeffs) // 2]
+    bits = 0
+    for val in coeffs:
+        bits = (bits << 1) | int(val > median)
+    return f"{bits:016x}"
+
+
+def _compute_flat_pixel_ratio(image: Image.Image) -> float:
+    px = list(_flatten_pixels(image.convert("L").resize((128, 128), Image.Resampling.BILINEAR)))
+    near_zero = 0
+    total = 128 * 127
+    for y in range(128):
+        row = px[y * 128 : (y + 1) * 128]
+        for x in range(127):
+            if abs(row[x] - row[x + 1]) <= 1:
+                near_zero += 1
+    return round(near_zero / total, 5)
+
+
+def _compute_subject_coat_profile(image: Image.Image) -> tuple[float, ...]:
+    """Estimate foreground subject coat-color distribution while masking uniform studio backdrops."""
+    width, height = image.size
+    small = image.resize((48, 48), Image.Resampling.BILINEAR)
+    spx = list(_flatten_pixels(small))
+    border = [
+        spx[y * 48 + x]
+        for y in range(48)
+        for x in range(48)
+        if x < 4 or x >= 44 or y < 4 or y >= 44
+    ]
+    bg_r = sum(p[0] for p in border) / len(border)
+    bg_g = sum(p[1] for p in border) / len(border)
+    bg_b = sum(p[2] for p in border) / len(border)
+
+    cw, ch = max(1, round(width * 0.56)), max(1, round(height * 0.56))
+    lx, ty = (width - cw) // 2, (height - ch) // 2
+    crop = image.crop((lx, ty, lx + cw, ty + ch)).resize((64, 64), Image.Resampling.BILINEAR)
+    px = list(_flatten_pixels(crop))
+
+    def _accumulate(mask_backdrop: bool) -> tuple[dict[str, int], int]:
+        counts = {k: 0 for k in COAT_PROFILE_BUCKETS}
+        kept = 0
+        for r, g, b in px:
+            if (
+                mask_backdrop
+                and abs(r - bg_r) < 16
+                and abs(g - bg_g) < 16
+                and abs(b - bg_b) < 16
+            ):
+                continue
+            kept += 1
+            hi, lo = max(r, g, b), min(r, g, b)
+            chroma = hi - lo
+            lum = 0.299 * r + 0.587 * g + 0.114 * b
+            if lum < 52 and chroma < 42:
+                counts["black_dark"] += 1
+            elif lum > 202 and chroma < 30:
+                counts["white_light"] += 1
+            elif chroma < 24:
+                counts["gray_silver"] += 1
+            elif r > b + 32 and r >= g and g >= b - 12:
+                if lum > 175 and chroma < 65:
+                    counts["cream_tan"] += 1
+                elif r > 132 and (g - b) >= 10:
+                    counts["orange_gold"] += 1
+                else:
+                    counts["brown"] += 1
+            else:
+                counts["other"] += 1
+        return counts, kept
+
+    counts, kept = _accumulate(mask_backdrop=True)
+    if kept < 200:
+        counts, kept = _accumulate(mask_backdrop=False)
+    denom = max(1, kept)
+    return tuple(round(counts[k] / denom, 5) for k in COAT_PROFILE_BUCKETS)
+
+
+def hamming_hex64(left: str | None, right: str | None) -> int | None:
+    if (
+        not isinstance(left, str)
+        or not isinstance(right, str)
+        or len(left) != _HEX64_RE_LEN
+        or len(right) != _HEX64_RE_LEN
+    ):
+        return None
+    try:
+        return (int(left, 16) ^ int(right, 16)).bit_count()
+    except ValueError:
+        return None
+
+
+def compare_coat_profiles(
+    left: tuple[float, ...] | list[float],
+    right: tuple[float, ...] | list[float],
+) -> float | None:
+    if len(left) != len(COAT_PROFILE_BUCKETS) or len(right) != len(COAT_PROFILE_BUCKETS):
+        return None
+    return max(0.0, min(1.0, sum(min(float(a), float(b)) for a, b in zip(left, right))))
 
 
 def _color_name(red: int, green: int, blue: int) -> str:
@@ -85,6 +230,8 @@ def _color_name(red: int, green: int, blue: int) -> str:
         return "vàng"
     if red > 135 and green > 55 and red > green * 1.25 and blue < 125:
         return "cam"
+    if red > 175 and green > 150 and blue > 120 and red >= green >= blue and red - blue >= 18:
+        return "kem"
     if red > 85 and red > green * 1.22 and red > blue * 1.18:
         return "nâu"
     if green > red * 1.18 and green > blue * 1.08:
@@ -96,7 +243,12 @@ def _color_name(red: int, green: int, blue: int) -> str:
     return "nâu"
 
 
-def describe_image(image_bytes: bytes) -> ImageDescriptor:
+def describe_image(
+    image_bytes: bytes,
+    *,
+    raw_sha256: str = "",
+    normalized_sha256: str = "",
+) -> ImageDescriptor:
     """Decode, normalize and describe a supported image using Pillow only."""
     if not image_bytes:
         raise InvalidImage("Vui lòng chọn một ảnh hợp lệ.")
@@ -130,8 +282,22 @@ def describe_image(image_bytes: bytes) -> ImageDescriptor:
         if count / center_total >= 0.08
     )
     visual_hash = _visual_hash(normalized_histogram, center_histogram, grid)
+    clean_norm_sha = normalized_sha256 if len(normalized_sha256) == _SHA256_HEX_LEN else sha256_hex(image_bytes)
+    clean_raw_sha = raw_sha256 if len(raw_sha256) == _SHA256_HEX_LEN else ""
     return ImageDescriptor(
-        width, height, normalized_histogram, grid, dominant, center_histogram, visual_hash
+        width,
+        height,
+        normalized_histogram,
+        grid,
+        dominant,
+        center_histogram,
+        visual_hash,
+        clean_raw_sha,
+        clean_norm_sha,
+        _compute_dhash64(image),
+        _compute_phash64(image),
+        _compute_subject_coat_profile(image),
+        _compute_flat_pixel_ratio(image),
     )
 
 
@@ -226,6 +392,12 @@ def descriptor_from_json(value: str | bytes | dict | None) -> ImageDescriptor | 
         return None
     try:
         data = json.loads(value) if isinstance(value, (str, bytes, bytearray)) else value
+        raw_profile = data.get("subject_coat_profile", ())
+        coat_profile = (
+            tuple(float(item) for item in raw_profile)
+            if isinstance(raw_profile, (list, tuple)) and len(raw_profile) == len(COAT_PROFILE_BUCKETS)
+            else ()
+        )
         return ImageDescriptor(
             int(data["width"]),
             int(data["height"]),
@@ -234,6 +406,12 @@ def descriptor_from_json(value: str | bytes | dict | None) -> ImageDescriptor | 
             tuple(str(item) for item in data.get("dominant_colors", ())),
             tuple(float(item) for item in data.get("center_color_histogram", ())),
             str(data.get("visual_hash", "")),
+            str(data.get("raw_sha256", "")),
+            str(data.get("normalized_sha256", "")),
+            str(data.get("dhash64", "")),
+            str(data.get("phash64", "")),
+            coat_profile,
+            float(data.get("flat_pixel_ratio", 0.0) or 0.0),
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None

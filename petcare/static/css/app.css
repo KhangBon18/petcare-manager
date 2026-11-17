@@ -1534,3 +1534,10 @@ form[aria-busy="true"] button[type="submit"] { cursor: progress; }
   .ai-scope-btn { flex: 1 1 130px; text-align: center; }
   .ai-reset-btn { width: 100%; justify-content: center; }
 }
+
+/* --- AI-4.0a Image Match Tier Badges & Cautions --- */
+.match-tier-badge { display: inline-flex; align-items: center; align-self: flex-start; padding: 3px 9px; margin: 2px 0 4px; border-radius: 999px; font-size: 11px; font-weight: 750; line-height: 1.35; border: 1px solid transparent; }
+.match-tier-badge--exact { background: #e3f4ec; color: #124d38; border-color: #b7deca; }
+.match-tier-badge--neardup { background: #fdf3df; color: #5b3b06; border-color: #ebd09b; }
+.match-tier-badge--similar { background: #ecf1f6; color: #243b53; border-color: #cbd7e3; }
+.identity-caution-note { margin: 4px 0 6px; padding: 6px 8px; border-radius: 8px; background: #f6f8f7; border-left: 3px solid #7a9488; color: #364940; font-size: 11px; line-height: 1.45; }
