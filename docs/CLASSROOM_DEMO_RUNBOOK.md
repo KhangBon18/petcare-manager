@@ -26,35 +26,44 @@ PYTHON=.venv/bin/python scripts/demo/classroom.sh --target qa
 - **Tắt và tự dọn sạch container/storage tạm**: gõ `q` + Enter (hoặc `Ctrl-C`).
 
 ### Chế độ 2 — Khởi động Máy chủ Web QA bật Live Google Gemini Free Tier (Mode B)
-*(Chạy độc lập với `classroom.sh` trên một container MySQL `*_test` cô lập để trình diễn gọi công cụ thật với `gemini-3.5-flash-lite`)*:
+*(Chạy độc lập với `classroom.sh` trên container MySQL QA cô lập `127.0.0.1:33339` để trình diễn gọi công cụ thật với `gemini-3.5-flash-lite`; tái sử dụng an toàn container `petcare-gemini-live-qa` sẵn có mà không cần tạo lại hay xóa dữ liệu)*:
 ```bash
-# 1. Khởi tạo container MySQL QA cô lập (nếu chưa chạy):
-docker run -d --name petcare-gemini-demo-qa \
-  -e MYSQL_ROOT_PASSWORD="<qa_root_pw>" \
-  -e MYSQL_DATABASE=petcare_gemini_demo_test \
-  -p 127.0.0.1:33339:3306 mysql:8.4 \
-  --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
+# 1. Tái sử dụng container MySQL QA cô lập sẵn có trên 127.0.0.1:33339 (hoặc tạo mới nếu chưa có).
+#    Lưu ý: container QA tạm thời cục bộ dùng mật khẩu giả lập mặc định là disposable_qa_pw (không dùng mật khẩu thật):
+QA_DB_PW="${QA_DB_PW:-disposable_qa_pw}"
+docker start petcare-gemini-live-qa 2>/dev/null || \
+  docker run -d --name petcare-gemini-live-qa \
+    -e MYSQL_ROOT_PASSWORD="$QA_DB_PW" \
+    -e MYSQL_DATABASE=petcare_gemini_qa_test \
+    -p 127.0.0.1:33339:3306 mysql:8.4 \
+    --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci
 
-# 2. Khởi chạy máy chủ Web QA bật Gemini Free Tier (chỉ bind 127.0.0.1:5095):
+# 2. Nhập 2 mật khẩu tạm thời khác nhau (>= 16 ký tự) cho admin và staff1 trong phiên trình diễn:
 read -rsp "Admin QA Password (16+ chars): " _adm && echo
 read -rsp "Staff QA Password (16+ chars): " _stf && echo
 
+# 3. Khởi chạy máy chủ Web QA bật Gemini Free Tier (chỉ bind 127.0.0.1:5095).
+#    Cờ --sync-demo-passwords cập nhật hash mật khẩu tạm thời vừa nhập ngay cả khi tái sử dụng DB petcare_gemini_qa_test cũ:
 GEMINI_API_KEY="$(launchctl getenv GEMINI_API_KEY)" \
 DB_HOST=127.0.0.1 \
 DB_PORT=33339 \
-DB_NAME=petcare_gemini_demo_test \
+DB_NAME=petcare_gemini_qa_test \
 DB_USER=root \
-DB_PASSWORD="<qa_root_pw>" \
+DB_PASSWORD="$QA_DB_PW" \
 PETCARE_DEMO_ADMIN_PASSWORD="$_adm" \
 PETCARE_DEMO_STAFF_PASSWORD="$_stf" \
-.venv/bin/python scripts/run_gemini_qa_web.py --port 5095
+.venv/bin/python scripts/run_gemini_qa_web.py --port 5095 --sync-demo-passwords
 
-unset _adm _stf
+unset _adm _stf QA_DB_PW
 ```
-- **Tắt và dọn sạch sau buổi trình bày**:
+- **Tắt và dọn dẹp sau buổi trình bày**:
   ```bash
-  # Nhấn Ctrl-C tại cửa sổ chạy run_gemini_qa_web.py, sau đó xóa container QA tạm:
-  docker rm -f petcare-gemini-demo-qa
+  # Nhấn Ctrl-C tại cửa sổ chạy run_gemini_qa_web.py.
+  # Tạm dừng container QA (giữ nguyên schema/dữ liệu mẫu cho lần chạy thử tiếp theo):
+  docker stop petcare-gemini-live-qa
+
+  # Hoặc chỉ xóa hẳn container QA tạm thời sau khi đã hoàn tất bảo vệ đồ án:
+  docker rm -f petcare-gemini-live-qa
   ```
 
 ---
@@ -72,8 +81,8 @@ unset _adm _stf
 ### Bước 3 — Quản lý Khách hàng & Hồ sơ Thú cưng + Tìm kiếm ảnh (2 phút)
 - **Thao tác**:
   1. Vào `/customers/new` tạo khách hàng giả lập (`Khách Demo QA`, SĐT giả `0900000099`).
-  2. Vào `/pets/new` nhập sẵn một trường thủ công (ví dụ màu lông), tải ảnh mẫu `tests/fixtures/vision/synthetic-cat-black.png` -> xem gợi ý thuộc tính (chỉ điền vào ô còn trống, không tự lưu) -> lưu hồ sơ thú cưng mới ở trạng thái `Đang bán` (`available`).
-  3. Mở `/pets/find-similar` tải ảnh mèo mẫu để chạy tìm kiếm tương đồng thị giác bằng Python.
+  2. Vào `/pets/new` nhập sẵn một trường thủ công (ví dụ màu lông), tải ảnh mẫu `tests/fixtures/vision/synthetic-cat-black.png` -> xem gợi ý thuộc tính từ dịch vụ **Vision mock cục bộ** (`petcare-local-demo-mock`, chỉ dùng kiểm chứng luồng duyệt gợi ý trên giao diện, không phải mô hình AI Vision thật; chỉ điền vào ô còn trống, không tự lưu) -> lưu hồ sơ thú cưng mới ở trạng thái `Đang bán` (`available`).
+  3. Mở `/pets/find-similar` tải ảnh mèo mẫu để chạy thuật toán tìm kiếm tương đồng cục bộ bằng Python (histogram màu vùng trung tâm + bố cục + chỉ mục SimHash LSH, không nhận diện giống bằng deep learning).
 - **Kết quả kỳ vọng**: Khách hàng và thú cưng mới được lưu vào MySQL; gợi ý ảnh không ghi đè dữ liệu người dùng đã gõ; trang tìm ảnh hiển thị danh sách hồ sơ thú cưng tương đồng có giải thích độ khớp.
 
 ### Bước 4 — Quản lý Tồn kho, Đơn nhập hàng, Bán hàng POS & Hoàn trả một phần (3 phút)
