@@ -319,7 +319,8 @@ class WebPageTests(unittest.TestCase):
             g.tenant = SimpleNamespace(id=1, name="Test Store", slug="test-store")
             html = render_template("base.html")
 
-        self.assertIn("AI tạo sinh đang bật", html)
+        self.assertIn("Đã cấu hình AI ngoài (chưa xác nhận kết nối)", html)
+        self.assertNotIn("Real AI Connected", html)
         self.assertIn("tối đa 8 tin nhắn gần nhất", html)
         self.assertIn("dữ liệu cửa hàng liên quan", html)
         self.assertIn("Hồ sơ khách hàng không tự gửi", html)

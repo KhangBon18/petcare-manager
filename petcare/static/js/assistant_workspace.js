@@ -17,6 +17,8 @@
   const compareCount = document.getElementById("ai-compare-count");
   const compareSubmitBtn = document.getElementById("ai-compare-submit");
   const compareClearBtn = document.getElementById("ai-compare-clear");
+  const engineBadge = document.getElementById("ai-engine-badge");
+  const engineBadgeText = document.getElementById("ai-engine-badge-text");
   const scopeButtons = Array.from(root.querySelectorAll("[data-scope-value]"));
 
   if (!stream || !form || !input) return;
@@ -611,6 +613,32 @@
     parent.append(wrap);
   }
 
+  function updateHeaderEngineBadge(payload) {
+    if (!engineBadge) return;
+    const setLabel = text => {
+      if (engineBadgeText) {
+        engineBadgeText.textContent = text;
+      } else {
+        engineBadge.textContent = text;
+      }
+    };
+    if (payload && payload.engine_mode === "real_llm" && !payload.fallback_used) {
+      engineBadge.dataset.engineState = "real_llm_confirmed";
+      setLabel(
+        english
+          ? "Real LLM Connected · MySQL Grounded"
+          : "Đã xác nhận kết nối Real LLM · Có kiểm chứng MySQL"
+      );
+    } else if (payload && payload.fallback_used) {
+      engineBadge.dataset.engineState = "offline_fallback_active";
+      setLabel(
+        english
+          ? "Offline Python Fallback Active · MySQL Grounded"
+          : "Đang dùng dự phòng Offline Python · Dữ liệu MySQL xác thực"
+      );
+    }
+  }
+
   function renderProvenanceFooter(payload, parent) {
     const foot = document.createElement("footer");
     foot.className = "ai-turn-footer";
@@ -733,6 +761,7 @@
       if (payload.context_state) {
         updateContextChips(payload.context_state);
       }
+      updateHeaderEngineBadge(payload);
 
       renderSafetyNotice(payload.safety_notice, botCard);
       renderReplyBody(botCard, payload.reply || "");

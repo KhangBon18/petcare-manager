@@ -506,6 +506,8 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
             expect(badge).to_be_visible()
             self.assertEqual(badge.get_attribute("data-engine-state"), "offline_disabled")
             self.assertNotIn("AI tạo sinh đang bật", badge.inner_text())
+            self.assertNotIn("Real LLM Connected", badge.inner_text())
+            self.assertNotIn("Real AI Connected", badge.inner_text())
 
             bot_turns = page.locator(".ai-turn-bot:not(.is-loading)")
 

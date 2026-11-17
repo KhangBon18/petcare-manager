@@ -105,50 +105,27 @@ Executed on isolated QA MySQL (`petcare_ai3_qa_test`, `16` scenarios / `18` requ
   - Simulated token accounting: `34,647` prompt tokens + `1,080` completion tokens (`35,727` total)
   - Outbound privacy audit: `27` adapter requests (`91` messages) inspected -> **`0` violations**
 
-### Estimated Live Pilot Cost & Assumptions
-Assumptions based on measured multi-round tool-calling payload sizes (`~3,150` prompt tokens + `~100–220` completion tokens per multi-step LLM turn, `1–2` rounds/turn, `max_tokens=700`):
+### Estimated Live Pilot Cost & Model Lifecycle Update (`AI-3.1`)
+> **Model Update (`AI-3.1`)**: OpenAI issued formal deprecation notices (`2026-10-14`, shutdown `2027-01-14`) for `gpt-4o-mini` and `gpt-4.1-mini`. **`gpt-6-luna`** (`$0.10` input / `$0.50` output per 1M tokens, `$0.01` cached input, with `AI_REASONING_EFFORT="none"` and `max_completion_tokens` on `/v1/chat/completions`) is now the primary supported pilot candidate. See `docs/PETCARE_AI_3_1_RELEASE_AND_PILOT_PLAN.md` for full compatibility details.
 
-| Candidate Model | Input / 1M (USD) | Output / 1M (USD) | Est. 18-Request Pilot | Est. 100 Requests | Est. 1,000 Requests |
+Assumptions based on measured multi-round tool-calling payload sizes (`~3,150` prompt tokens + `~100–220` completion tokens per multi-step LLM turn, `1–2` rounds/turn, `max_completion_tokens=700`):
+
+| Candidate Model | Lifecycle Status | Input / 1M (USD) | Output / 1M (USD) | Est. 19-Turn Pilot | Est. 100 Turns |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| `gemini-2.5-flash-lite` / `gpt-4.1-nano` | `$0.10` | `$0.40` | `~$0.006` | `~$0.035` | `~$0.35` |
-| `gpt-4o-mini` | `$0.15` | `$0.60` | `~$0.010` | `~$0.053` | `~$0.53` |
-| `gpt-4.1-mini` | `$0.40` | `$1.60` | `~$0.026` | `~$0.142` | `~$1.42` |
-| `gpt-4o` | `$2.50` | `$10.00` | `~$0.159` | `~$0.885` | `~$8.85` |
+| **`gpt-6-luna` (`reasoning_effort="none"`)** | **Active (Recommended)** | **`$0.10`** (`$0.01` cached) | **`$0.50`** | **`~$0.005`** | **`~$0.038`** |
+| `gpt-4o-mini` | Deprecated (`2027-01-14`) | `$0.15` | `$0.60` | `~$0.007` | `~$0.056` |
+| `gpt-4.1-mini` | Deprecated (`2027-01-14`) | `$0.80` | `$3.20` | `~$0.036` | `~$0.298` |
 
-Recommended initial pilot cap: `--max-requests 20 --max-cost-usd 0.10` on `gpt-4o-mini` or `gpt-4.1-mini`.
+Recommended initial pilot cap: `--max-requests 20 --max-cost-usd 0.10` on `gpt-6-luna` (always paired with a hard provider-side OpenAI project/key budget cap).
 
 ---
 
 ## 6. Live Pilot Approval Checklist & Exact Execution Runbook
 
 Before running `--mode live`, obtain explicit owner sign-off on:
-1. **Provider & Model**: Approved HTTPS OpenAI-compatible endpoint + model ID (e.g., `gpt-4o-mini` or `gpt-4.1-mini`) with zero-data-retention / API-no-training enabled.
-2. **Outbound Payload Scope**: Confirmation of the minimized catalog/KB/slot payload in Section 4 above.
-3. **Hard Budget Cap**: Dedicated non-production API key + application spend cap (`--max-cost-usd 0.10`, `--max-requests 20`).
+1. **Provider & Model**: Approved HTTPS OpenAI endpoint (`https://api.openai.com/v1`) + `gpt-6-luna` (`AI_REASONING_EFFORT="none"`) with API zero-training / data-sharing disabled.
+2. **Outbound Payload Scope**: Confirmation of the minimized synthetic QA catalog/KB/slot payload in Section 4 above.
+3. **Hard Budget Cap**: Dedicated non-production API key with hard OpenAI project budget cap + application spend cap (`--max-cost-usd 0.10`, `--max-requests 20`).
 
-### Step-by-Step Controlled Live Pilot Command (Run ONLY After Explicit Approval)
-```bash
-# 1. Start an isolated disposable QA MySQL container (_test DB only; NEVER use dev/prod DB)
-docker run -d --name petcare-live-pilot-qa -p 127.0.0.1:33339:3306 \
-  -e MYSQL_ROOT_PASSWORD=disposable_qa_pw -e MYSQL_DATABASE=petcare_pilot_qa_test mysql:8.4
-
-# 2. Dry-run preflight verification (0 network calls)
-AI_PROVIDER_APPROVED=1 AI_TOOL_CALLING_ENABLED=1 \
-AI_API_BASE_URL="https://api.openai.com/v1" AI_MODEL="gpt-4o-mini" AI_API_KEY="$PILOT_API_KEY" \
-DB_HOST=127.0.0.1 DB_PORT=33339 DB_NAME=petcare_pilot_qa_test DB_USER=root DB_PASSWORD=disposable_qa_pw \
-.venv/bin/python scripts/run_petcare_ai_pilot.py --mode dry-run --model gpt-4o-mini --max-cost-usd 0.10
-
-# 3. Execute the 16-scenario (18-request) live pilot with hard spend cap & kill-switch sentinel
-AI_PROVIDER_APPROVED=1 AI_TOOL_CALLING_ENABLED=1 \
-AI_API_BASE_URL="https://api.openai.com/v1" AI_MODEL="gpt-4o-mini" AI_API_KEY="$PILOT_API_KEY" \
-DB_HOST=127.0.0.1 DB_PORT=33339 DB_NAME=petcare_pilot_qa_test DB_USER=root DB_PASSWORD=disposable_qa_pw \
-.venv/bin/python scripts/run_petcare_ai_pilot.py \
-  --mode live --confirm-live-pilot \
-  --model gpt-4o-mini --max-requests 20 --max-cost-usd 0.10 \
-  --kill-switch-file /tmp/PETCARE_STOP_PILOT \
-  --json-out /tmp/petcare-ai3-live-pilot-report.json
-
-# Immediate emergency stop at any moment from another terminal:
-#   touch /tmp/PETCARE_STOP_PILOT   (or set AI_PILOT_KILL_SWITCH=1)
-```
+For the updated `gpt-6-luna` step-by-step CLI commands and 16-scenario (`19`-turn) acceptance rubric, see **`docs/PETCARE_AI_3_1_RELEASE_AND_PILOT_PLAN.md` Sections 4–5**.
 

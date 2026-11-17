@@ -88,7 +88,7 @@ class ProposedToolCall:
 
 @dataclass(frozen=True, slots=True)
 class ModelTurnOutput:
-    """Normalized output of one LLM completion step, including token & latency accounting."""
+    """Normalized output of one LLM completion step, including actual vs estimated token accounting."""
 
     assistant_text: str | None = None
     tool_calls: tuple[ProposedToolCall, ...] = ()
@@ -97,6 +97,9 @@ class ModelTurnOutput:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cached_prompt_tokens: int = 0
+    reasoning_tokens: int = 0
+    usage_source: str = "estimated"  # "provider_reported" | "estimated"
     provider_latency_ms: float = 0.0
 
 
@@ -178,6 +181,9 @@ class MockToolCallingAdapter:
                 prompt_tokens=out.prompt_tokens,
                 completion_tokens=out.completion_tokens,
                 total_tokens=total_tok,
+                cached_prompt_tokens=out.cached_prompt_tokens,
+                reasoning_tokens=out.reasoning_tokens,
+                usage_source=out.usage_source,
                 provider_latency_ms=out.provider_latency_ms or elapsed_ms,
             )
         est_prompt = estimate_messages_tokens(messages, tools)
@@ -274,9 +280,16 @@ class OpenAICompatibleToolCallingAdapter:
             raise MalformedModelOutputError("Model returned neither tool_calls nor assistant text.")
 
         usage_raw = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
-        p_tok = int(usage_raw.get("prompt_tokens") or 0) or estimate_messages_tokens(messages, tools)
-        c_tok = int(usage_raw.get("completion_tokens") or 0) or max(8, len(text_out or "") // 4)
+        reported_prompt = int(usage_raw.get("prompt_tokens") or 0)
+        reported_comp = int(usage_raw.get("completion_tokens") or 0)
+        has_real_usage = reported_prompt > 0 or reported_comp > 0
+        p_tok = reported_prompt if has_real_usage else estimate_messages_tokens(messages, tools)
+        c_tok = reported_comp if has_real_usage else max(8, len(text_out or "") // 4)
         t_tok = int(usage_raw.get("total_tokens") or 0) or (p_tok + c_tok)
+        p_details = usage_raw.get("prompt_tokens_details") if isinstance(usage_raw.get("prompt_tokens_details"), dict) else {}
+        c_details = usage_raw.get("completion_tokens_details") if isinstance(usage_raw.get("completion_tokens_details"), dict) else {}
+        cached_tok = max(0, min(int(p_details.get("cached_tokens") or 0), p_tok))
+        reas_tok = max(0, int(c_details.get("reasoning_tokens") or 0))
 
         return ModelTurnOutput(
             assistant_text=text_out,
@@ -284,6 +297,9 @@ class OpenAICompatibleToolCallingAdapter:
             prompt_tokens=p_tok,
             completion_tokens=c_tok,
             total_tokens=t_tok,
+            cached_prompt_tokens=cached_tok,
+            reasoning_tokens=reas_tok,
+            usage_source="provider_reported" if has_real_usage else "estimated",
             provider_latency_ms=elapsed_ms,
         )
 
@@ -845,8 +861,12 @@ def run_tool_calling_turn(
     usage_totals: dict[str, Any] = {
         "model_name": getattr(adapter, "model_name", "unknown"),
         "rounds_completed": 0,
+        "provider_reported_rounds": 0,
+        "estimated_rounds": 0,
         "prompt_tokens": 0,
+        "cached_prompt_tokens": 0,
         "completion_tokens": 0,
+        "reasoning_tokens": 0,
         "total_tokens": 0,
         "provider_latency_ms": 0.0,
     }
@@ -932,8 +952,14 @@ def run_tool_calling_turn(
             break
 
         usage_totals["rounds_completed"] += 1
+        if step_out.usage_source == "provider_reported":
+            usage_totals["provider_reported_rounds"] += 1
+        else:
+            usage_totals["estimated_rounds"] += 1
         usage_totals["prompt_tokens"] += int(step_out.prompt_tokens or 0)
+        usage_totals["cached_prompt_tokens"] += int(step_out.cached_prompt_tokens or 0)
         usage_totals["completion_tokens"] += int(step_out.completion_tokens or 0)
+        usage_totals["reasoning_tokens"] += int(step_out.reasoning_tokens or 0)
         usage_totals["total_tokens"] += int(step_out.total_tokens or (step_out.prompt_tokens + step_out.completion_tokens))
         usage_totals["provider_latency_ms"] = round(
             float(usage_totals["provider_latency_ms"]) + float(step_out.provider_latency_ms or 0.0),

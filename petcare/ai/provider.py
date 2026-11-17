@@ -16,6 +16,10 @@ from petcare.ai.contracts import EngineMode
 from petcare.config import Config
 
 _SAFE_MODEL_NAME_RE = re.compile(r"^[A-Za-z0-9._:/-]{2,120}$")
+_DEPRECATED_OPENAI_MODEL_RE = re.compile(
+    r"^(?:openai/)?(?:gpt-4o-mini|gpt-4\.1-mini|gpt-4o|gpt-4\.1)(?:-\d{4}-\d{2}-\d{2})?$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,6 +65,7 @@ class ProviderValidationReport:
     endpoint_scheme: str | None
     api_key_present: bool
     model_name: str
+    reasoning_effort_effective: str | None
     timeout_seconds: int
     max_tool_rounds: int
     max_total_tool_calls: int
@@ -82,6 +87,7 @@ class ProviderValidationReport:
             "endpoint_scheme": self.endpoint_scheme,
             "api_key_present": self.api_key_present,
             "model_name": self.model_name,
+            "reasoning_effort_effective": self.reasoning_effort_effective,
             "timeout_seconds": self.timeout_seconds,
             "max_tool_rounds": self.max_tool_rounds,
             "max_total_tool_calls": self.max_total_tool_calls,
@@ -103,6 +109,7 @@ def _read_runtime_ai_settings() -> dict[str, Any]:
             "base_url": str(cfg.get("AI_API_BASE_URL") or "").strip(),
             "api_key_present": bool(str(cfg.get("AI_API_KEY") or "").strip()),
             "model_name": str(cfg.get("AI_MODEL") or "").strip(),
+            "reasoning_effort": str(cfg.get("AI_REASONING_EFFORT") or "").strip().lower(),
             "timeout": int(cfg.get("AI_TIMEOUT_SECONDS", Config.AI_TIMEOUT_SECONDS)),
             "allow_http": bool(cfg.get("AI_ALLOW_HTTP_ENDPOINT", False)),
             "allow_test_loopback": bool(cfg.get("AI_TEST_ALLOW_LOOPBACK_PROVIDER", False)),
@@ -119,6 +126,7 @@ def _read_runtime_ai_settings() -> dict[str, Any]:
         "base_url": str(Config.AI_API_BASE_URL or "").strip(),
         "api_key_present": bool(str(Config.AI_API_KEY or "").strip()),
         "model_name": str(Config.AI_MODEL or "").strip(),
+        "reasoning_effort": str(Config.AI_REASONING_EFFORT or "").strip().lower(),
         "timeout": int(Config.AI_TIMEOUT_SECONDS),
         "allow_http": bool(Config.AI_ALLOW_HTTP_ENDPOINT),
         "allow_test_loopback": bool(Config.AI_TEST_ALLOW_LOOPBACK_PROVIDER),
@@ -140,7 +148,8 @@ def get_provider_status() -> ProviderStatus:
         diag_state = "offline_kill_switch"
     elif s["approved"] and configured:
         active_mode = EngineMode.REAL_LLM
-        diag_state = "approved_llm_tool_calling" if s["tool_calling"] else "approved_llm_prose"
+        # Never claim 'connected' prior to an actual confirmed live response
+        diag_state = "configured_llm_tool_calling_standby" if s["tool_calling"] else "configured_llm_prose_standby"
     elif s["approved"] and not configured:
         active_mode = EngineMode.OFFLINE
         diag_state = "offline_unconfigured"
@@ -166,7 +175,7 @@ def validate_provider_configuration(
     require_approval: bool = False,
     require_tool_calling: bool = False,
 ) -> ProviderValidationReport:
-    """Validate provider URL, SSRF safety, model ID, bounds, and approval gates without network calls or secret leakage."""
+    """Validate provider URL, SSRF safety, model ID, reasoning_effort compatibility, bounds, and approval gates."""
     s = _read_runtime_ai_settings()
     status = get_provider_status()
     errors: list[str] = []
@@ -175,6 +184,7 @@ def validate_provider_configuration(
     host: str | None = None
     scheme: str | None = None
     is_loopback_host = False
+    effective_effort: str | None = None
 
     if s["kill_switch"]:
         errors.append("AI_PILOT_KILL_SWITCH is active; all external LLM calls are blocked.")
@@ -217,6 +227,23 @@ def validate_provider_configuration(
             warnings.append("AI_MODEL is not set (expected in default offline mode).")
     elif not _SAFE_MODEL_NAME_RE.match(s["model_name"]):
         errors.append("AI_MODEL contains invalid characters or length outside 2..120.")
+    else:
+        if _DEPRECATED_OPENAI_MODEL_RE.match(s["model_name"]):
+            warnings.append(
+                f"Model '{s['model_name']}' received OpenAI deprecation notice (2026-10-14, shutdown 2027-01-14); "
+                "prefer 'gpt-6-luna' with AI_REASONING_EFFORT='none' on /v1/chat/completions."
+            )
+        try:
+            resolved_params = ai_client.resolve_chat_completions_params(
+                s["model_name"],
+                s["reasoning_effort"],
+                has_tools=bool(require_tool_calling or s["tool_calling"]),
+                max_output_tokens=max(128, min(s["max_out_tokens"], 2048)),
+                default_temperature=0.1,
+            )
+            effective_effort = resolved_params.get("reasoning_effort")
+        except ai_client.AIProviderError as exc:
+            errors.append(str(exc))
 
     if s["base_url"] and not is_loopback_host and not s["api_key_present"]:
         if require_approval or s["approved"]:
@@ -247,6 +274,7 @@ def validate_provider_configuration(
         endpoint_scheme=scheme,
         api_key_present=s["api_key_present"],
         model_name=s["model_name"] or "offline-python-engine-v1",
+        reasoning_effort_effective=effective_effort,
         timeout_seconds=s["timeout"],
         max_tool_rounds=s["max_rounds"],
         max_total_tool_calls=s["max_calls"],

@@ -22,11 +22,25 @@ function cloneTree(node) {
   return copy;
 }
 
-function buildWorkspaceTree({lang = "en", initialScope = "workspace"} = {}) {
+function buildWorkspaceTree({
+  lang = "en",
+  initialScope = "workspace",
+  initialEngineState = "configured_llm_tool_calling_standby",
+} = {}) {
   const wsBtn = el("button", {dataset: {scopeValue: "workspace"}});
   const shopperBtn = el("button", {dataset: {scopeValue: "shopper_preview"}});
   const resetBtn = el("button", {id: "ai-workspace-reset"});
   const clearSlotsBtn = el("button", {id: "ai-clear-slots", hidden: true});
+  const engineBadgeText = el("span", {
+    id: "ai-engine-badge-text",
+    textContent: initialEngineState.startsWith("configured_")
+      ? "LLM Configured (Standby · Unverified)"
+      : "Offline Python Engine · MySQL Grounded",
+  });
+  const engineBadge = el("span", {
+    id: "ai-engine-badge",
+    dataset: {engineState: initialEngineState},
+  }, [engineBadgeText]);
   const contextChips = el("div", {id: "ai-context-chips"});
   const compareCount = el("span", {id: "ai-compare-count"});
   const compareSubmit = el("button", {id: "ai-compare-submit"});
@@ -66,7 +80,7 @@ function buildWorkspaceTree({lang = "en", initialScope = "workspace"} = {}) {
       initialScope,
       conversationId: "conv_initial_test",
     },
-  }, [wsBtn, shopperBtn, resetBtn, clearSlotsBtn, contextChips, compareTray, stream, form]);
+  }, [engineBadge, wsBtn, shopperBtn, resetBtn, clearSlotsBtn, contextChips, compareTray, stream, form]);
 
   const doc = el("document", {}, [workspace]);
   doc.documentElement = {lang};
@@ -112,6 +126,8 @@ function buildWorkspaceTree({lang = "en", initialScope = "workspace"} = {}) {
   return {
     doc,
     workspace,
+    engineBadge,
+    engineBadgeText,
     stream,
     input,
     sendBtn,
@@ -415,6 +431,10 @@ test("immediate submit during pending reset awaits fresh conversation_id and ren
 
 test("renders structured bullet/numbered lists, vet_referral banner, and distinct real_llm vs offline_fallback diagnostics", async () => {
   const h = buildWorkspaceTree({lang: "en"});
+  // Before any live turn completes, header badge must stay in standby and never claim Real LLM Connected
+  assert.equal(h.engineBadge.dataset.engineState, "configured_llm_tool_calling_standby");
+  assert.doesNotMatch(h.engineBadgeText.textContent, /Real LLM Connected/);
+
   h.input.value = "Compare care options";
   h.form.dispatchEvent(new UIEvent("submit"));
   assert.equal(h.requests.length, 1);
@@ -438,6 +458,10 @@ test("renders structured bullet/numbered lists, vet_referral banner, and distinc
   });
   await settle();
 
+  // Only after a confirmed real_llm turn response may the header badge report Real LLM Connected
+  assert.equal(h.engineBadge.dataset.engineState, "real_llm_confirmed");
+  assert.match(h.engineBadgeText.textContent, /Real LLM Connected/);
+
   const botTurn = h.stream.querySelector(".ai-turn-bot");
   const replyLists = botTurn.querySelectorAll(".ai-reply-list");
   assert.equal(replyLists.length, 2);
@@ -451,7 +475,7 @@ test("renders structured bullet/numbered lists, vet_referral banner, and distinc
   assert.match(footer1.textContent, /Approved Real LLM/);
   assert.match(footer1.textContent, /Tokens: 412/);
 
-  // Turn 2: Offline fallback provenance must never claim Real LLM
+  // Turn 2: Offline fallback provenance must never claim Real LLM and downgrades header badge
   h.input.value = "Fallback check";
   h.form.dispatchEvent(new UIEvent("submit"));
   h.requests[1].resolve({
@@ -465,6 +489,10 @@ test("renders structured bullet/numbered lists, vet_referral banner, and distinc
     }),
   });
   await settle();
+
+  assert.equal(h.engineBadge.dataset.engineState, "offline_fallback_active");
+  assert.doesNotMatch(h.engineBadgeText.textContent, /Real LLM Connected/);
+  assert.match(h.engineBadgeText.textContent, /Offline Python Fallback Active/);
 
   const footers = h.stream.querySelectorAll(".ai-turn-footer");
   assert.equal(footers[1].dataset.engineMode, "offline_fallback");

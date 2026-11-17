@@ -25,13 +25,15 @@
           data-engine-state="{{ workspace_meta.provider.diagnostic_state }}"
         >
           {{ icon('sparkle') }}
-          {% if workspace_meta.provider.active_mode == 'real_llm' and workspace_meta.provider.tool_calling_enabled %}
-            {{ 'AI tạo sinh (Tool-Calling) đã phê duyệt · Có kiểm chứng MySQL' if locale == 'vi' else 'Approved Real LLM (Tool-Calling) · MySQL Grounded' }}
-          {% elif workspace_meta.provider.active_mode == 'real_llm' %}
-            {{ t('AI tạo sinh đã phê duyệt · Có kiểm chứng MySQL') }}
-          {% else %}
-            {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}
-          {% endif %}
+          <span id="ai-engine-badge-text">
+            {% if workspace_meta.provider.active_mode == 'real_llm' and workspace_meta.provider.tool_calling_enabled %}
+              {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi trực tiếp) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (unverified until live reply) · MySQL Grounded' }}
+            {% elif workspace_meta.provider.active_mode == 'real_llm' %}
+              {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (awaiting live reply) · MySQL Grounded' }}
+            {% else %}
+              {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}
+            {% endif %}
+          </span>
         </span>
         <span class="ai-readonly-badge">{{ icon('check') }} {{ 'Chỉ đọc · An toàn theo cửa hàng' if locale == 'vi' else 'Read-only · Tenant isolated' }}</span>
       </div>

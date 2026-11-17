@@ -16,12 +16,14 @@ from petcare.ai.contracts import AssistantScope, EngineMode, PreferenceSlots, Re
 from petcare.ai.llm_tool_agent import (
     MockToolCallingAdapter,
     ModelTurnOutput,
+    OpenAICompatibleToolCallingAdapter,
     ProposedToolCall,
     TurnGroundingLedger,
     run_tool_calling_turn,
     verify_llm_answer_consistency,
 )
 from petcare.ai.pilot_runner import (
+    BILLING_GUARD_DISCLAIMER,
     PilotBudgetAndSafetyGuard,
     PilotBudgetExceededError,
     PilotIsolationError,
@@ -289,6 +291,189 @@ class AI3ProviderValidationAndGuardTests(unittest.TestCase):
         with patch.dict("os.environ", {"AI_PILOT_KILL_SWITCH": "1"}):
             with self.assertRaises(PilotKillSwitchError):
                 PilotBudgetAndSafetyGuard(PilotRunConfig()).check_kill_switch()
+
+    def test_gpt_6_luna_chat_completions_tool_calling_contract_and_deprecation_warnings(self) -> None:
+        synthetic_key = "".join(("sk", "-", "unit-test-luna-probe-1111"))
+
+        # 1. gpt-6-luna with tool calling resolves reasoning_effort="none", max_completion_tokens, temperature=0.1,
+        #    emits 0 deprecation warnings, and reports standby (never 'connected') before a live turn.
+        app_luna = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="https://api.openai.com/v1",
+            AI_API_KEY=synthetic_key,
+            AI_MODEL="gpt-6-luna",
+            AI_REASONING_EFFORT="",
+        )
+        with app_luna.app_context():
+            status = get_provider_status()
+            self.assertEqual(status.active_mode, EngineMode.REAL_LLM)
+            self.assertEqual(status.diagnostic_state, "configured_llm_tool_calling_standby")
+            self.assertNotIn("connected", status.diagnostic_state)
+            rep = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+            self.assertTrue(rep.ok)
+            self.assertEqual(rep.reasoning_effort_effective, "none")
+            self.assertEqual(rep.warnings, ())
+
+        # 2. gpt-6-luna with active reasoning_effort != 'none' + tools on /v1/chat/completions is rejected preflight
+        app_luna_bad = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="https://api.openai.com/v1",
+            AI_API_KEY=synthetic_key,
+            AI_MODEL="gpt-6-luna",
+            AI_REASONING_EFFORT="medium",
+        )
+        with app_luna_bad.app_context():
+            rep_bad = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+            self.assertFalse(rep_bad.ok)
+            self.assertTrue(any("AI_REASONING_EFFORT='none'" in err for err in rep_bad.errors))
+
+        # 3. Deprecated gpt-4o-mini / gpt-4.1-mini emit 2027-01-14 shutdown warnings
+        for legacy_model in ("gpt-4o-mini", "gpt-4.1-mini"):
+            app_legacy = self._app(
+                AI_PROVIDER_APPROVED=True,
+                AI_TOOL_CALLING_ENABLED=True,
+                AI_API_BASE_URL="https://api.openai.com/v1",
+                AI_API_KEY=synthetic_key,
+                AI_MODEL=legacy_model,
+            )
+            with app_legacy.app_context():
+                rep_leg = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+                self.assertTrue(rep_leg.ok)
+                self.assertTrue(any("2027-01-14" in w for w in rep_leg.warnings))
+
+        # 4. Outbound wire payload on mocked loopback transport sends max_completion_tokens + reasoning_effort='none'
+        #    and extracts cached_tokens + reasoning_tokens for actual-usage billing tracking
+        captured_requests: list[dict] = []
+
+        class _FakeHTTPResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, _limit: int) -> bytes:
+                return json.dumps(
+                    {
+                        "id": "chatcmpl-mock-luna-01",
+                        "model": "gpt-6-luna-2026-09-01",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "Grounded answer.",
+                                },
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {
+                            "prompt_tokens": 1200,
+                            "completion_tokens": 150,
+                            "total_tokens": 1350,
+                            "prompt_tokens_details": {"cached_tokens": 800},
+                            "completion_tokens_details": {"reasoning_tokens": 0},
+                        },
+                    }
+                ).encode("utf-8")
+
+        class _FakeOpener:
+            def open(self, req, timeout=15):
+                captured_requests.append(
+                    {
+                        "url": req.full_url,
+                        "body": json.loads(req.data.decode("utf-8")),
+                        "timeout": timeout,
+                    }
+                )
+                return _FakeHTTPResponse()
+
+        app_loopback = self._app(
+            APP_ENV="test",
+            AI_TEST_ALLOW_LOOPBACK_PROVIDER=True,
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="http://127.0.0.1:19999/v1",
+            AI_MODEL="gpt-6-luna",
+            AI_MAX_OUTPUT_TOKENS=650,
+        )
+        sample_tool = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_pet_care_knowledge",
+                    "description": "Search reviewed KB",
+                    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+                },
+            }
+        ]
+        with app_loopback.app_context(), patch("petcare.ai.client.build_opener", return_value=_FakeOpener()):
+            adapter = OpenAICompatibleToolCallingAdapter("gpt-6-luna", max_output_tokens=650)
+            turn_out = adapter.complete_step(
+                messages=[{"role": "user", "content": "Cách chuyển đổi hạt?"}],
+                tools=sample_tool,
+                timeout_seconds=10.0,
+            )
+
+        self.assertEqual(len(captured_requests), 1)
+        sent_body = captured_requests[0]["body"]
+        self.assertEqual(sent_body["model"], "gpt-6-luna")
+        self.assertEqual(sent_body["reasoning_effort"], "none")
+        self.assertEqual(sent_body["max_completion_tokens"], 650)
+        self.assertEqual(sent_body["temperature"], 0.1)
+        self.assertNotIn("max_tokens", sent_body)
+        self.assertEqual(sent_body["tool_choice"], "auto")
+
+        self.assertEqual(turn_out.usage_source, "provider_reported")
+        self.assertEqual(turn_out.prompt_tokens, 1200)
+        self.assertEqual(turn_out.cached_prompt_tokens, 800)
+        self.assertEqual(turn_out.completion_tokens, 150)
+        self.assertEqual(turn_out.reasoning_tokens, 0)
+
+        # Actual-usage cost tracking applies cached input discount ($0.01/1M vs $0.10/1M uncached)
+        luna_guard = PilotBudgetAndSafetyGuard(
+            PilotRunConfig(mode="mock", model_name="gpt-6-luna", max_cost_usd=Decimal("0.10"))
+        )
+        luna_guard.record_turn_usage(
+            {
+                "prompt_tokens": turn_out.prompt_tokens,
+                "cached_prompt_tokens": turn_out.cached_prompt_tokens,
+                "completion_tokens": turn_out.completion_tokens,
+                "reasoning_tokens": turn_out.reasoning_tokens,
+                "total_tokens": turn_out.total_tokens,
+                "rounds_completed": 1,
+                "provider_reported_rounds": 1,
+            }
+        )
+        # Uncached: 400 * $0.10/1M = $0.000040; Cached: 800 * $0.01/1M = $0.000008; Output: 150 * $0.50/1M = $0.000075 -> $0.000123
+        self.assertEqual(luna_guard.actual_reported_cost_usd, Decimal("0.000123"))
+        self.assertEqual(luna_guard.cumulative_cost_usd, Decimal("0.000123"))
+        # When usage is estimated (provider_reported_rounds=0), conservative uncached rate ($0.000195) is used
+        luna_guard.record_turn_usage(
+            {
+                "prompt_tokens": 1200,
+                "completion_tokens": 150,
+                "total_tokens": 1350,
+                "rounds_completed": 1,
+                "provider_reported_rounds": 0,
+                "estimated_rounds": 1,
+            }
+        )
+        self.assertEqual(luna_guard.cumulative_cost_usd, Decimal("0.000318"))
+        self.assertIn("provider-side key/project budget cap", BILLING_GUARD_DISCLAIMER.lower())
+
+        # Production APP_ENV or AI_VISION_ENABLED=True strictly blocked in pilot isolation guard
+        app_prod_env = self._app(APP_ENV="production", DB_NAME="petcare_shop_test")
+        with app_prod_env.app_context():
+            with self.assertRaises(PilotIsolationError):
+                run_controlled_pilot(PilotRunConfig(mode="mock"))
+
+        app_vision_on = self._app(APP_ENV="test", DB_NAME="petcare_shop_test", AI_VISION_ENABLED=True)
+        with app_vision_on.app_context():
+            with self.assertRaises(PilotIsolationError):
+                run_controlled_pilot(PilotRunConfig(mode="mock"))
 
 
 if __name__ == "__main__":

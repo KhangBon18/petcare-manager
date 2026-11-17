@@ -36,12 +36,16 @@ def main() -> int:
         default="dry-run",
         help="Execution mode: dry-run (default, 0 calls), mock (offline QA MySQL), or live (requires explicit approval).",
     )
-    parser.add_argument("--model", default="gpt-4o-mini", help="Model identifier for budgeting or live execution.")
+    parser.add_argument(
+        "--model",
+        default="gpt-6-luna",
+        help="Model identifier for budgeting or live execution (default: gpt-6-luna with reasoning_effort='none' for Chat Completions tools).",
+    )
     parser.add_argument("--max-requests", type=int, default=20, help="Hard request count ceiling (max 25).")
     parser.add_argument("--max-input-tokens", type=int, default=6000, help="Per-step input token ceiling.")
     parser.add_argument("--max-output-tokens", type=int, default=700, help="Per-step completion token ceiling.")
-    parser.add_argument("--max-total-tokens", type=int, default=40000, help="Cumulative pilot token ceiling.")
-    parser.add_argument("--max-cost-usd", type=Decimal, default=Decimal("0.25"), help="Application-side USD spend cap.")
+    parser.add_argument("--max-total-tokens", type=int, default=45000, help="Cumulative pilot token ceiling.")
+    parser.add_argument("--max-cost-usd", type=Decimal, default=Decimal("0.10"), help="Application-side USD spend cap.")
     parser.add_argument("--max-concurrency", type=int, default=1, help="Bounded worker concurrency (1..2).")
     parser.add_argument("--timeout-seconds", type=float, default=8.0, help="Per-turn timeout in seconds.")
     parser.add_argument("--max-retries", type=int, default=1, help="Transient retry limit (0..1).")
@@ -60,7 +64,10 @@ def main() -> int:
         initialize_database()
         seed_database()
 
-    app_overrides: dict[str, object] = {"TESTING": mode_normalized != "live"}
+    app_overrides: dict[str, object] = {
+        "TESTING": mode_normalized != "live",
+        "AI_VISION_ENABLED": False,
+    }
     if mode_normalized == "live":
         app_overrides["AI_MODEL"] = args.model
 
@@ -97,7 +104,11 @@ def main() -> int:
     print(json.dumps(summary_view, indent=2, ensure_ascii=False))
 
     if mode_normalized in {"mock", "live"}:
-        failed = [c for c in report.get("cases", []) if not c.get("passed")]
+        failed = report.get("failed_cases_detail") or []
+        if failed:
+            print(f"\nFAILED PILOT CASES ({len(failed)}):", file=sys.stderr)
+            for item in failed:
+                print(f"  - {item['case_id']} ({item['category']}): {item['failed_turns']}", file=sys.stderr)
         if failed or not report.get("outbound_privacy_audit", {}).get("passed", True):
             return 1
     return 0

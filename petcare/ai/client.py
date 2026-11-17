@@ -5,9 +5,11 @@ from __future__ import annotations
 import base64
 import ipaddress
 import json
+import re
 import socket
 import ssl
 import time
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -26,6 +28,72 @@ class AIProviderError(RuntimeError):
 
 MAX_REQUEST_BYTES = 8 * 1024 * 1024
 RETRYABLE_HTTP_STATUSES = {408, 500, 502, 503, 504}
+ALLOWED_REASONING_EFFORTS = frozenset({"none", "low", "medium", "high", "xhigh", "max"})
+_REASONING_SERIES_MODEL_RE = re.compile(
+    r"(?:^|/)(?:gpt-6(?:-[a-z0-9._-]+)?|gpt-5(?:[.-][a-z0-9._-]+)?|o1(?:-[a-z0-9._-]+)?|o3(?:-[a-z0-9._-]+)?|o4(?:-[a-z0-9._-]+)?)$",
+    re.IGNORECASE,
+)
+
+
+def is_reasoning_series_model(model_name: str | None) -> bool:
+    """Return True for OpenAI reasoning-first models (e.g., `gpt-6-luna`) requiring `max_completion_tokens`."""
+    return bool(_REASONING_SERIES_MODEL_RE.match(str(model_name or "").strip()))
+
+
+def resolve_chat_completions_params(
+    model_name: str,
+    reasoning_effort_raw: str | None,
+    *,
+    has_tools: bool,
+    max_output_tokens: int,
+    default_temperature: float,
+) -> dict[str, Any]:
+    """Build Chat Completions token, reasoning_effort, and sampling fields compatible with `gpt-6-luna`.
+
+    Official OpenAI `/v1/chat/completions` contract for reasoning models (including `gpt-6-luna`):
+    - Function calling (`tools`) is ONLY supported when `reasoning_effort == "none"`; active reasoning
+      levels (`low`..`max`) with tools require the `/v1/responses` API and fail with HTTP 400 on
+      `/v1/chat/completions`.
+    - `max_completion_tokens` must be sent instead of legacy `max_tokens`.
+    - `temperature` must be omitted whenever `reasoning_effort` is active (`!= "none"`).
+    """
+    effort = str(reasoning_effort_raw or "").strip().lower()
+    if effort and effort not in ALLOWED_REASONING_EFFORTS:
+        raise AIProviderError("AI_REASONING_EFFORT configuration is invalid.")
+
+    reasoning_model = is_reasoning_series_model(model_name)
+    if reasoning_model:
+        if has_tools:
+            if effort and effort != "none":
+                raise AIProviderError(
+                    "Function calling trên /v1/chat/completions cho mô hình suy luận (như gpt-6-luna) "
+                    "bắt buộc AI_REASONING_EFFORT='none' (mức suy luận cao hơn yêu cầu Responses API /v1/responses)."
+                )
+            effective_effort = "none"
+        else:
+            effective_effort = effort or "none"
+
+        params: dict[str, Any] = {
+            "reasoning_effort": effective_effort,
+            "max_completion_tokens": max_output_tokens,
+        }
+        if effective_effort == "none":
+            params["temperature"] = default_temperature
+        return params
+
+    if effort:
+        params = {
+            "reasoning_effort": effort,
+            "max_completion_tokens": max_output_tokens,
+        }
+        if effort == "none":
+            params["temperature"] = default_temperature
+        return params
+
+    return {
+        "temperature": default_temperature,
+        "max_tokens": max_output_tokens,
+    }
 
 
 def is_configured() -> bool:
@@ -128,19 +196,18 @@ def complete(messages: list[dict], image_bytes: bytes | None = None) -> str:
         request_messages = [*messages[:-1], last]
 
     try:
+        model_name = str(current_app.config["AI_MODEL"])
         request_body = {
-            "model": current_app.config["AI_MODEL"],
+            "model": model_name,
             "messages": request_messages,
-            "temperature": 0.2,
+            **resolve_chat_completions_params(
+                model_name,
+                current_app.config.get("AI_REASONING_EFFORT", ""),
+                has_tools=False,
+                max_output_tokens=700,
+                default_temperature=0.2,
+            ),
         }
-        reasoning_effort = str(current_app.config.get("AI_REASONING_EFFORT", "") or "").strip().lower()
-        if reasoning_effort:
-            if reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
-                raise AIProviderError("AI_REASONING_EFFORT configuration is invalid.")
-            request_body["reasoning_effort"] = reasoning_effort
-            request_body["max_completion_tokens"] = 700
-        else:
-            request_body["max_tokens"] = 700
         body = json.dumps(request_body).encode("utf-8")
     except (TypeError, ValueError) as exc:
         raise AIProviderError("Yêu cầu AI không đúng định dạng.") from exc
@@ -240,19 +307,18 @@ def complete_chat_with_tools(
     bounded_max_out = max(128, min(configured_max_out, 2048))
 
     try:
+        model_name = str(current_app.config["AI_MODEL"])
         request_body: dict = {
-            "model": current_app.config["AI_MODEL"],
+            "model": model_name,
             "messages": messages,
-            "temperature": 0.1,
+            **resolve_chat_completions_params(
+                model_name,
+                current_app.config.get("AI_REASONING_EFFORT", ""),
+                has_tools=bool(tools),
+                max_output_tokens=bounded_max_out,
+                default_temperature=0.1,
+            ),
         }
-        reasoning_effort = str(current_app.config.get("AI_REASONING_EFFORT", "") or "").strip().lower()
-        if reasoning_effort:
-            if reasoning_effort not in {"none", "low", "medium", "high", "xhigh", "max"}:
-                raise AIProviderError("AI_REASONING_EFFORT configuration is invalid.")
-            request_body["reasoning_effort"] = reasoning_effort
-            request_body["max_completion_tokens"] = bounded_max_out
-        else:
-            request_body["max_tokens"] = bounded_max_out
         if tools:
             request_body["tools"] = tools
             request_body["tool_choice"] = "auto"
