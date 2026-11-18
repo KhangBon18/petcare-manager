@@ -66,6 +66,42 @@ class ReindexPetDescriptorTests(unittest.TestCase):
         )
         connection.cursor.return_value.close.assert_called_once_with()
 
+    def test_apply_primary_only_batch_preserves_existing_reference_photo_lsh_descriptors(self):
+        rows = [{"id": 7, "tenant_id": 3, "photo_filename": "c" * 32 + ".jpg", "photo_source": "primary"}]
+        connection = MagicMock()
+        read_connections = [nullcontext(object()), nullcontext(object())]
+
+        with (
+            patch.object(reindexer, "read_connection", side_effect=read_connections),
+            patch.object(reindexer, "fetch_all", side_effect=[rows, []]),
+            patch.object(reindexer, "transaction", return_value=nullcontext(connection)),
+            patch.object(reindexer, "get_media_storage") as get_storage,
+            patch.object(reindexer.pet_repo, "replace_photo_search_indexes") as replace_index,
+        ):
+            get_storage.return_value.read.return_value = image_bytes()
+            connection.cursor.return_value.rowcount = 1
+            connection.cursor.return_value.fetchall.return_value = [
+                (7, 3, '{"visual_hash":"0123456789abcdef"}'),
+                (7, 3, '{"visual_hash":"fedcba9876543210"}'),
+            ]
+            result = reindexer.reindex_pet_descriptors(apply=True)
+
+        self.assertEqual(result, {"scanned": 1, "prepared": 1, "updated": 1, "skipped": 0})
+        replace_index.assert_called_once()
+        self.assertEqual(
+            tuple(replace_index.call_args.args[1]),
+            (
+                (
+                    3,
+                    7,
+                    [
+                        '{"visual_hash":"0123456789abcdef"}',
+                        '{"visual_hash":"fedcba9876543210"}',
+                    ],
+                ),
+            ),
+        )
+
     def test_rejects_unbounded_batch_size(self):
         with self.assertRaisesRegex(ValueError, "1 and 500"):
             reindexer.reindex_pet_descriptors(batch_size=501, storage=MagicMock())

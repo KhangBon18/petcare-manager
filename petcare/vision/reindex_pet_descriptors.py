@@ -151,54 +151,43 @@ def reindex_pet_descriptors(*, apply: bool = False, batch_size: int = 100, stora
                         summary["updated"] += len(ref_updates) if affected_ref < 0 else affected_ref
 
                     unique_pet_ids = list(dict.fromkeys(touched_pet_ids))
+                    pet_ids_json = json.dumps(unique_pet_ids, separators=(",", ":"))
                     cursor.execute(
-                        "SELECT p.id, p.tenant_id, p.photo_descriptor "
+                        "SELECT id, tenant_id, photo_descriptor FROM ("
+                        "SELECT p.id AS id, p.tenant_id AS tenant_id, p.photo_descriptor AS photo_descriptor, "
+                        "0 AS source_rank, 0 AS ref_sort, p.id AS row_id "
                         "FROM JSON_TABLE(%s, '$[*]' COLUMNS (pet_id BIGINT UNSIGNED PATH '$')) AS batch "
-                        "STRAIGHT_JOIN pets p ON p.id = batch.pet_id",
-                        (json.dumps(unique_pet_ids, separators=(",", ":")),),
+                        "STRAIGHT_JOIN pets p ON p.id = batch.pet_id "
+                        "UNION ALL "
+                        "SELECT rp.pet_id AS id, rp.tenant_id AS tenant_id, rp.photo_descriptor AS photo_descriptor, "
+                        "1 AS source_rank, rp.sort_order AS ref_sort, rp.id AS row_id "
+                        "FROM JSON_TABLE(%s, '$[*]' COLUMNS (pet_id BIGINT UNSIGNED PATH '$')) AS batch_ref "
+                        "JOIN pet_reference_photos rp ON rp.pet_id = batch_ref.pet_id"
+                        ") AS gallery_descriptors ORDER BY id, source_rank, ref_sort, row_id",
+                        (pet_ids_json, pet_ids_json),
                     )
-                    current_descriptors = cursor.fetchall()
-                    if ref_updates:
-                        cursor.execute(
-                            "SELECT rp.pet_id, rp.tenant_id, rp.photo_descriptor "
-                            "FROM JSON_TABLE(%s, '$[*]' COLUMNS (pet_id BIGINT UNSIGNED PATH '$')) AS batch "
-                            "JOIN pet_reference_photos rp ON rp.pet_id = batch.pet_id "
-                            "ORDER BY rp.pet_id, rp.sort_order, rp.id",
-                            (json.dumps(unique_pet_ids, separators=(",", ":")),),
+                    all_descriptors = cursor.fetchall()
+                    by_pet_tenant: dict[tuple[int, int], list[str]] = {}
+                    for r in all_descriptors:
+                        tid, pid, desc_j = (
+                            (r["tenant_id"], r["id"], r["photo_descriptor"])
+                            if isinstance(r, dict)
+                            else (r[1], r[0], r[2])
                         )
-                        ref_descriptors = cursor.fetchall()
-                        by_pet_tenant: dict[tuple[int, int], list[str]] = {}
-                        for r in current_descriptors:
-                            tid, pid, desc_j = (
-                                (r["tenant_id"], r["id"], r["photo_descriptor"])
-                                if isinstance(r, dict)
-                                else (r[1], r[0], r[2])
-                            )
-                            by_pet_tenant.setdefault((int(tid), int(pid)), [])
-                            if desc_j:
-                                by_pet_tenant[(int(tid), int(pid))].append(desc_j)
-                        for r in ref_descriptors:
-                            tid, pid, desc_j = (
-                                (r["tenant_id"], r["pet_id"], r["photo_descriptor"])
-                                if isinstance(r, dict)
-                                else (r[1], r[0], r[2])
-                            )
-                            if desc_j:
-                                by_pet_tenant.setdefault((int(tid), int(pid)), []).append(desc_j)
-                        pet_repo.replace_photo_search_indexes(
-                            connection,
-                            ((tid, pid, dlist) for (tid, pid), dlist in by_pet_tenant.items()),
-                        )
-                    else:
-                        pet_repo.replace_photo_search_indexes(
-                            connection,
+                        by_pet_tenant.setdefault((int(tid), int(pid)), [])
+                        if desc_j:
+                            by_pet_tenant[(int(tid), int(pid))].append(desc_j)
+                    pet_repo.replace_photo_search_indexes(
+                        connection,
+                        (
                             (
-                                (row["tenant_id"], row["id"], row["photo_descriptor"])
-                                if isinstance(row, dict)
-                                else (row[1], row[0], row[2])
-                                for row in current_descriptors
-                            ),
-                        )
+                                tid,
+                                pid,
+                                (dlist[0] if dlist else None) if len(dlist) <= 1 else dlist,
+                            )
+                            for (tid, pid), dlist in by_pet_tenant.items()
+                        ),
+                    )
                 finally:
                     cursor.close()
 
