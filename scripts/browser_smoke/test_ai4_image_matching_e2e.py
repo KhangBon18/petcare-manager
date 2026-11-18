@@ -106,8 +106,8 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
             ("E2E-CAT-02", "Mật Nhánh", "Mèo", "Scottish Fold", "vàng kem", "vàng đồng", "tai cụp lông cam kem", "demo-cat-10.png"),
             ("E2E-CAT-03", "Đêm Nhánh", "Mèo", "Bombay", "đen tuyền", "vàng đồng", "lông đen bóng", "demo-cat-16.png"),
             ("E2E-CAT-04", "Khói Nhánh", "Mèo", "British Shorthair", "xám xanh", "vàng hổ phách", "lông ngắn dày", "demo-cat-01.png"),
-            ("E2E-DOG-01", "Bắp Nhánh", "Chó", "Golden Retriever", "vàng kem", "nâu ấm", "lông dài vàng", "demo-dog-01.png"),
-            ("E2E-DOG-02", "Cam Nhánh", "Chó", "Pomeranian", "cam vàng", "nâu đậm", "lông xù dày", "demo-dog-05.png"),
+            ("E2E-DOG-01", "Bắp Nhánh", "Chó", "Golden Retriever", "vàng kim", "nâu ấm", "lông dài vàng, dáng lớn", "demo-dog-01.png"),
+            ("E2E-DOG-02", "Cam Nhánh", "Chó", "Pomeranian", "cam vàng", "nâu đậm", "lông xù dày, dáng nhỏ", "demo-dog-21.png"),
         )
         with setup_app.app_context():
             for code, name, species, breed, coat, eyes, tags, asset in branch_seed:
@@ -306,6 +306,9 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
 
         cards = self.page.locator(".visual-results-grid .pet-card")
         self.assertGreaterEqual(cards.count(), 1)
+        # CASE 3 (AI-4.0c): Shorthair ginger tabby ranks E2E-CAT-01 (ginger tabby) #1 ahead of solid cream Scottish Fold!
+        self.assertEqual(cards.first.get_attribute("data-pet-code"), "E2E-CAT-01")
+        expect(cards.first.locator(".match-reasons")).to_contain_text("Hình thái")
         returned_codes = set()
         for idx in range(cards.count()):
             card = cards.nth(idx)
@@ -328,6 +331,8 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         expect(self.page.locator("[data-recognized-species-banner]")).to_contain_text("Chó")
         cards = self.page.locator(".visual-results-grid .pet-card")
         self.assertGreaterEqual(cards.count(), 1)
+        # CASE 4 (AI-4.0c): Real Golden Retriever ranks Golden Retriever (E2E-DOG-01) #1 ahead of tiny Pomeranian (E2E-DOG-02)!
+        self.assertEqual(cards.first.get_attribute("data-pet-code"), "E2E-DOG-01")
         for idx in range(cards.count()):
             self.assertEqual(cards.nth(idx).get_attribute("data-pet-species"), "Chó")
             self.assertEqual(cards.nth(idx).get_attribute("data-match-tier"), "visually_similar_candidate")
@@ -346,6 +351,7 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         for img_path, expected_reasons in (
             (ROOT / "docs" / "assets" / "phase62" / "classroom-invoice.png", {"non_photographic_or_low_texture"}),
             (REAL_PACK_DIR / "real-neg-sofa-cal-03.jpg", {"no_animal_detected"}),
+            (REAL_PACK_DIR / "real-neg-blanket-hold-02.jpg", {"no_animal_detected"}),
             (REAL_PACK_DIR / "real-neg-toy-cal-01.jpg", {"stuffed_toy_or_figurine"}),
         ):
             self._submit_image_search(img_path, species="")

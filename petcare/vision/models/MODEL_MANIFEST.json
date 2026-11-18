@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "pipeline_id": "petcare-ai4-0b-local-vision-v1",
+  "pipeline_id": "petcare-ai4-0c-local-vision-and-embeddings-v1",
   "runtime": {
     "engine": "onnxruntime",
     "execution_provider": "CPUExecutionProvider",
@@ -19,7 +19,12 @@
       "size_bytes": 3722275,
       "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
       "input_name": "images",
-      "input_shape": [1, 3, 416, 416],
+      "input_shape": [
+        1,
+        3,
+        416,
+        416
+      ],
       "preprocessing": "Aspect-preserving top-left letterbox to 416x416 padded with RGB(114,114,114), converted to BGR float32 [0..255], NCHW.",
       "coco_class_mapping": {
         "0": "person",
@@ -47,12 +52,68 @@
       "size_bytes": 13964571,
       "sha256": "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5",
       "input_name": "input",
-      "input_shape": [1, 3, 224, 224],
+      "input_shape": [
+        1,
+        3,
+        224,
+        224
+      ],
       "preprocessing": "8%-padded animal bounding box crop resized to 224x224 RGB, scaled to [0,1], normalized by mean=[0.485,0.456,0.406] and std=[0.229,0.224,0.225], NCHW.",
       "class_partition": {
         "domestic_cat_indices": "281..285 inclusive (tabby, tiger cat, Persian cat, Siamese cat, Egyptian cat)",
         "domestic_dog_indices": "151..268 inclusive (118 domestic dog breeds including Pembroke/Cardigan Welsh Corgi)",
         "plush_toy_index": 850
+      }
+    }
+  ],
+  "derived_variants": [
+    {
+      "role": "stage2_crop_species_and_embedding_extractor",
+      "filename": "mobilenetv2-12-features.onnx",
+      "parent_filename": "mobilenetv2-12.onnx",
+      "parent_sha256": "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5",
+      "architecture": "MobileNetV2 (opset 12, 224x224) dual-output graph exposing 1000-class breed logits and verified 1280-D penultimate GlobalAveragePool features",
+      "build_script": "scripts/build_mobilenetv2_feature_extractor.py",
+      "license": "Apache-2.0",
+      "size_bytes": 13964674,
+      "sha256": "0a15a2be5af52322c7b00bfc62b10fce4e10270c3bd60feb6f9268fcb2820f88",
+      "input_name": "input",
+      "input_shape": [
+        "batch_size",
+        3,
+        224,
+        224
+      ],
+      "source_intermediate_tensor": "472",
+      "upstream_tail_chain": [
+        "GlobalAveragePool_97 (GlobalAveragePool)",
+        "Reshape_103 (Reshape) -> 472",
+        "Gemm_104 (Gemm, weight=[1000, 1280]) -> output"
+      ],
+      "added_node": "Identity_embedding_1280 (Identity: '472' -> 'embedding_1280')",
+      "outputs": [
+        {
+          "name": "output",
+          "shape": [
+            "batch_size",
+            1000
+          ],
+          "type": "tensor(float)"
+        },
+        {
+          "name": "embedding_1280",
+          "shape": [
+            "batch_size",
+            1280
+          ],
+          "type": "tensor(float)"
+        }
+      ],
+      "embedding_dim": 1280,
+      "normalization": "L2 unit vector (float32 inference, compact float16 base64 storage)",
+      "verification": {
+        "max_abs_logit_diff_vs_original": 0.0,
+        "max_abs_gemm_reconstruction_error": 7.63e-06
       }
     }
   ]

@@ -17,6 +17,12 @@ from typing import BinaryIO
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from petcare.services.exceptions import ValidationError
+from petcare.vision.coat_color_lab import (
+    EMBEDDING_VERSION,
+    FG_LAB_VERSION,
+    decode_embedding_f16_b64,
+    validate_lab_histogram,
+)
 from petcare.vision.species_taxonomy import COAT_PROFILE_BUCKETS
 
 
@@ -86,6 +92,13 @@ class ImageDescriptor:
     phash64: str = ""
     subject_coat_profile: tuple[float, ...] = ()
     flat_pixel_ratio: float = 0.0
+    # AI-4.0c versioned 1280-D foreground visual embedding + white-balanced CIE-Lab coat profile.
+    embedding_version: str = ""
+    embedding_b64: str = ""
+    fg_lab_version: str = ""
+    fg_lab_histogram: tuple[float, ...] = ()
+    fg_coat_profile: tuple[float, ...] = ()
+    fg_bbox: tuple[float, float, float, float] | None = None
 
 
 def sha256_hex(data: bytes) -> str:
@@ -401,6 +414,33 @@ def descriptor_from_json(value: str | bytes | dict | None) -> ImageDescriptor | 
             if isinstance(raw_profile, (list, tuple)) and len(raw_profile) == len(COAT_PROFILE_BUCKETS)
             else ()
         )
+        emb_ver = str(data.get("embedding_version", "") or "")
+        raw_emb_b64 = str(data.get("embedding_b64", "") or "")
+        valid_emb = decode_embedding_f16_b64(
+            raw_emb_b64, actual_version=emb_ver, expected_version=EMBEDDING_VERSION
+        )
+        clean_emb_b64 = raw_emb_b64 if valid_emb is not None else ""
+
+        lab_ver = str(data.get("fg_lab_version", "") or "")
+        raw_lab_hist = data.get("fg_lab_histogram", ())
+        valid_lab_hist = (
+            validate_lab_histogram(raw_lab_hist) if lab_ver == FG_LAB_VERSION else None
+        )
+        raw_fg_coat = data.get("fg_coat_profile", ())
+        fg_coat = (
+            tuple(float(item) for item in raw_fg_coat)
+            if lab_ver == FG_LAB_VERSION
+            and isinstance(raw_fg_coat, (list, tuple))
+            and len(raw_fg_coat) == len(COAT_PROFILE_BUCKETS)
+            else ()
+        )
+        raw_bbox = data.get("fg_bbox")
+        fg_bbox: tuple[float, float, float, float] | None = None
+        if isinstance(raw_bbox, (list, tuple)) and len(raw_bbox) == 4:
+            bx = tuple(float(v) for v in raw_bbox)
+            if all(math.isfinite(v) for v in bx) and bx[2] > bx[0] and bx[3] > bx[1]:
+                fg_bbox = bx
+
         return ImageDescriptor(
             int(data["width"]),
             int(data["height"]),
@@ -415,6 +455,12 @@ def descriptor_from_json(value: str | bytes | dict | None) -> ImageDescriptor | 
             str(data.get("phash64", "")),
             coat_profile,
             float(data.get("flat_pixel_ratio", 0.0) or 0.0),
+            emb_ver if (valid_emb is not None or emb_ver == EMBEDDING_VERSION) else "",
+            clean_emb_b64,
+            lab_ver if (valid_lab_hist is not None or lab_ver == FG_LAB_VERSION) else "",
+            valid_lab_hist or (),
+            fg_coat,
+            fg_bbox,
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         return None

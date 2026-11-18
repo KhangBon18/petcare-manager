@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 from pathlib import Path
 import re
@@ -21,6 +22,8 @@ from petcare.database.seed import seed_database
 from petcare.repositories.base import fetch_one
 from petcare.services import pet_image_service, pet_service
 from petcare.vision.ai4_benchmark import make_near_duplicate_variant
+from petcare.vision.coat_color_lab import EMBEDDING_VERSION, FG_LAB_VERSION
+from petcare.vision.reindex_pet_descriptors import reindex_pet_descriptors
 from petcare.vision.species_taxonomy import canonicalize_species
 from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD
 
@@ -85,8 +88,8 @@ class AI4ImageMatchingMySQLIntegrationTests(unittest.TestCase):
             ("BR-CAT-02", "Mật Nhánh", "Mèo", "Scottish Fold", "vàng kem", "vàng đồng", "tai cụp lông cam kem", "demo-cat-10.png"),
             ("BR-CAT-03", "Đêm Nhánh", "Mèo", "Bombay", "đen tuyền", "vàng đồng", "lông đen bóng", "demo-cat-16.png"),
             ("BR-CAT-04", "Khói Nhánh", "Mèo", "British Shorthair", "xám xanh", "vàng hổ phách", "lông ngắn dày", "demo-cat-01.png"),
-            ("BR-DOG-01", "Bắp Nhánh", "Chó", "Golden Retriever", "vàng kem", "nâu ấm", "lông dài vàng", "demo-dog-01.png"),
-            ("BR-DOG-02", "Cam Nhánh", "Chó", "Pomeranian", "cam vàng", "nâu đậm", "lông xù dày", "demo-dog-05.png"),
+            ("BR-DOG-01", "Bắp Nhánh", "Chó", "Golden Retriever", "vàng kim", "nâu ấm", "lông dài vàng, dáng lớn", "demo-dog-01.png"),
+            ("BR-DOG-02", "Cam Nhánh", "Chó", "Pomeranian", "cam vàng", "nâu đậm", "lông xù dày, dáng nhỏ", "demo-dog-21.png"),
         )
         cls.branch_pet_ids: list[int] = []
         with cls.app.app_context():
@@ -285,6 +288,99 @@ class AI4ImageMatchingMySQLIntegrationTests(unittest.TestCase):
         staff_client = self._login_client("staff1", DEMO_STAFF_PASSWORD, store_slug="main")
         self.assertEqual(staff_client.get("/pets/find-similar").status_code, 200)
         self.assertEqual(staff_client.get("/pets/new").status_code, 403)
+
+    def test_ai4c_reindex_backfill_idempotency_and_fine_grained_ranking(self):
+        # 1. Strip AI-4.0c embedding_version from BR-CAT-01 to simulate a legacy pre-AI-4.0c row
+        target_pet_id = self.branch_pet_ids[0]
+        with get_connection() as conn:
+            orig_row = fetch_one(
+                conn,
+                "SELECT photo_filename, photo_descriptor FROM pets WHERE id = %s AND tenant_id = %s",
+                (target_pet_id, self.branch_tenant_id),
+            )
+            orig_dict = json.loads(orig_row["photo_descriptor"])
+            orig_raw_sha = orig_dict["raw_sha256"]
+            legacy_dict = dict(orig_dict)
+            legacy_dict.pop("embedding_version", None)
+            legacy_dict.pop("embedding_b64", None)
+            legacy_dict.pop("fg_lab_version", None)
+            legacy_dict.pop("fg_lab_histogram", None)
+
+        with transaction() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute("SET @petcare_tenant_id = %s", (self.branch_tenant_id,))
+                cur.execute(
+                    "UPDATE pets SET photo_descriptor = %s WHERE id = %s AND tenant_id = %s",
+                    (json.dumps(legacy_dict), target_pet_id, self.branch_tenant_id),
+                )
+            finally:
+                cur.close()
+
+        # Dry-run previews without writing; apply=True backfills AI-4.0c fields while preserving raw_sha256
+        dry = reindex_pet_descriptors(apply=False)
+        self.assertGreaterEqual(dry["prepared"], 1)
+        self.assertEqual(dry["updated"], 0)
+
+        applied = reindex_pet_descriptors(apply=True)
+        self.assertGreaterEqual(applied["updated"], 1)
+
+        # Second immediate run skips already up-to-date cached descriptors (0 redundant ONNX calls)
+        second = reindex_pet_descriptors(apply=True)
+        self.assertEqual(second["scanned"], 0)
+        self.assertEqual(second["updated"], 0)
+
+        with get_connection() as conn:
+            rebuilt_row = fetch_one(
+                conn,
+                "SELECT photo_filename, photo_descriptor FROM pets WHERE id = %s AND tenant_id = %s",
+                (target_pet_id, self.branch_tenant_id),
+            )
+            rebuilt_dict = json.loads(rebuilt_row["photo_descriptor"])
+            self.assertEqual(rebuilt_row["photo_filename"], orig_row["photo_filename"])
+            self.assertEqual(rebuilt_dict["raw_sha256"], orig_raw_sha)
+            self.assertEqual(rebuilt_dict["embedding_version"], EMBEDDING_VERSION)
+            self.assertEqual(rebuilt_dict["fg_lab_version"], FG_LAB_VERSION)
+
+        # 2. Fine-grained ranking: real Golden Retriever ranks BR-DOG-01 (Golden Retriever) #1 ahead of BR-DOG-02 (Pomeranian)
+        real_golden_bytes = (
+            ROOT / "tests" / "fixtures" / "vision_ai4" / "real_pack" / "real-dog-golden-cal-01.jpg"
+        ).read_bytes()
+        real_tabby_bytes = (
+            ROOT / "tests" / "fixtures" / "vision_ai4" / "real_pack" / "real-cat-orange-hold-01.jpg"
+        ).read_bytes()
+        with self.app.app_context():
+            dog_out = pet_image_service.search_similar(
+                self.branch_user_id,
+                real_golden_bytes,
+                species="",
+                tenant_id=self.branch_tenant_id,
+            )
+            self.assertEqual(dog_out["results"][0]["pet"]["code"], "BR-DOG-01")
+            self.assertEqual(dog_out["results"][0]["match_tier"], "visually_similar_candidate")
+            self.assertIn("morphology", dog_out["results"][0]["components"])
+
+            cat_out = pet_image_service.search_similar(
+                self.branch_user_id,
+                real_tabby_bytes,
+                species="",
+                tenant_id=self.branch_tenant_id,
+            )
+            self.assertEqual(cat_out["results"][0]["pet"]["code"], "BR-CAT-01")
+            self.assertEqual(cat_out["results"][0]["match_tier"], "visually_similar_candidate")
+
+            # Offline rollback flag AI_FOREGROUND_EMBEDDING_ENABLED=False falls back cleanly
+            self.app.config["AI_FOREGROUND_EMBEDDING_ENABLED"] = False
+            try:
+                rb_out = pet_image_service.search_similar(
+                    self.branch_user_id,
+                    real_golden_bytes,
+                    species="",
+                    tenant_id=self.branch_tenant_id,
+                )
+                self.assertTrue(all(r["pet"]["species"] == "Chó" for r in rb_out["results"]))
+            finally:
+                self.app.config["AI_FOREGROUND_EMBEDDING_ENABLED"] = True
 
 
 if __name__ == "__main__":

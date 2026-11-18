@@ -9,18 +9,28 @@ from petcare.config import Config
 from petcare.database.connection import read_connection, transaction
 from petcare.repositories import pet_repo
 from petcare.repositories.base import fetch_all
-from petcare.vision.image_features import InvalidImage, describe_image, descriptor_to_json
+from petcare.vision.image_features import (
+    InvalidImage,
+    describe_image,
+    descriptor_from_json,
+    descriptor_to_json,
+)
+from petcare.vision.local_pet_detector import enrich_descriptor_with_local_vision
 from petcare.vision.media_storage import get_media_storage
 
 
 _BATCH_SQL = """
-SELECT id, tenant_id, photo_filename
+SELECT id, tenant_id, photo_filename, photo_descriptor
 FROM pets
 WHERE photo_filename IS NOT NULL
   AND (photo_descriptor IS NULL OR
        JSON_CONTAINS_PATH(photo_descriptor, 'one', '$.center_color_histogram') = 0 OR
        COALESCE(JSON_UNQUOTE(JSON_EXTRACT(photo_descriptor, '$.visual_hash')), '')
-           NOT REGEXP '^[0-9a-fA-F]{16}$')
+           NOT REGEXP '^[0-9a-fA-F]{16}$' OR
+       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(photo_descriptor, '$.embedding_version')), '')
+           != 'mnv2_op12_fg1280_f16_v1' OR
+       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(photo_descriptor, '$.fg_lab_version')), '')
+           != 'cielab_wb_sog_fg16_v1')
   AND id > %s
 ORDER BY id
 LIMIT %s
@@ -33,7 +43,11 @@ WHERE id = %s AND tenant_id = %s AND photo_filename = %s
   AND (photo_descriptor IS NULL OR
        JSON_CONTAINS_PATH(photo_descriptor, 'one', '$.center_color_histogram') = 0 OR
        COALESCE(JSON_UNQUOTE(JSON_EXTRACT(photo_descriptor, '$.visual_hash')), '')
-           NOT REGEXP '^[0-9a-fA-F]{16}$')
+           NOT REGEXP '^[0-9a-fA-F]{16}$' OR
+       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(photo_descriptor, '$.embedding_version')), '')
+           != 'mnv2_op12_fg1280_f16_v1' OR
+       COALESCE(JSON_UNQUOTE(JSON_EXTRACT(photo_descriptor, '$.fg_lab_version')), '')
+           != 'cielab_wb_sog_fg16_v1')
 """
 
 
@@ -56,7 +70,15 @@ def reindex_pet_descriptors(*, apply: bool = False, batch_size: int = 100, stora
             summary["scanned"] += 1
             try:
                 photo_bytes = storage.read(row["photo_filename"])
-                descriptor = descriptor_to_json(describe_image(photo_bytes))
+                prior = descriptor_from_json(row.get("photo_descriptor"))
+                rebuilt = describe_image(
+                    photo_bytes,
+                    raw_sha256=prior.raw_sha256 if prior is not None else "",
+                    normalized_sha256=prior.normalized_sha256 if prior is not None else "",
+                )
+                if getattr(Config, "AI_FOREGROUND_EMBEDDING_ENABLED", True):
+                    rebuilt = enrich_descriptor_with_local_vision(photo_bytes, rebuilt)
+                descriptor = descriptor_to_json(rebuilt)
             except (FileNotFoundError, InvalidImage):
                 summary["skipped"] += 1
                 continue

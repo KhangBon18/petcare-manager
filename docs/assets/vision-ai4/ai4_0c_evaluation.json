@@ -1,0 +1,629 @@
+{
+  "benchmark_id": "petcare-ai4-0c-retrieval-benchmark",
+  "version": "3.0.0",
+  "embedding_spec": {
+    "embedding_version": "mnv2_op12_fg1280_f16_v1",
+    "embedding_dim": 1280,
+    "fg_lab_version": "cielab_wb_sog_fg16_v1",
+    "fg_lab_bins": 16,
+    "average_descriptor_json_bytes": 6106.2
+  },
+  "calibration": {
+    "schema_version": 1,
+    "calibration_id": "petcare-ai4-0c-retrieval-ranking-calibration-v1",
+    "calibrated_on_split": "calibration",
+    "holdout_touched_during_tuning": false,
+    "embedding_version": "mnv2_op12_fg1280_f16_v1",
+    "fg_lab_version": "cielab_wb_sog_fg16_v1",
+    "white_balance_mode": "achromatic_shades_of_gray",
+    "parameters": {
+      "embedding_weight": 0.58,
+      "lab_coat_weight": 0.34,
+      "structure_weight": 0.08,
+      "min_combined_similarity": 0.67,
+      "min_embedding_cosine": 0.54,
+      "min_lab_coat_similarity": 0.45,
+      "max_similar_candidates": 5
+    }
+  },
+  "models": {
+    "schema_version": 1,
+    "pipeline_id": "petcare-ai4-0c-local-vision-and-embeddings-v1",
+    "runtime": {
+      "engine": "onnxruntime",
+      "execution_provider": "CPUExecutionProvider",
+      "pytorch_required_at_runtime": false,
+      "network_access_at_runtime": false
+    },
+    "models": [
+      {
+        "role": "stage1_object_detector",
+        "filename": "yolox_nano.onnx",
+        "architecture": "YOLOX-Nano (anchor-free CSPNet + PANet, 416x416, MS COCO 80 classes)",
+        "official_source_repo": "https://github.com/Megvii-BaseDetection/YOLOX",
+        "official_download_url": "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
+        "version": "0.1.1rc0",
+        "license": "Apache-2.0",
+        "size_bytes": 3722275,
+        "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+        "input_name": "images",
+        "input_shape": [
+          1,
+          3,
+          416,
+          416
+        ],
+        "preprocessing": "Aspect-preserving top-left letterbox to 416x416 padded with RGB(114,114,114), converted to BGR float32 [0..255], NCHW.",
+        "coco_class_mapping": {
+          "0": "person",
+          "14": "bird",
+          "15": "cat",
+          "16": "dog",
+          "17": "horse",
+          "18": "sheep",
+          "19": "cow",
+          "20": "elephant",
+          "21": "bear",
+          "22": "zebra",
+          "23": "giraffe",
+          "77": "teddy bear"
+        }
+      },
+      {
+        "role": "stage2_crop_species_verifier",
+        "filename": "mobilenetv2-12.onnx",
+        "architecture": "MobileNetV2 (opset 12, 224x224, ImageNet-1K fine-grained breed logits)",
+        "official_source_repo": "https://github.com/onnx/models",
+        "official_download_url": "https://huggingface.co/onnxmodelzoo/mobilenetv2-12/resolve/main/mobilenetv2-12.onnx",
+        "version": "opset-12",
+        "license": "Apache-2.0",
+        "size_bytes": 13964571,
+        "sha256": "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5",
+        "input_name": "input",
+        "input_shape": [
+          1,
+          3,
+          224,
+          224
+        ],
+        "preprocessing": "8%-padded animal bounding box crop resized to 224x224 RGB, scaled to [0,1], normalized by mean=[0.485,0.456,0.406] and std=[0.229,0.224,0.225], NCHW.",
+        "class_partition": {
+          "domestic_cat_indices": "281..285 inclusive (tabby, tiger cat, Persian cat, Siamese cat, Egyptian cat)",
+          "domestic_dog_indices": "151..268 inclusive (118 domestic dog breeds including Pembroke/Cardigan Welsh Corgi)",
+          "plush_toy_index": 850
+        }
+      }
+    ],
+    "derived_variants": [
+      {
+        "role": "stage2_crop_species_and_embedding_extractor",
+        "filename": "mobilenetv2-12-features.onnx",
+        "parent_filename": "mobilenetv2-12.onnx",
+        "parent_sha256": "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5",
+        "architecture": "MobileNetV2 (opset 12, 224x224) dual-output graph exposing 1000-class breed logits and verified 1280-D penultimate GlobalAveragePool features",
+        "build_script": "scripts/build_mobilenetv2_feature_extractor.py",
+        "license": "Apache-2.0",
+        "size_bytes": 13964674,
+        "sha256": "0a15a2be5af52322c7b00bfc62b10fce4e10270c3bd60feb6f9268fcb2820f88",
+        "input_name": "input",
+        "input_shape": [
+          "batch_size",
+          3,
+          224,
+          224
+        ],
+        "source_intermediate_tensor": "472",
+        "upstream_tail_chain": [
+          "GlobalAveragePool_97 (GlobalAveragePool)",
+          "Reshape_103 (Reshape) -> 472",
+          "Gemm_104 (Gemm, weight=[1000, 1280]) -> output"
+        ],
+        "added_node": "Identity_embedding_1280 (Identity: '472' -> 'embedding_1280')",
+        "outputs": [
+          {
+            "name": "output",
+            "shape": [
+              "batch_size",
+              1000
+            ],
+            "type": "tensor(float)"
+          },
+          {
+            "name": "embedding_1280",
+            "shape": [
+              "batch_size",
+              1280
+            ],
+            "type": "tensor(float)"
+          }
+        ],
+        "embedding_dim": 1280,
+        "normalization": "L2 unit vector (float32 inference, compact float16 base64 storage)",
+        "verification": {
+          "max_abs_logit_diff_vs_original": 0.0,
+          "max_abs_gemm_reconstruction_error": 7.63e-06
+        }
+      }
+    ]
+  },
+  "resource_profile": {
+    "active_runtime_model_bytes": 17686949,
+    "active_runtime_model_mb": 16.87,
+    "on_disk_models_total_bytes": 31651520,
+    "on_disk_models_total_mb": 30.19,
+    "peak_rss_mb": 262.84,
+    "rss_delta_mb": 165.8
+  },
+  "dataset_counts": {
+    "total_pet_images": 68,
+    "cats_total": 35,
+    "dogs_total": 33,
+    "orange_cats_total": 11,
+    "warm_dogs_total": 13,
+    "enrolled_catalog_pets": 56,
+    "absent_from_db_pets": 12,
+    "calibration_pets": 34,
+    "acceptance_holdout_pets": 34,
+    "non_animal_negatives_total": 16,
+    "non_animal_calibration": 8,
+    "non_animal_acceptance_holdout": 8,
+    "real_photographs_total": 34,
+    "real_cats_total": 8,
+    "real_dogs_total": 8,
+    "real_non_animal_and_toys_total": 8,
+    "real_multi_animal_total": 6,
+    "real_other_animal_total": 4,
+    "degraded_low_confidence_queries_total": 6,
+    "hard_negative_structured_pairs": 10
+  },
+  "splits": {
+    "calibration": {
+      "ablation": {
+        "A_ai4_0b_baseline": {
+          "same_species_coat_precision_at_5": 0.8432,
+          "same_species_fine_precision_at_5": 0.5297,
+          "top1_coat_accuracy": 0.8649,
+          "top1_fine_grained_accuracy": 0.6757,
+          "orange_cat_coat_precision_at_5": 0.9,
+          "orange_cat_fine_precision_at_5": 0.6667,
+          "difficult_wrong_coat_top1_errors": 5,
+          "hard_negative_pairwise_accuracy": 0.0,
+          "hard_negative_pairs_passed": "0/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "22/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.925,
+          "queries_returning_similar": "37/40",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 71.659,
+            "p95": 76.48
+          }
+        },
+        "B_embedding_only": {
+          "same_species_coat_precision_at_5": 0.6769,
+          "same_species_fine_precision_at_5": 0.5316,
+          "top1_coat_accuracy": 0.7692,
+          "top1_fine_grained_accuracy": 0.6667,
+          "orange_cat_coat_precision_at_5": 0.7714,
+          "orange_cat_fine_precision_at_5": 0.6857,
+          "difficult_wrong_coat_top1_errors": 9,
+          "hard_negative_pairwise_accuracy": 0.8,
+          "hard_negative_pairs_passed": "4/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 0.9091,
+          "no_result_rejected": "20/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.975,
+          "queries_returning_similar": "39/40",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 72.134,
+            "p95": 88.357
+          }
+        },
+        "C_coat_lab_only": {
+          "same_species_coat_precision_at_5": 0.8491,
+          "same_species_fine_precision_at_5": 0.5179,
+          "top1_coat_accuracy": 0.8205,
+          "top1_fine_grained_accuracy": 0.6154,
+          "orange_cat_coat_precision_at_5": 0.8571,
+          "orange_cat_fine_precision_at_5": 0.6286,
+          "difficult_wrong_coat_top1_errors": 7,
+          "hard_negative_pairwise_accuracy": 0.4,
+          "hard_negative_pairs_passed": "2/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "22/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.975,
+          "queries_returning_similar": "39/40",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 71.706,
+            "p95": 127.018
+          }
+        },
+        "D_ai4_0c_combined": {
+          "same_species_coat_precision_at_5": 0.8615,
+          "same_species_fine_precision_at_5": 0.6261,
+          "top1_coat_accuracy": 0.8974,
+          "top1_fine_grained_accuracy": 0.7692,
+          "orange_cat_coat_precision_at_5": 0.8571,
+          "orange_cat_fine_precision_at_5": 0.6286,
+          "difficult_wrong_coat_top1_errors": 4,
+          "hard_negative_pairwise_accuracy": 0.6,
+          "hard_negative_pairs_passed": "3/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "22/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.975,
+          "queries_returning_similar": "39/40",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 70.1,
+            "p95": 76.882
+          }
+        }
+      },
+      "white_balance_stress_test": {
+        "orange_cat_green_background": {
+          "none": "3/5",
+          "gray_world": "0/5",
+          "achromatic_shades_of_gray": "2/5"
+        },
+        "orange_cat_warm_tungsten_2850k": {
+          "none": "4/5",
+          "gray_world": "1/5",
+          "achromatic_shades_of_gray": "4/5"
+        },
+        "black_cat_dark_background": {
+          "none": "1/1",
+          "gray_world": "1/1",
+          "achromatic_shades_of_gray": "1/1"
+        },
+        "white_dog_bright_and_tungsten": {
+          "none": "0/3",
+          "gray_world": "3/3",
+          "achromatic_shades_of_gray": "2/3"
+        },
+        "golden_dog_coat_similar_background": {
+          "none": "2/3",
+          "gray_world": "0/3",
+          "achromatic_shades_of_gray": "2/3"
+        }
+      }
+    },
+    "acceptance_holdout": {
+      "ablation": {
+        "A_ai4_0b_baseline": {
+          "same_species_coat_precision_at_5": 0.9474,
+          "same_species_fine_precision_at_5": 0.6487,
+          "top1_coat_accuracy": 0.9474,
+          "top1_fine_grained_accuracy": 0.6842,
+          "orange_cat_coat_precision_at_5": 1.0,
+          "orange_cat_fine_precision_at_5": 0.8,
+          "difficult_wrong_coat_top1_errors": 2,
+          "hard_negative_pairwise_accuracy": 0.2,
+          "hard_negative_pairs_passed": "1/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "22/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9744,
+          "queries_returning_similar": "38/39",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 71.69,
+            "p95": 81.415
+          }
+        },
+        "B_embedding_only": {
+          "same_species_coat_precision_at_5": 0.7737,
+          "same_species_fine_precision_at_5": 0.6579,
+          "top1_coat_accuracy": 0.8947,
+          "top1_fine_grained_accuracy": 0.8158,
+          "orange_cat_coat_precision_at_5": 0.875,
+          "orange_cat_fine_precision_at_5": 0.725,
+          "difficult_wrong_coat_top1_errors": 4,
+          "hard_negative_pairwise_accuracy": 0.8,
+          "hard_negative_pairs_passed": "4/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 0.9091,
+          "no_result_rejected": "20/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9744,
+          "queries_returning_similar": "38/39",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 75.307,
+            "p95": 165.97
+          }
+        },
+        "C_coat_lab_only": {
+          "same_species_coat_precision_at_5": 0.9,
+          "same_species_fine_precision_at_5": 0.5893,
+          "top1_coat_accuracy": 0.9231,
+          "top1_fine_grained_accuracy": 0.6667,
+          "orange_cat_coat_precision_at_5": 1.0,
+          "orange_cat_fine_precision_at_5": 0.6833,
+          "difficult_wrong_coat_top1_errors": 3,
+          "hard_negative_pairwise_accuracy": 0.4,
+          "hard_negative_pairs_passed": "2/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "22/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 1.0,
+          "queries_returning_similar": "39/39",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 77.029,
+            "p95": 105.911
+          }
+        },
+        "D_ai4_0c_combined": {
+          "same_species_coat_precision_at_5": 0.9145,
+          "same_species_fine_precision_at_5": 0.6518,
+          "top1_coat_accuracy": 0.8947,
+          "top1_fine_grained_accuracy": 0.7632,
+          "orange_cat_coat_precision_at_5": 1.0,
+          "orange_cat_fine_precision_at_5": 0.7583,
+          "difficult_wrong_coat_top1_errors": 4,
+          "hard_negative_pairwise_accuracy": 0.8,
+          "hard_negative_pairs_passed": "4/5",
+          "cross_species_retrieval_errors": "0/42",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "22/22",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "34/34",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9744,
+          "queries_returning_similar": "38/39",
+          "absent_seeded_queries": 6,
+          "latency_ms": {
+            "p50": 71.956,
+            "p95": 77.325
+          }
+        }
+      },
+      "white_balance_stress_test": {
+        "orange_cat_green_background": {
+          "none": "5/6",
+          "gray_world": "4/6",
+          "achromatic_shades_of_gray": "5/6"
+        },
+        "orange_cat_warm_tungsten_2850k": {
+          "none": "6/6",
+          "gray_world": "4/6",
+          "achromatic_shades_of_gray": "5/6"
+        },
+        "black_cat_dark_background": {
+          "none": "1/1",
+          "gray_world": "1/1",
+          "achromatic_shades_of_gray": "1/1"
+        },
+        "white_dog_bright_and_tungsten": {
+          "none": "0/1",
+          "gray_world": "1/1",
+          "achromatic_shades_of_gray": "1/1"
+        },
+        "golden_dog_coat_similar_background": {
+          "none": "7/8",
+          "gray_world": "2/8",
+          "achromatic_shades_of_gray": "7/8"
+        }
+      }
+    },
+    "combined_all": {
+      "ablation": {
+        "A_ai4_0b_baseline": {
+          "same_species_coat_precision_at_5": 0.896,
+          "same_species_fine_precision_at_5": 0.59,
+          "top1_coat_accuracy": 0.9067,
+          "top1_fine_grained_accuracy": 0.68,
+          "orange_cat_coat_precision_at_5": 0.9571,
+          "orange_cat_fine_precision_at_5": 0.7429,
+          "difficult_wrong_coat_top1_errors": 7,
+          "hard_negative_pairwise_accuracy": 0.1,
+          "hard_negative_pairs_passed": "1/10",
+          "cross_species_retrieval_errors": "0/84",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "44/44",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "68/68",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9494,
+          "queries_returning_similar": "75/79",
+          "absent_seeded_queries": 12,
+          "latency_ms": {
+            "p50": 71.721,
+            "p95": 89.037
+          }
+        },
+        "B_embedding_only": {
+          "same_species_coat_precision_at_5": 0.7247,
+          "same_species_fine_precision_at_5": 0.5939,
+          "top1_coat_accuracy": 0.8312,
+          "top1_fine_grained_accuracy": 0.7403,
+          "orange_cat_coat_precision_at_5": 0.8267,
+          "orange_cat_fine_precision_at_5": 0.7067,
+          "difficult_wrong_coat_top1_errors": 13,
+          "hard_negative_pairwise_accuracy": 0.8,
+          "hard_negative_pairs_passed": "8/10",
+          "cross_species_retrieval_errors": "0/84",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 0.9091,
+          "no_result_rejected": "40/44",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "68/68",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9747,
+          "queries_returning_similar": "77/79",
+          "absent_seeded_queries": 12,
+          "latency_ms": {
+            "p50": 73.164,
+            "p95": 87.283
+          }
+        },
+        "C_coat_lab_only": {
+          "same_species_coat_precision_at_5": 0.8746,
+          "same_species_fine_precision_at_5": 0.5536,
+          "top1_coat_accuracy": 0.8718,
+          "top1_fine_grained_accuracy": 0.641,
+          "orange_cat_coat_precision_at_5": 0.9333,
+          "orange_cat_fine_precision_at_5": 0.6578,
+          "difficult_wrong_coat_top1_errors": 10,
+          "hard_negative_pairwise_accuracy": 0.4,
+          "hard_negative_pairs_passed": "4/10",
+          "cross_species_retrieval_errors": "0/84",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "44/44",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "68/68",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9873,
+          "queries_returning_similar": "78/79",
+          "absent_seeded_queries": 12,
+          "latency_ms": {
+            "p50": 72.646,
+            "p95": 91.493
+          }
+        },
+        "D_ai4_0c_combined": {
+          "same_species_coat_precision_at_5": 0.8877,
+          "same_species_fine_precision_at_5": 0.6387,
+          "top1_coat_accuracy": 0.8961,
+          "top1_fine_grained_accuracy": 0.7662,
+          "orange_cat_coat_precision_at_5": 0.9333,
+          "orange_cat_fine_precision_at_5": 0.6978,
+          "difficult_wrong_coat_top1_errors": 8,
+          "hard_negative_pairwise_accuracy": 0.7,
+          "hard_negative_pairs_passed": "7/10",
+          "cross_species_retrieval_errors": "0/84",
+          "cross_species_error_rate": 0.0,
+          "false_identity_claims": 0,
+          "real_non_animal_and_coat_object_fpr": 0.0,
+          "ui_procedural_non_animal_fpr": 0.0,
+          "no_result_rejection_accuracy": 1.0,
+          "no_result_rejected": "44/44",
+          "exact_image_rank1_accuracy": 1.0,
+          "exact_image_rank1_hits": "68/68",
+          "near_duplicate_resize_q70_recall": 1.0,
+          "near_duplicate_false_positives": 0,
+          "retrieval_coverage_given_verified_species": 0.9747,
+          "queries_returning_similar": "77/79",
+          "absent_seeded_queries": 12,
+          "latency_ms": {
+            "p50": 76.453,
+            "p95": 198.271
+          }
+        }
+      },
+      "white_balance_stress_test": {
+        "orange_cat_green_background": {
+          "none": "8/11",
+          "gray_world": "4/11",
+          "achromatic_shades_of_gray": "7/11"
+        },
+        "orange_cat_warm_tungsten_2850k": {
+          "none": "10/11",
+          "gray_world": "5/11",
+          "achromatic_shades_of_gray": "9/11"
+        },
+        "black_cat_dark_background": {
+          "none": "2/2",
+          "gray_world": "2/2",
+          "achromatic_shades_of_gray": "2/2"
+        },
+        "white_dog_bright_and_tungsten": {
+          "none": "0/4",
+          "gray_world": "4/4",
+          "achromatic_shades_of_gray": "3/4"
+        },
+        "golden_dog_coat_similar_background": {
+          "none": "9/11",
+          "gray_world": "2/11",
+          "achromatic_shades_of_gray": "9/11"
+        }
+      }
+    }
+  },
+  "unevaluated_capabilities": [
+    {
+      "capability": "same_pet_multi_view_reidentification",
+      "status": "NOT_EVALUATED",
+      "reason": "Repository contains 1 reference image per pet record; visual embeddings measure morphological/coat similarity, never confirmed individual animal identity."
+    }
+  ]
+}

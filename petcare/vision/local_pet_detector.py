@@ -11,7 +11,7 @@ Zero external network access and zero PyTorch runtime dependencies.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from io import BytesIO
 import json
 from pathlib import Path
@@ -23,6 +23,13 @@ import numpy as np
 import onnxruntime as ort
 from PIL import Image, ImageOps
 
+from petcare.vision.coat_color_lab import (
+    EMBEDDING_VERSION,
+    FG_LAB_VERSION,
+    compute_foreground_lab_coat,
+    encode_embedding_f16_b64,
+    l2_normalize_embedding,
+)
 from petcare.vision.image_features import (
     ImageDescriptor,
     compute_subject_coat_profile,
@@ -108,6 +115,9 @@ class SpeciesGateDecision:
     foreground_coat_profile: tuple[float, ...]
     foreground_descriptor: ImageDescriptor | None
     inference_ms: float
+    foreground_embedding_b64: str = ""
+    foreground_lab_histogram: tuple[float, ...] = ()
+    foreground_lab_coat_profile: tuple[float, ...] = ()
 
 
 class _LocalVisionRuntime:
@@ -154,6 +164,19 @@ class _LocalVisionRuntime:
             if sha256_hex(cls_bytes) != cls_meta["sha256"]:
                 raise RuntimeError("SHA-256 mismatch for stage2_crop_species_verifier ONNX artifact.")
 
+            variants = manifest.get("derived_variants") or []
+            var_by_role = {v["role"]: v for v in variants}
+            feat_meta = var_by_role.get("stage2_crop_species_and_embedding_extractor")
+            active_cls_bytes = cls_bytes
+            if feat_meta is not None:
+                feat_path = MODELS_DIR / feat_meta["filename"]
+                if not feat_path.is_file():
+                    raise FileNotFoundError("Bundled MobileNetV2 feature-extractor ONNX variant is missing.")
+                feat_bytes = feat_path.read_bytes()
+                if sha256_hex(feat_bytes) != feat_meta["sha256"]:
+                    raise RuntimeError("SHA-256 mismatch for MobileNetV2 feature-extractor ONNX artifact.")
+                active_cls_bytes = feat_bytes
+
             opts = ort.SessionOptions()
             opts.log_severity_level = 3
             opts.intra_op_num_threads = 2
@@ -163,7 +186,7 @@ class _LocalVisionRuntime:
                 det_bytes, sess_options=opts, providers=["CPUExecutionProvider"]
             )
             self._cls_session = ort.InferenceSession(
-                cls_bytes, sess_options=opts, providers=["CPUExecutionProvider"]
+                active_cls_bytes, sess_options=opts, providers=["CPUExecutionProvider"]
             )
             self._calibration = calibration["parameters"]
             return self._det_session, self._cls_session, self._calibration
@@ -277,13 +300,24 @@ def _run_yolox_detector(
     return detections
 
 
+def _extract_crop_embedding_b64(cls_sess: ort.InferenceSession, crop_rgb: Image.Image) -> str:
+    resized = crop_rgb.resize((224, 224), Image.Resampling.BILINEAR)
+    arr = (np.asarray(resized, dtype=np.float32) / 255.0 - _IMAGENET_MEAN) / _IMAGENET_STD
+    blob = np.ascontiguousarray(np.transpose(arr, (2, 0, 1))[None, ...], dtype=np.float32)
+    outputs = cls_sess.run(None, {cls_sess.get_inputs()[0].name: blob})
+    if len(outputs) < 2:
+        return ""
+    unit_vec = l2_normalize_embedding(outputs[1][0])
+    return encode_embedding_f16_b64(unit_vec)
+
+
 def _classify_animal_crop(
     cls_sess: ort.InferenceSession,
     pil_rgb: Image.Image,
     bbox: tuple[float, float, float, float],
     margin_ratio: float,
     temperature: float,
-) -> tuple[float, float, float, Image.Image, Image.Image]:
+) -> tuple[float, float, float, Image.Image, Image.Image, str]:
     w, h = pil_rgb.size
     x1, y1, x2, y2 = bbox
     bw, bh = max(1.0, x2 - x1), max(1.0, y2 - y1)
@@ -300,7 +334,11 @@ def _classify_animal_crop(
     resized = context_crop.resize((224, 224), Image.Resampling.BILINEAR)
     arr = (np.asarray(resized, dtype=np.float32) / 255.0 - _IMAGENET_MEAN) / _IMAGENET_STD
     blob = np.ascontiguousarray(np.transpose(arr, (2, 0, 1))[None, ...], dtype=np.float32)
-    logits = cls_sess.run(None, {cls_sess.get_inputs()[0].name: blob})[0][0]
+    outputs = cls_sess.run(None, {cls_sess.get_inputs()[0].name: blob})
+    logits = outputs[0][0]
+    emb_b64 = ""
+    if len(outputs) >= 2:
+        emb_b64 = encode_embedding_f16_b64(l2_normalize_embedding(outputs[1][0]))
 
     scaled = logits / max(0.05, float(temperature))
     scaled = scaled - scaled.max()
@@ -308,7 +346,7 @@ def _classify_animal_crop(
     p_cat = float(probs[_IMAGENET_CAT_SLICE].sum())
     p_dog = float(probs[_IMAGENET_DOG_SLICE].sum())
     p_teddy = float(probs[_IMAGENET_TEDDY_INDEX])
-    return p_cat, p_dog, p_teddy, tight_crop, context_crop
+    return p_cat, p_dog, p_teddy, tight_crop, context_crop, emb_b64
 
 
 from petcare.vision.species_taxonomy import COAT_PROFILE_BUCKETS
@@ -456,7 +494,7 @@ def analyze_pet_image(
         )
 
     primary = animals[0]
-    p_cat, p_dog, p_teddy, tight_crop, _ctx_crop = _classify_animal_crop(
+    p_cat, p_dog, p_teddy, tight_crop, _ctx_crop, emb_b64 = _classify_animal_crop(
         cls_sess,
         pil_rgb,
         primary.bbox,
@@ -482,6 +520,7 @@ def analyze_pet_image(
         )
 
     fg_coat, fg_desc = _extract_foreground_features(tight_crop)
+    fg_lab_hist, fg_lab_coat7 = compute_foreground_lab_coat(pil_rgb, primary.bbox)
     min_prob = float(cal["min_calibrated_species_prob"])
     min_margin = float(cal["min_species_margin"])
 
@@ -501,6 +540,9 @@ def analyze_pet_image(
                 foreground_coat_profile=fg_coat,
                 foreground_descriptor=fg_desc,
                 inference_ms=round((time.perf_counter() - t0) * 1000.0, 3),
+                foreground_embedding_b64=emb_b64,
+                foreground_lab_histogram=fg_lab_hist,
+                foreground_lab_coat_profile=fg_lab_coat7,
             )
         support = set()
         if p_cat >= 0.25:
@@ -521,6 +563,9 @@ def analyze_pet_image(
             foreground_coat_profile=fg_coat,
             foreground_descriptor=fg_desc,
             inference_ms=round((time.perf_counter() - t0) * 1000.0, 3),
+            foreground_embedding_b64=emb_b64,
+            foreground_lab_histogram=fg_lab_hist,
+            foreground_lab_coat_profile=fg_lab_coat7,
         )
 
     det_species = "cat" if primary.class_id == 15 else "dog"
@@ -549,6 +594,9 @@ def analyze_pet_image(
             foreground_coat_profile=fg_coat,
             foreground_descriptor=fg_desc,
             inference_ms=round((time.perf_counter() - t0) * 1000.0, 3),
+            foreground_embedding_b64=emb_b64,
+            foreground_lab_histogram=fg_lab_hist,
+            foreground_lab_coat_profile=fg_lab_coat7,
         )
 
     if top_prob < min_prob or margin < min_margin:
@@ -566,6 +614,9 @@ def analyze_pet_image(
             foreground_coat_profile=fg_coat,
             foreground_descriptor=fg_desc,
             inference_ms=round((time.perf_counter() - t0) * 1000.0, 3),
+            foreground_embedding_b64=emb_b64,
+            foreground_lab_histogram=fg_lab_hist,
+            foreground_lab_coat_profile=fg_lab_coat7,
         )
 
     if det_species == "cat":
@@ -583,6 +634,9 @@ def analyze_pet_image(
             foreground_coat_profile=fg_coat,
             foreground_descriptor=fg_desc,
             inference_ms=round((time.perf_counter() - t0) * 1000.0, 3),
+            foreground_embedding_b64=emb_b64,
+            foreground_lab_histogram=fg_lab_hist,
+            foreground_lab_coat_profile=fg_lab_coat7,
         )
 
     return SpeciesGateDecision(
@@ -599,6 +653,74 @@ def analyze_pet_image(
         foreground_coat_profile=fg_coat,
         foreground_descriptor=fg_desc,
         inference_ms=round((time.perf_counter() - t0) * 1000.0, 3),
+        foreground_embedding_b64=emb_b64,
+        foreground_lab_histogram=fg_lab_hist,
+        foreground_lab_coat_profile=fg_lab_coat7,
+    )
+
+
+def enrich_descriptor_with_local_vision(
+    normalized_image_bytes: bytes,
+    descriptor: ImageDescriptor,
+) -> ImageDescriptor:
+    """Attach versioned 1280-D foreground embedding and white-balanced CIE-Lab coat profile."""
+    if descriptor.flat_pixel_ratio > 0.68:
+        return replace(
+            descriptor,
+            embedding_version=EMBEDDING_VERSION,
+            embedding_b64="",
+            fg_lab_version=FG_LAB_VERSION,
+            fg_lab_histogram=(),
+            fg_coat_profile=(),
+            fg_bbox=None,
+        )
+
+    gate = analyze_pet_image(normalized_image_bytes, flat_pixel_ratio=descriptor.flat_pixel_ratio)
+    if gate.subject_status == SUBJECT_GATE_UNAVAILABLE:
+        return descriptor
+
+    if gate.foreground_embedding_b64 and gate.foreground_lab_histogram:
+        return replace(
+            descriptor,
+            embedding_version=EMBEDDING_VERSION,
+            embedding_b64=gate.foreground_embedding_b64,
+            fg_lab_version=FG_LAB_VERSION,
+            fg_lab_histogram=gate.foreground_lab_histogram,
+            fg_coat_profile=gate.foreground_lab_coat_profile,
+            fg_bbox=gate.primary_bbox,
+        )
+
+    # Catalog fallback when an enrolled single-pet close-up has no detector box and is not multi-pet/toy
+    if gate.animal_count == 0 and gate.detail_reason == "no_animal_detected":
+        try:
+            _det_sess, cls_sess, _cal = _RUNTIME.load()
+            with Image.open(BytesIO(normalized_image_bytes)) as src:
+                pil_rgb = ImageOps.exif_transpose(src).convert("RGB")
+            w, h = pil_rgb.size
+            inset_box = (round(w * 0.08, 2), round(h * 0.08, 2), round(w * 0.92, 2), round(h * 0.92, 2))
+            crop = pil_rgb.crop((round(w * 0.08), round(h * 0.08), round(w * 0.92), round(h * 0.92)))
+            emb_b64 = _extract_crop_embedding_b64(cls_sess, crop)
+            lab_hist, lab_coat7 = compute_foreground_lab_coat(pil_rgb, inset_box)
+            return replace(
+                descriptor,
+                embedding_version=EMBEDDING_VERSION,
+                embedding_b64=emb_b64,
+                fg_lab_version=FG_LAB_VERSION,
+                fg_lab_histogram=lab_hist,
+                fg_coat_profile=lab_coat7,
+                fg_bbox=inset_box,
+            )
+        except Exception:
+            return descriptor
+
+    return replace(
+        descriptor,
+        embedding_version=EMBEDDING_VERSION,
+        embedding_b64="",
+        fg_lab_version=FG_LAB_VERSION,
+        fg_lab_histogram=(),
+        fg_coat_profile=(),
+        fg_bbox=gate.primary_bbox,
     )
 
 

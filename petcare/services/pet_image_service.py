@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import heapq
 import json
+from pathlib import Path
 import re
 import unicodedata
 
@@ -17,6 +18,12 @@ from petcare.repositories import pet_repo
 from petcare.services.common import require_actor, text_value
 from petcare.services.ui_text import ui_text
 from petcare.services.exceptions import ValidationError
+from petcare.vision.coat_color_lab import (
+    compare_lab_histograms,
+    decode_embedding_f16_b64,
+    embedding_cosine_similarity,
+    lab_coat_groups_compatible,
+)
 from petcare.vision.image_features import (
     ImageDescriptor,
     InvalidImage,
@@ -86,6 +93,34 @@ SIMILAR_MAX_FLAT_PIXEL_RATIO = 0.68
 SIMILAR_MIN_COMBINED_SCORE = 0.68
 SIMILAR_MIN_DETECTOR_BBOX_SCORE = 0.60
 MAX_SIMILAR_CANDIDATES = 5
+
+_RETRIEVAL_CALIBRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "vision"
+    / "models"
+    / "retrieval_ranking_calibration_v1.json"
+)
+_RETRIEVAL_CALIBRATION_CACHE: dict | None = None
+
+
+def _get_retrieval_calibration() -> dict:
+    global _RETRIEVAL_CALIBRATION_CACHE
+    if _RETRIEVAL_CALIBRATION_CACHE is not None:
+        return _RETRIEVAL_CALIBRATION_CACHE
+    try:
+        raw = json.loads(_RETRIEVAL_CALIBRATION_PATH.read_text(encoding="utf-8"))
+        _RETRIEVAL_CALIBRATION_CACHE = dict(raw["parameters"])
+    except Exception:
+        _RETRIEVAL_CALIBRATION_CACHE = {
+            "embedding_weight": 0.58,
+            "lab_coat_weight": 0.34,
+            "structure_weight": 0.08,
+            "min_combined_similarity": 0.67,
+            "min_embedding_cosine": 0.54,
+            "min_lab_coat_similarity": 0.45,
+            "max_similar_candidates": MAX_SIMILAR_CANDIDATES,
+        }
+    return _RETRIEVAL_CALIBRATION_CACHE
 _VISION_FIELD_LIMITS = {
     "species": 80,
     "breed": 100,
@@ -367,8 +402,10 @@ def rank_pet_candidates_ai4a(
     analysis: dict | None = None,
     include_similar: bool = True,
     species_gate: SpeciesGateDecision | None = None,
+    use_foreground_embeddings: bool = True,
+    ranking_mode: str = "ai4_0c_combined",
 ) -> dict:
-    """Precision-first AI-4.0b/a pet photo matcher with exact priority, automatic local species gate, and safe abstention."""
+    """Precision-first AI-4.0c/b/a pet photo matcher with exact priority, species gate, 1280-D embeddings, and CIE-Lab reranking."""
     has_reference_photos = False
     materialized: list[tuple[dict, ImageDescriptor | None, float | None]] = []
 
@@ -564,6 +601,31 @@ def rank_pet_candidates_ai4a(
     min_sim_threshold = (
         SIMILAR_MIN_DETECTOR_BBOX_SCORE if use_fg_bbox else SIMILAR_MIN_COMBINED_SCORE
     )
+    rcal = _get_retrieval_calibration()
+    w_emb = float(rcal["embedding_weight"])
+    w_lab = float(rcal["lab_coat_weight"])
+    w_struct = float(rcal["structure_weight"])
+    min_comb_4c = float(rcal["min_combined_similarity"])
+    min_emb_cos = float(rcal["min_embedding_cosine"])
+    min_lab_sim = float(rcal["min_lab_coat_similarity"])
+
+    active_mode = ranking_mode if use_foreground_embeddings else "ai4_0b_baseline"
+    q_emb_b64 = (
+        species_gate.foreground_embedding_b64
+        if species_gate is not None and species_gate.foreground_embedding_b64
+        else query.embedding_b64
+    )
+    q_emb_vec = decode_embedding_f16_b64(q_emb_b64) if q_emb_b64 else None
+    q_lab_hist = (
+        species_gate.foreground_lab_histogram
+        if species_gate is not None and species_gate.foreground_lab_histogram
+        else query.fg_lab_histogram
+    )
+    q_lab_coat7 = (
+        species_gate.foreground_lab_coat_profile
+        if species_gate is not None and species_gate.foreground_lab_coat_profile
+        else query.fg_coat_profile
+    )
 
     if include_similar and not non_photo_rejected:
         for pet, saved, visual_score in materialized:
@@ -578,21 +640,88 @@ def rank_pet_candidates_ai4a(
             if use_fg_bbox and species_gate is not None and species_gate.foreground_descriptor is not None:
                 bbox_vis = compare_images(species_gate.foreground_descriptor, saved)
                 best_vis = max(visual_score, bbox_vis)
-            coat_sim = compare_coat_profiles(active_coat_profile, saved.subject_coat_profile)
-            effective_coat_sim = coat_sim if coat_sim is not None else best_vis
-            if not coat_groups_compatible(
-                active_coat_profile,
-                pet.get("coat_color"),
-                pet.get("appearance_tags"),
-                saved.subject_coat_profile,
-            ):
-                continue
-            if use_fg_bbox:
-                combined_sim = 0.45 * best_vis + 0.55 * effective_coat_sim
+
+            c_emb_vec = (
+                decode_embedding_f16_b64(saved.embedding_b64, actual_version=saved.embedding_version)
+                if saved.embedding_b64
+                else None
+            )
+            c_lab_hist = saved.fg_lab_histogram
+            has_4c_pair = bool(
+                q_emb_vec is not None
+                and c_emb_vec is not None
+                and q_lab_hist
+                and c_lab_hist
+            )
+
+            emb_sim: float | None = None
+            lab_sim: float | None = None
+
+            if active_mode == "embedding_only" and q_emb_vec is not None and c_emb_vec is not None:
+                emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
+                if emb_sim is None or emb_sim < min_comb_4c:
+                    continue
+                combined_sim = emb_sim
+                effective_coat_sim = emb_sim
+            elif active_mode == "coat_lab_only" and q_lab_hist and c_lab_hist:
+                if not lab_coat_groups_compatible(
+                    q_lab_coat7,
+                    pet.get("coat_color"),
+                    pet.get("appearance_tags"),
+                    saved.fg_coat_profile,
+                ):
+                    continue
+                lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
+                if lab_sim is None or lab_sim < min_comb_4c:
+                    continue
+                combined_sim = lab_sim
+                effective_coat_sim = lab_sim
+            elif active_mode == "ai4_0c_combined" and has_4c_pair:
+                if not lab_coat_groups_compatible(
+                    q_lab_coat7,
+                    pet.get("coat_color"),
+                    pet.get("appearance_tags"),
+                    saved.fg_coat_profile,
+                ):
+                    continue
+                emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
+                lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
+                if (
+                    emb_sim is None
+                    or lab_sim is None
+                    or emb_sim < min_emb_cos
+                    or lab_sim < min_lab_sim
+                ):
+                    continue
+                ref_fg = (
+                    species_gate.foreground_descriptor
+                    if species_gate is not None and species_gate.foreground_descriptor is not None
+                    else query
+                )
+                fg_parts = similarity_components(ref_fg, saved)
+                struct_sim = float(fg_parts["structure"]) if fg_parts else 0.5
+                combined_sim = w_emb * emb_sim + w_lab * lab_sim + w_struct * struct_sim
+                if combined_sim < min_comb_4c:
+                    continue
+                effective_coat_sim = lab_sim
             else:
-                combined_sim = 0.55 * best_vis + 0.45 * effective_coat_sim
-            if combined_sim < min_sim_threshold:
-                continue
+                # Safe per-candidate fallback when AI-4.0c is disabled or candidate row awaits reindex
+                coat_sim = compare_coat_profiles(active_coat_profile, saved.subject_coat_profile)
+                effective_coat_sim = coat_sim if coat_sim is not None else best_vis
+                if not coat_groups_compatible(
+                    active_coat_profile,
+                    pet.get("coat_color"),
+                    pet.get("appearance_tags"),
+                    saved.subject_coat_profile,
+                ):
+                    continue
+                if use_fg_bbox:
+                    combined_sim = 0.45 * best_vis + 0.55 * effective_coat_sim
+                else:
+                    combined_sim = 0.55 * best_vis + 0.45 * effective_coat_sim
+                if combined_sim < min_sim_threshold:
+                    continue
+
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
             capped_score = min(89, max(1, round(combined_sim * 100)))
             similar_hits.append({
@@ -600,7 +729,8 @@ def rank_pet_candidates_ai4a(
                 "saved": saved,
                 "score": capped_score,
                 "sort_score": combined_sim,
-                "visual_score": round(best_vis * 100),
+                "visual_score": round((emb_sim if emb_sim is not None else best_vis) * 100),
+                "embedding_score": round(emb_sim * 100) if emb_sim is not None else None,
                 "coat_score": round(effective_coat_sim * 100),
                 "attribute_score": round(metadata_score * 100),
                 "match_tier": MATCH_TIER_SIMILAR,
@@ -615,10 +745,16 @@ def rank_pet_candidates_ai4a(
     for result in combined_results:
         saved = result.pop("saved", None)
         result.pop("sort_score", None)
+        emb_pct = result.get("embedding_score")
+        coat_pct = result.get("coat_score")
         parts = similarity_components(query, saved) if saved else None
         result["components"] = {
             key: round(value * 100) for key, value in (parts or {}).items()
         }
+        if emb_pct is not None:
+            result["components"]["morphology"] = emb_pct
+        if coat_pct is not None and result["match_tier"] == MATCH_TIER_SIMILAR:
+            result["components"]["color"] = coat_pct
         result["components"]["attributes"] = result["attribute_score"]
         result["reasons"] = []
         matched_colors = [
@@ -630,9 +766,14 @@ def rank_pet_candidates_ai4a(
             result["reasons"].append({"kind": "exact_photo", "value": ""})
         elif result["match_tier"] == MATCH_TIER_NEAR_DUP:
             result["reasons"].append({"kind": "near_duplicate", "value": ""})
+        else:
+            if emb_pct is not None and emb_pct >= 70:
+                result["reasons"].append({"kind": "appearance_embedding", "value": ""})
+            if coat_pct is not None and coat_pct >= 74:
+                result["reasons"].append({"kind": "lab_coat", "value": ""})
         if matched_colors:
             result["reasons"].append({"kind": "coat", "value": ", ".join(matched_colors)})
-        if parts and parts["color"] >= 0.8:
+        if parts and parts["color"] >= 0.8 and not any(r["kind"] == "lab_coat" for r in result["reasons"]):
             result["reasons"].append({"kind": "color", "value": ""})
         if parts and parts["structure"] >= 0.8:
             result["reasons"].append({"kind": "structure", "value": ""})
@@ -665,6 +806,7 @@ def rank_pet_candidates_ai4a(
 
 
 rank_pet_candidates_ai4b = rank_pet_candidates_ai4a
+rank_pet_candidates_ai4c = rank_pet_candidates_ai4a
 
 
 def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:
@@ -731,6 +873,7 @@ def search_similar(
     analysis, warning, _provider_status = _analysis_from_model(normalized)
     explicit_species = canonicalize_species(species)
     local_gate_enabled = bool(current_app.config.get("AI_LOCAL_SPECIES_GATE_ENABLED", True))
+    fg_emb_enabled = bool(current_app.config.get("AI_FOREGROUND_EMBEDDING_ENABLED", True))
     species_gate = (
         analyze_pet_image(normalized, flat_pixel_ratio=query.flat_pixel_ratio)
         if isinstance(query, ImageDescriptor) and local_gate_enabled
@@ -772,6 +915,7 @@ def search_similar(
                 analysis=analysis,
                 include_similar=include_similar,
                 species_gate=species_gate,
+                use_foreground_embeddings=fg_emb_enabled,
             )
             results = outcome["results"]
             has_reference_photos = has_reference_photos or outcome["has_reference_photos"]
