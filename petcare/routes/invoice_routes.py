@@ -6,6 +6,7 @@ from flask import Blueprint, flash, g, jsonify, redirect, render_template, reque
 from petcare.auth import admin_required, login_required
 from petcare.i18n import translate
 from petcare.services import customer_service, invoice_service, pet_service, product_service, refund_service
+from petcare.services.catalog_visuals import pet_visual, product_visual
 from petcare.services.exceptions import NotFoundError, ServiceError, ValidationError
 
 bp = Blueprint("invoices", __name__, url_prefix="/invoices")
@@ -172,24 +173,30 @@ def lookup_items():
         g.user["id"], search, "available", page=request.args.get("pet_page", "1"),
         tenant_id=g.tenant_id,
     )
+    def _lookup_product_payload(row):
+        vis = product_visual(row)
+        return {
+            "id": row["id"], "code": row["code"], "name": row["name"],
+            "unit_price": format(Decimal(row["unit_price"]), "f"),
+            "stock_qty": row["stock_qty"],
+            "photo_url": url_for("products.photo", filename=row["photo_filename"]) if row.get("photo_filename") else None,
+            "illustrative_photo_url": vis["url"] if vis["is_illustrative"] else None,
+            "fallback_photo_url": vis["fallback_url"],
+        }
+
+    def _lookup_pet_payload(row):
+        pvis = pet_visual(row)
+        return {
+            "id": row["id"], "code": row["code"], "name": row["name"],
+            "sale_price": format(Decimal(row["sale_price"]), "f"),
+            "photo_url": url_for("pets.photo", filename=row["photo_filename"]) if row.get("photo_filename") else None,
+            "illustrative_photo_url": pvis["url"] if pvis["is_illustrative"] else None,
+            "fallback_photo_url": pvis["fallback_url"],
+        }
+
     return jsonify(
-        products=[
-            {
-                "id": row["id"], "code": row["code"], "name": row["name"],
-                "unit_price": format(Decimal(row["unit_price"]), "f"),
-                "stock_qty": row["stock_qty"],
-                "photo_url": url_for("products.photo", filename=row["photo_filename"]) if row.get("photo_filename") else None,
-            }
-            for row in products["items"]
-        ],
-        pets=[
-            {
-                "id": row["id"], "code": row["code"], "name": row["name"],
-                "sale_price": format(Decimal(row["sale_price"]), "f"),
-                "photo_url": url_for("pets.photo", filename=row["photo_filename"]) if row.get("photo_filename") else None,
-            }
-            for row in pets["items"]
-        ],
+        products=[_lookup_product_payload(row) for row in products["items"]],
+        pets=[_lookup_pet_payload(row) for row in pets["items"]],
         product_pagination=products["pagination"],
         pet_pagination=pets["pagination"],
     )

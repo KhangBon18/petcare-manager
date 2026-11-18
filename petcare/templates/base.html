@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#F5F7F6">
+  <meta name="theme-color" content="#F8FAFC">
   <title>{% block title %}PetCare Manager{% endblock %} · {{ t('Cửa hàng thú cưng') }}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
@@ -19,8 +19,8 @@
 <div class="app-shell">
   <aside class="sidebar">
     <a class="brand" href="{{ url_for('main.dashboard') }}">
-      <span class="brand-mark">P</span>
-      <span><strong>petcare</strong><small>SHOP MANAGER</small></span>
+      <span class="brand-mark">{{ icon('brand') }}</span>
+      <span><strong>PetCare</strong><small>SHOP MANAGER</small></span>
     </a>
     <nav class="side-nav" aria-label="{{ t('Điều hướng chính') }}">
       <a class="nav-link nav-link-dashboard {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}" {% if request.endpoint == 'main.dashboard' %}aria-current="page"{% endif %}>{{ icon('dashboard', 'nav-icon') }} <span class="nav-label">{{ t('Tổng quan') }}</span></a>
@@ -68,9 +68,8 @@
   </aside>
   <main class="main-area" id="main-content" tabindex="-1">
     <header class="topbar{% if g.user.store_memberships|length > 1 %} topbar-multi-store{% endif %}{% if g.user.role == 'admin' %} topbar-mobile-admin{% endif %}">
-      <div class="mobile-brand"><span class="brand-mark">P</span><strong>petcare</strong></div>
+      <div class="mobile-brand"><span class="brand-mark">{{ icon('brand') }}</span><strong>PetCare</strong></div>
       <div class="topbar-spacer"></div>
-      {% include "partials/language_picker.html" %}
       {% if g.user.store_memberships|length > 1 %}
       <form class="topbar-store-switcher" action="{{ url_for('auth.switch_store') }}" method="post">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

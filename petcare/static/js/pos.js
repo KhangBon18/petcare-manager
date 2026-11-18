@@ -113,18 +113,41 @@
   }
 
   function makeCard(item) {
-    const card = document.createElement("button"); card.type = "button"; card.className = "pos-card";
+    const card = document.createElement("button"); card.type = "button";
+    const hasPhoto = Boolean(item.photo);
+    card.className = `pos-card ${item.kind === "product" ? "pos-card--compact" : (hasPhoto ? "pos-card--photo" : "pos-card--compact")}`;
     Object.assign(card.dataset, item, {posItem: ""});
-    const art = document.createElement("span"); art.className = "pos-card-image";
-    if (item.photo) {
+    if (item.kind === "pet" && hasPhoto) {
+      const art = document.createElement("span"); art.className = "pos-card-image has-photo";
       const img = document.createElement("img"); img.src = item.photo; img.alt = item.name; img.loading = "lazy";
+      if (item.fallback) img.dataset.fallbackSrc = item.fallback;
       art.append(img);
+      const kind = document.createElement("span"); kind.className = "pos-kind";
+      kind.textContent = copy.pet; art.append(kind);
+      card.append(art);
     } else {
-      const icon = window.PetCare.icon(item.kind === "product" ? "products" : "pets");
-      if (icon) art.append(icon);
+      const head = document.createElement("span"); head.className = "pos-card-head-compact";
+      if (hasPhoto) {
+        const thumb = document.createElement("img");
+        thumb.className = "pos-thumb-mini";
+        thumb.src = item.photo;
+        thumb.alt = item.name;
+        thumb.width = 44;
+        thumb.height = 44;
+        thumb.decoding = "async";
+        if (item.fallback) thumb.dataset.fallbackSrc = item.fallback;
+        head.append(thumb);
+      } else {
+        const badge = document.createElement("span"); badge.className = "pos-sku-badge";
+        const icon = window.PetCare.icon(item.kind === "product" ? "products" : "pets");
+        if (icon) badge.append(icon);
+        head.append(badge);
+      }
+      const kind = document.createElement("span"); kind.className = "pos-kind-inline";
+      kind.textContent = item.kind === "pet" ? copy.pet : copy.product;
+      head.append(kind);
+      card.append(head);
     }
-    const kind = document.createElement("span"); kind.className = "pos-kind";
-    kind.textContent = item.kind === "pet" ? copy.pet : copy.product; art.append(kind);
     const body = document.createElement("span"); body.className = "pos-card-copy";
     for (const [tag, text] of [["small", item.code], ["strong", item.name], ["b", money(item.price)]]) {
       const node = document.createElement(tag); node.textContent = text; body.append(node);
@@ -132,7 +155,7 @@
     const stock = document.createElement("span"); stock.className = "pos-card-stock";
     stock.append(document.createTextNode(`${copy.left} ${item.stock} · `));
     const action = document.createElement("span"); action.dataset.posAction = ""; action.textContent = copy.add;
-    stock.append(action); body.append(stock); card.append(art, body); return card;
+    stock.append(action); body.append(stock); card.append(body); return card;
   }
 
   function setLoading(loading) {
@@ -169,7 +192,9 @@
         for (const row of rows) {
           const item = {selection: `${kind}:${row.id}`, kind, name: row.name, code: row.code,
             price: String(kind === "pet" ? row.sale_price : row.unit_price),
-            stock: kind === "pet" ? 1 : row.stock_qty, photo: row.photo_url || ""};
+            stock: kind === "pet" ? 1 : row.stock_qty,
+            photo: row.photo_url || row.illustrative_photo_url || "",
+            fallback: row.fallback_photo_url || ""};
           catalog.set(item.selection, item);
           if (!shown.has(item.selection)) { results.append(makeCard(item)); shown.add(item.selection); }
         }

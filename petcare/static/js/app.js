@@ -170,6 +170,14 @@
     });
   });
 
+  document.addEventListener("error", event => {
+    const img = event.target;
+    if (img instanceof HTMLImageElement && img.dataset.fallbackSrc && img.dataset.fallbackApplied !== "1") {
+      img.dataset.fallbackApplied = "1";
+      img.src = img.dataset.fallbackSrc;
+    }
+  }, true);
+
   document.addEventListener("click", event => {
     if (event.target.closest("[data-reload-page]")) window.location.reload();
   });

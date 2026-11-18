@@ -162,6 +162,7 @@ def register_template_helpers(app):
     @app.context_processor
     def inject_helpers():
         from petcare.ai.provider import get_provider_status
+        from petcare.services.catalog_visuals import pet_visual, product_visual
 
         def format_money(amount, currency_code=None):
             code = currency_code or (g.tenant or {}).get("default_currency", "VND")
@@ -200,4 +201,6 @@ def register_template_helpers(app):
             "t": translate,
             "translate_audit_summary": translate_audit_summary,
             "ai_provider_status": get_provider_status(),
+            "product_visual": product_visual,
+            "pet_visual": pet_visual,
         }

@@ -64,3 +64,4 @@ Test được cập nhật (chỉ các assertion bám vào nhãn trang trí đã
 3. `app.css` vẫn chứa nhiều màu hardcode cũ; `ui.css` ghi đè ở tầng hiển thị. Bước tiếp theo: hợp nhất dần vào token.
 4. Một số liên kết văn bản còn ký tự "→" và vài đoạn ghi chú dài (refund, export) có thể rút gọn thêm.
 5. Ảnh SaaSFrame không khảo sát được (anti-bot checkpoint) — không vượt qua.
+
