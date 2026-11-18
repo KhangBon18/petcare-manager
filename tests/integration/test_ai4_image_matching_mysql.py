@@ -382,6 +382,168 @@ class AI4ImageMatchingMySQLIntegrationTests(unittest.TestCase):
             finally:
                 self.app.config["AI_FOREGROUND_EMBEDDING_ENABLED"] = True
 
+    def test_ai4d_multi_photo_gallery_crud_secondary_rank1_limit_tenancy_and_rollback(self):
+        from unittest.mock import patch
+        from petcare.database.readiness import schema_contract_is_ready
+        from petcare.services.exceptions import ValidationError
+
+        # 1. Repeatable migration & readiness check (non-destructive on existing pets)
+        initialize_database()
+        with get_connection() as conn:
+            cur = conn.cursor()
+            try:
+                self.assertTrue(schema_contract_is_ready(cur))
+            finally:
+                cur.close()
+
+        cat_pet_id = self.branch_pet_ids[0]  # BR-CAT-01 (primary: demo-cat-03.png)
+        sec_assets = (
+            ("demo-cat-25.png", "front_view"),
+            ("demo-cat-05.png", "side_view"),
+            ("demo-cat-07.png", "coat_detail"),
+            ("demo-cat-12.png", "lighting_variant"),
+        )
+        added_ref_ids: list[int] = []
+        media_dir = Path(Config.PET_IMAGE_DIR)
+
+        with self.app.app_context():
+            # Reject uploading a dog photo onto a cat record (species consistency + zero orphan files)
+            before_files = set(os.listdir(media_dir))
+            dog_bytes = (DEMO_PETS_DIR / "demo-dog-02.png").read_bytes()
+            with self.assertRaises(ValidationError):
+                pet_service.add_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    FileStorage(stream=io.BytesIO(dog_bytes), filename="wrong_dog.png", content_type="image/png"),
+                    image_role="side_view",
+                    verified_same_pet=True,
+                    tenant_id=self.branch_tenant_id,
+                )
+            self.assertEqual(set(os.listdir(media_dir)), before_files)
+
+            # TEST 13: Simulated DB error during add_reference_photo cleans up stored file without orphans
+            cat_rollback_bytes = (DEMO_PETS_DIR / "demo-cat-25.png").read_bytes()
+            with patch(
+                "petcare.services.pet_service.pet_repo.add_reference_photo",
+                side_effect=RuntimeError("Simulated DB failure"),
+            ):
+                with self.assertRaises(RuntimeError):
+                    pet_service.add_reference_photo(
+                        self.branch_user_id,
+                        cat_pet_id,
+                        FileStorage(stream=io.BytesIO(cat_rollback_bytes), filename="rb.png", content_type="image/png"),
+                        image_role="front_view",
+                        verified_same_pet=True,
+                        tenant_id=self.branch_tenant_id,
+                    )
+            self.assertEqual(set(os.listdir(media_dir)), before_files)
+
+            # Add 4 verified cat reference photos -> reaches 5/5 total gallery photos
+            for fname, role in sec_assets:
+                raw = (DEMO_PETS_DIR / fname).read_bytes()
+                rid = pet_service.add_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    FileStorage(stream=io.BytesIO(raw), filename=fname, content_type="image/png"),
+                    image_role=role,
+                    verified_same_pet=True,
+                    tenant_id=self.branch_tenant_id,
+                )
+                added_ref_ids.append(rid)
+
+            pet_full = pet_service.get_pet(self.branch_user_id, cat_pet_id, tenant_id=self.branch_tenant_id)
+            self.assertEqual(pet_full["gallery_photo_count"], 5)
+            self.assertEqual(len(pet_full["reference_photos"]), 4)
+            sec2_filename = pet_full["reference_photos"][0]["photo_filename"]
+
+            # TEST 9: 6th photo over 5-photo limit fails safely with zero orphan files
+            files_at_5 = set(os.listdir(media_dir))
+            extra_cat = (DEMO_PETS_DIR / "demo-cat-14.png").read_bytes()
+            with self.assertRaises(ValidationError):
+                pet_service.add_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    FileStorage(stream=io.BytesIO(extra_cat), filename="over.png", content_type="image/png"),
+                    image_role="additional",
+                    verified_same_pet=True,
+                    tenant_id=self.branch_tenant_id,
+                )
+            self.assertEqual(set(os.listdir(media_dir)), files_at_5)
+
+            # TEST 2 & TEST 4: Search using exact secondary photo (#2) -> ranks BR-CAT-01 at Rank 1 and appears ONLY ONCE!
+            sec2_query = (DEMO_PETS_DIR / "demo-cat-25.png").read_bytes()
+            sec_out = pet_image_service.search_similar(
+                self.branch_user_id,
+                sec2_query,
+                species="",
+                tenant_id=self.branch_tenant_id,
+            )
+            self.assertEqual(sec_out["match_outcome"], "exact_image_match")
+            self.assertEqual(sec_out["results"][0]["pet"]["code"], "BR-CAT-01")
+            self.assertEqual(sec_out["results"][0]["match_tier"], "exact_image_match")
+            self.assertEqual(sec_out["results"][0]["matched_photo_index"], 2)
+            self.assertEqual(sec_out["results"][0]["gallery_photo_count"], 5)
+            codes_in_res = [r["pet"]["code"] for r in sec_out["results"]]
+            self.assertEqual(codes_in_res.count("BR-CAT-01"), 1)
+
+            # Crop-robust near-duplicate of secondary photo #2 also resolves to BR-CAT-01 without duplicate cards
+            crop_sec2 = make_near_duplicate_variant(sec2_query, "near_dup_crop4_bright106_q82")
+            crop_out = pet_image_service.search_similar(
+                self.branch_user_id,
+                crop_sec2,
+                species="",
+                tenant_id=self.branch_tenant_id,
+            )
+            self.assertEqual(crop_out["results"][0]["pet"]["code"], "BR-CAT-01")
+            self.assertEqual(crop_out["results"][0]["match_tier"], "near_duplicate_image")
+            self.assertEqual([r["pet"]["code"] for r in crop_out["results"]].count("BR-CAT-01"), 1)
+
+        # TEST 8: Cross-tenant HTTP access to branch store's secondary gallery photo is blocked (404)
+        main_admin_client = self._login_client("admin", DEMO_ADMIN_PASSWORD, store_slug="main")
+        self.assertEqual(main_admin_client.get(f"/pets/photo/{sec2_filename}").status_code, 404)
+
+        # TEST 10: Remove all 4 added reference photos and confirm search descriptors & files stay consistent
+        with self.app.app_context():
+            # Test reorder make_primary + swap back first
+            pet_service.reorder_reference_photo(
+                self.branch_user_id,
+                cat_pet_id,
+                added_ref_ids[0],
+                "make_primary",
+                tenant_id=self.branch_tenant_id,
+            )
+            swapped = pet_service.get_pet(self.branch_user_id, cat_pet_id, tenant_id=self.branch_tenant_id)
+            self.assertEqual(swapped["photo_filename"], sec2_filename)
+            pet_service.reorder_reference_photo(
+                self.branch_user_id,
+                cat_pet_id,
+                added_ref_ids[0],
+                "make_primary",
+                tenant_id=self.branch_tenant_id,
+            )
+
+            for rid in added_ref_ids:
+                pet_service.remove_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    rid,
+                    tenant_id=self.branch_tenant_id,
+                )
+
+            restored = pet_service.get_pet(self.branch_user_id, cat_pet_id, tenant_id=self.branch_tenant_id)
+            self.assertEqual(restored["gallery_photo_count"], 1)
+            self.assertEqual(restored["reference_photos"], [])
+            self.assertFalse((media_dir / sec2_filename).exists())
+
+            # Secondary photo #2 is no longer an exact match in branch store after removal!
+            after_rm = pet_image_service.search_similar(
+                self.branch_user_id,
+                sec2_query,
+                species="",
+                tenant_id=self.branch_tenant_id,
+            )
+            self.assertNotEqual(after_rm["match_outcome"], "exact_image_match")
+
 
 if __name__ == "__main__":
     unittest.main()

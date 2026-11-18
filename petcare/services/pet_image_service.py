@@ -10,6 +10,7 @@ import re
 import unicodedata
 
 from flask import current_app
+import numpy as np
 
 from petcare.ai import client as ai_client
 from petcare.database.connection import read_connection
@@ -22,6 +23,7 @@ from petcare.vision.coat_color_lab import (
     compare_lab_histograms,
     decode_embedding_f16_b64,
     embedding_cosine_similarity,
+    l2_normalize_embedding,
     lab_coat_groups_compatible,
 )
 from petcare.vision.image_features import (
@@ -373,25 +375,64 @@ def _is_exact_descriptor_match(query: ImageDescriptor, saved: ImageDescriptor | 
     return False
 
 
+# Calibrated crop-robust near-duplicate thresholds derived exclusively from AI-4.0d calibration split
+# (max distinct-pet embedding cosine on calibration = 0.9335; min 4%-crop+bright+6% cosine = 0.9645 -> 0 FP)
+CROP_NEAR_DUP_MIN_EMBEDDING_COSINE = 0.955
+CROP_NEAR_DUP_MIN_LAB_SIM = 0.86
+CROP_NEAR_DUP_MIN_VISUAL_SCORE = 0.90
+CROP_NEAR_DUP_MAX_COMBINED_HASH = 24
+
+# Potential matching pet staff-verification review threshold (never confirms identity; capped <= 89)
+POTENTIAL_MATCH_REVIEW_MIN_COMBINED = 0.80
+POTENTIAL_MATCH_REVIEW_MIN_EMBEDDING = 0.78
+POTENTIAL_MATCH_REVIEW_MIN_COAT = 0.78
+
+
 def _is_near_duplicate_match(
     query: ImageDescriptor,
     saved: ImageDescriptor | None,
     visual_score: float | None,
+    *,
+    q_emb_vec: np.ndarray | None = None,
+    q_lab_hist: tuple[float, ...] = (),
+    enable_crop_robust: bool = False,
 ) -> bool:
-    if saved is None or visual_score is None or visual_score < NEAR_DUP_MIN_VISUAL_SCORE:
+    if saved is None or visual_score is None:
         return False
     d_dist = hamming_hex64(query.dhash64, saved.dhash64)
     p_dist = hamming_hex64(query.phash64, saved.phash64)
     if d_dist is None or p_dist is None:
         return False
-    if not (
-        d_dist <= NEAR_DUP_MAX_DHASH
+    if (
+        visual_score >= NEAR_DUP_MIN_VISUAL_SCORE
+        and d_dist <= NEAR_DUP_MAX_DHASH
         and p_dist <= NEAR_DUP_MAX_PHASH
         and (d_dist + p_dist) <= NEAR_DUP_MAX_COMBINED_HASH
     ):
-        return False
-    parts = similarity_components(query, saved)
-    return bool(parts and parts["structure"] >= NEAR_DUP_MIN_STRUCTURE_SCORE)
+        parts = similarity_components(query, saved)
+        if parts and parts["structure"] >= NEAR_DUP_MIN_STRUCTURE_SCORE:
+            return True
+
+    if (
+        enable_crop_robust
+        and q_emb_vec is not None
+        and q_lab_hist
+        and saved.embedding_b64
+        and saved.fg_lab_histogram
+        and visual_score >= CROP_NEAR_DUP_MIN_VISUAL_SCORE
+        and (d_dist + p_dist) <= CROP_NEAR_DUP_MAX_COMBINED_HASH
+    ):
+        c_emb = decode_embedding_f16_b64(saved.embedding_b64, actual_version=saved.embedding_version)
+        esim = embedding_cosine_similarity(q_emb_vec, c_emb)
+        lsim = compare_lab_histograms(q_lab_hist, saved.fg_lab_histogram)
+        if (
+            esim is not None
+            and lsim is not None
+            and esim >= CROP_NEAR_DUP_MIN_EMBEDDING_COSINE
+            and lsim >= CROP_NEAR_DUP_MIN_LAB_SIM
+        ):
+            return True
+    return False
 
 
 def rank_pet_candidates_ai4a(
@@ -404,20 +445,62 @@ def rank_pet_candidates_ai4a(
     species_gate: SpeciesGateDecision | None = None,
     use_foreground_embeddings: bool = True,
     ranking_mode: str = "ai4_0c_combined",
+    gallery_mode: str = "calibrated_gallery_hybrid",
+    crop_robust_near_dup: bool | None = None,
 ) -> dict:
-    """Precision-first AI-4.0c/b/a pet photo matcher with exact priority, species gate, 1280-D embeddings, and CIE-Lab reranking."""
+    """Gallery-level AI-4.0d/c/b/a pet photo matcher ranking unique pet records across 1..5 reference photos."""
     has_reference_photos = False
-    materialized: list[tuple[dict, ImageDescriptor | None, float | None]] = []
+    # Each entry: (pet_dict, list_of_(filename, role, slot_idx, ImageDescriptor|None, vis_score|None))
+    materialized_galleries: list[
+        tuple[dict, list[tuple[str | None, str, int, ImageDescriptor | None, float | None]]]
+    ] = []
 
     for pet in candidates:
-        if pet.get("photo_filename"):
-            has_reference_photos = True
+        gallery_entries: list[tuple[str | None, str, int, ImageDescriptor | None, float | None]] = []
+        primary_fn = pet.get("photo_filename")
         raw_desc = pet.get("photo_descriptor")
-        saved = descriptor_from_json(raw_desc) if raw_desc else None
-        visual_score = compare_images(query, saved) if saved is not None else compare_images_from_json(query, raw_desc)
-        materialized.append((pet, saved, visual_score))
+        if primary_fn or raw_desc:
+            has_reference_photos = True
+            saved = descriptor_from_json(raw_desc) if raw_desc else None
+            vis = compare_images(query, saved) if saved is not None else compare_images_from_json(query, raw_desc)
+            gallery_entries.append((primary_fn, "primary", 1, saved, vis))
+
+        if gallery_mode != "primary_only":
+            extra_refs = pet.get("reference_photos") or ()
+            for offset, ref in enumerate(extra_refs[:4], start=len(gallery_entries) + 1):
+                r_fn = ref.get("photo_filename")
+                r_raw = ref.get("photo_descriptor")
+                if r_fn or r_raw:
+                    has_reference_photos = True
+                    r_saved = descriptor_from_json(r_raw) if r_raw else None
+                    r_vis = (
+                        compare_images(query, r_saved)
+                        if r_saved is not None
+                        else compare_images_from_json(query, r_raw)
+                    )
+                    gallery_entries.append(
+                        (r_fn, str(ref.get("image_role") or "additional"), offset, r_saved, r_vis)
+                    )
+
+        materialized_galleries.append((pet, gallery_entries))
 
     subject_status = species_gate.subject_status if species_gate is not None else None
+    q_emb_b64 = (
+        species_gate.foreground_embedding_b64
+        if species_gate is not None and species_gate.foreground_embedding_b64
+        else query.embedding_b64
+    )
+    q_emb_vec = decode_embedding_f16_b64(q_emb_b64) if q_emb_b64 else None
+    q_lab_hist = (
+        species_gate.foreground_lab_histogram
+        if species_gate is not None and species_gate.foreground_lab_histogram
+        else query.fg_lab_histogram
+    )
+    q_lab_coat7 = (
+        species_gate.foreground_lab_coat_profile
+        if species_gate is not None and species_gate.foreground_lab_coat_profile
+        else query.fg_coat_profile
+    )
 
     # Guardrail (Phase 6): A manual species filter must NEVER override a verified species contradiction
     if (
@@ -436,13 +519,26 @@ def rank_pet_candidates_ai4a(
             "subject_status": subject_status,
         }
 
-    # Pass 1: Tier 0 (Exact SHA-256) and Tier 1 (Calibrated near-duplicate)
+    # Pass 1: Tier 0 (Exact SHA-256 across gallery) and Tier 1 (Calibrated near-duplicate across gallery)
+    # Emits AT MOST ONE hit per pet record!
     exact_hits: list[dict] = []
     near_dup_hits: list[dict] = []
 
-    for pet, saved, visual_score in materialized:
+    for pet, gallery_entries in materialized_galleries:
+        if not gallery_entries:
+            continue
         pet_species = canonicalize_species(pet.get("species"))
-        if _is_exact_descriptor_match(query, saved, visual_score):
+        gallery_count = len(gallery_entries)
+
+        matched_exact = None
+        for entry in gallery_entries:
+            _fn, _role, _slot, saved, vis = entry
+            if _is_exact_descriptor_match(query, saved, vis):
+                matched_exact = entry
+                break
+
+        if matched_exact is not None:
+            fn, role, slot, saved, _vis = matched_exact
             if explicit_species is not None and pet_species != explicit_species:
                 return {
                     "results": [],
@@ -462,20 +558,48 @@ def rank_pet_candidates_ai4a(
                 "visual_score": 100,
                 "attribute_score": round(metadata_score * 100),
                 "match_tier": MATCH_TIER_EXACT,
+                "matched_photo_filename": fn or pet.get("photo_filename"),
+                "matched_photo_role": role,
+                "matched_photo_index": slot,
+                "gallery_photo_count": gallery_count,
+                "potential_same_pet_review": False,
             })
-        elif _is_near_duplicate_match(query, saved, visual_score) and visual_score is not None:
+            continue
+
+        use_crop_nd = use_foreground_embeddings if crop_robust_near_dup is None else bool(crop_robust_near_dup)
+        best_ndup = None
+        for entry in gallery_entries:
+            _fn, _role, _slot, saved, vis = entry
+            if vis is not None and _is_near_duplicate_match(
+                query,
+                saved,
+                vis,
+                q_emb_vec=q_emb_vec,
+                q_lab_hist=q_lab_hist,
+                enable_crop_robust=use_crop_nd,
+            ):
+                if best_ndup is None or vis > best_ndup[4]:
+                    best_ndup = entry
+
+        if best_ndup is not None:
             if explicit_species is not None and pet_species != explicit_species:
                 continue
+            fn, role, slot, saved, vis = best_ndup
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
-            bounded = max(0.90, min(0.99, visual_score))
+            bounded = max(0.90, min(0.99, float(vis)))
             near_dup_hits.append({
                 "pet": pet,
                 "saved": saved,
                 "score": max(90, min(99, round(bounded * 100))),
                 "sort_score": bounded,
-                "visual_score": round(visual_score * 100),
+                "visual_score": round(float(vis) * 100),
                 "attribute_score": round(metadata_score * 100),
                 "match_tier": MATCH_TIER_NEAR_DUP,
+                "matched_photo_filename": fn or pet.get("photo_filename"),
+                "matched_photo_role": role,
+                "matched_photo_index": slot,
+                "gallery_photo_count": gallery_count,
+                "potential_same_pet_review": False,
             })
 
     exact_hits.sort(key=lambda r: (r["sort_score"], str(r["pet"].get("name", "")), -int(r["pet"]["id"])), reverse=True)
@@ -610,130 +734,180 @@ def rank_pet_candidates_ai4a(
     min_lab_sim = float(rcal["min_lab_coat_similarity"])
 
     active_mode = ranking_mode if use_foreground_embeddings else "ai4_0b_baseline"
-    q_emb_b64 = (
-        species_gate.foreground_embedding_b64
-        if species_gate is not None and species_gate.foreground_embedding_b64
-        else query.embedding_b64
-    )
-    q_emb_vec = decode_embedding_f16_b64(q_emb_b64) if q_emb_b64 else None
-    q_lab_hist = (
-        species_gate.foreground_lab_histogram
-        if species_gate is not None and species_gate.foreground_lab_histogram
-        else query.fg_lab_histogram
-    )
-    q_lab_coat7 = (
-        species_gate.foreground_lab_coat_profile
-        if species_gate is not None and species_gate.foreground_lab_coat_profile
-        else query.fg_coat_profile
-    )
+
+    def _score_one_photo(
+        pet: dict,
+        saved: ImageDescriptor,
+        visual_score: float,
+    ) -> tuple[float, float | None, float, np.ndarray | None, tuple[float, ...], float] | None:
+        best_vis = visual_score
+        if use_fg_bbox and species_gate is not None and species_gate.foreground_descriptor is not None:
+            bbox_vis = compare_images(species_gate.foreground_descriptor, saved)
+            best_vis = max(visual_score, bbox_vis)
+
+        c_emb_vec = (
+            decode_embedding_f16_b64(saved.embedding_b64, actual_version=saved.embedding_version)
+            if saved.embedding_b64
+            else None
+        )
+        c_lab_hist = saved.fg_lab_histogram
+        has_4c_pair = bool(
+            q_emb_vec is not None
+            and c_emb_vec is not None
+            and q_lab_hist
+            and c_lab_hist
+        )
+
+        ref_fg = (
+            species_gate.foreground_descriptor
+            if species_gate is not None and species_gate.foreground_descriptor is not None
+            else query
+        )
+        fg_parts = similarity_components(ref_fg, saved)
+        struct_sim = float(fg_parts["structure"]) if fg_parts else 0.5
+
+        if active_mode == "embedding_only" and q_emb_vec is not None and c_emb_vec is not None:
+            emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
+            if emb_sim is None:
+                return None
+            return emb_sim, emb_sim, emb_sim, c_emb_vec, c_lab_hist, struct_sim
+
+        if active_mode == "coat_lab_only" and q_lab_hist and c_lab_hist:
+            if not lab_coat_groups_compatible(
+                q_lab_coat7,
+                pet.get("coat_color"),
+                pet.get("appearance_tags"),
+                saved.fg_coat_profile,
+            ):
+                return None
+            lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
+            if lab_sim is None:
+                return None
+            return lab_sim, None, lab_sim, c_emb_vec, c_lab_hist, struct_sim
+
+        if active_mode == "ai4_0c_combined" and has_4c_pair:
+            if not lab_coat_groups_compatible(
+                q_lab_coat7,
+                pet.get("coat_color"),
+                pet.get("appearance_tags"),
+                saved.fg_coat_profile,
+            ):
+                return None
+            emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
+            lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
+            if (
+                emb_sim is None
+                or lab_sim is None
+                or emb_sim < min_emb_cos
+                or lab_sim < min_lab_sim
+            ):
+                return None
+            comb = w_emb * emb_sim + w_lab * lab_sim + w_struct * struct_sim
+            return comb, emb_sim, lab_sim, c_emb_vec, c_lab_hist, struct_sim
+
+        coat_sim = compare_coat_profiles(active_coat_profile, saved.subject_coat_profile)
+        eff_coat = coat_sim if coat_sim is not None else best_vis
+        if not coat_groups_compatible(
+            active_coat_profile,
+            pet.get("coat_color"),
+            pet.get("appearance_tags"),
+            saved.subject_coat_profile,
+        ):
+            return None
+        comb = (0.45 * best_vis + 0.55 * eff_coat) if use_fg_bbox else (0.55 * best_vis + 0.45 * eff_coat)
+        return comb, None, eff_coat, None, (), best_vis
 
     if include_similar and not non_photo_rejected:
-        for pet, saved, visual_score in materialized:
+        for pet, gallery_entries in materialized_galleries:
             pet_id = int(pet["id"])
-            if pet_id in direct_ids:
+            if pet_id in direct_ids or not gallery_entries:
                 continue
             if canonicalize_species(pet.get("species")) != verified_species:
                 continue
-            if saved is None or visual_score is None:
+
+            gallery_count = len(gallery_entries)
+            per_photo_evals: list[tuple[float, float | None, float, np.ndarray | None, tuple[float, ...], float, tuple]] = []
+            for entry in gallery_entries:
+                _fn, _role, _slot, saved, vis = entry
+                if saved is None or vis is None:
+                    continue
+                scored_one = _score_one_photo(pet, saved, vis)
+                if scored_one is not None:
+                    per_photo_evals.append((*scored_one, entry))
+
+            if not per_photo_evals:
                 continue
-            best_vis = visual_score
-            if use_fg_bbox and species_gate is not None and species_gate.foreground_descriptor is not None:
-                bbox_vis = compare_images(species_gate.foreground_descriptor, saved)
-                best_vis = max(visual_score, bbox_vis)
 
-            c_emb_vec = (
-                decode_embedding_f16_b64(saved.embedding_b64, actual_version=saved.embedding_version)
-                if saved.embedding_b64
-                else None
+            per_photo_evals.sort(key=lambda item: item[0], reverse=True)
+            best_comb, best_emb, best_coat, _be, _bl, best_aux, best_entry = per_photo_evals[0]
+            best_fn, best_role, best_slot, best_saved, best_raw_vis = best_entry
+
+            eff_threshold = (
+                min_comb_4c
+                if (active_mode in {"embedding_only", "coat_lab_only"} or best_emb is not None)
+                else min_sim_threshold
             )
-            c_lab_hist = saved.fg_lab_histogram
-            has_4c_pair = bool(
-                q_emb_vec is not None
-                and c_emb_vec is not None
+
+            # Gallery-level aggregation across authorized reference photos (Phase 5)
+            if gallery_mode == "mean_gallery" and len(per_photo_evals) >= 2:
+                combined_sim = sum(it[0] for it in per_photo_evals) / len(per_photo_evals)
+            elif (
+                gallery_mode == "calibrated_gallery_hybrid"
+                and len(per_photo_evals) >= 2
+                and active_mode == "ai4_0c_combined"
+                and q_emb_vec is not None
                 and q_lab_hist
-                and c_lab_hist
-            )
-
-            emb_sim: float | None = None
-            lab_sim: float | None = None
-
-            if active_mode == "embedding_only" and q_emb_vec is not None and c_emb_vec is not None:
-                emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
-                if emb_sim is None or emb_sim < min_comb_4c:
+            ):
+                # Require at least one photo to clear threshold individually (zero gallery-size inflation!),
+                # then anchor 80% on best matching view + 20% on L2 gallery prototype consistency.
+                if best_comb < eff_threshold:
                     continue
-                combined_sim = emb_sim
-                effective_coat_sim = emb_sim
-            elif active_mode == "coat_lab_only" and q_lab_hist and c_lab_hist:
-                if not lab_coat_groups_compatible(
-                    q_lab_coat7,
-                    pet.get("coat_color"),
-                    pet.get("appearance_tags"),
-                    saved.fg_coat_profile,
-                ):
-                    continue
-                lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
-                if lab_sim is None or lab_sim < min_comb_4c:
-                    continue
-                combined_sim = lab_sim
-                effective_coat_sim = lab_sim
-            elif active_mode == "ai4_0c_combined" and has_4c_pair:
-                if not lab_coat_groups_compatible(
-                    q_lab_coat7,
-                    pet.get("coat_color"),
-                    pet.get("appearance_tags"),
-                    saved.fg_coat_profile,
-                ):
-                    continue
-                emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
-                lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
-                if (
-                    emb_sim is None
-                    or lab_sim is None
-                    or emb_sim < min_emb_cos
-                    or lab_sim < min_lab_sim
-                ):
-                    continue
-                ref_fg = (
-                    species_gate.foreground_descriptor
-                    if species_gate is not None and species_gate.foreground_descriptor is not None
-                    else query
-                )
-                fg_parts = similarity_components(ref_fg, saved)
-                struct_sim = float(fg_parts["structure"]) if fg_parts else 0.5
-                combined_sim = w_emb * emb_sim + w_lab * lab_sim + w_struct * struct_sim
-                if combined_sim < min_comb_4c:
-                    continue
-                effective_coat_sim = lab_sim
-            else:
-                # Safe per-candidate fallback when AI-4.0c is disabled or candidate row awaits reindex
-                coat_sim = compare_coat_profiles(active_coat_profile, saved.subject_coat_profile)
-                effective_coat_sim = coat_sim if coat_sim is not None else best_vis
-                if not coat_groups_compatible(
-                    active_coat_profile,
-                    pet.get("coat_color"),
-                    pet.get("appearance_tags"),
-                    saved.subject_coat_profile,
-                ):
-                    continue
-                if use_fg_bbox:
-                    combined_sim = 0.45 * best_vis + 0.55 * effective_coat_sim
+                valid_embs = [it[3] for it in per_photo_evals if it[3] is not None]
+                valid_labs = [it[4] for it in per_photo_evals if it[4]]
+                if valid_embs and valid_labs:
+                    proto_emb = l2_normalize_embedding(np.sum(np.stack(valid_embs, axis=0), axis=0))
+                    proto_lab = tuple(
+                        float(x) for x in np.mean(np.asarray(valid_labs, dtype=np.float32), axis=0)
+                    )
+                    proto_esim = embedding_cosine_similarity(q_emb_vec, proto_emb)
+                    proto_lsim = compare_lab_histograms(q_lab_hist, proto_lab)
+                    if proto_esim is not None and proto_lsim is not None:
+                        proto_comb = w_emb * proto_esim + w_lab * proto_lsim + w_struct * best_aux
+                        combined_sim = 0.80 * best_comb + 0.20 * proto_comb
+                    else:
+                        combined_sim = best_comb
                 else:
-                    combined_sim = 0.55 * best_vis + 0.45 * effective_coat_sim
-                if combined_sim < min_sim_threshold:
-                    continue
+                    combined_sim = best_comb
+            else:
+                # max_photo or single-photo record
+                combined_sim = best_comb
+
+            if combined_sim < eff_threshold:
+                continue
 
             metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
             capped_score = min(89, max(1, round(combined_sim * 100)))
+            potential_review = bool(
+                best_emb is not None
+                and best_emb >= POTENTIAL_MATCH_REVIEW_MIN_EMBEDDING
+                and best_coat >= POTENTIAL_MATCH_REVIEW_MIN_COAT
+                and combined_sim >= POTENTIAL_MATCH_REVIEW_MIN_COMBINED
+            )
             similar_hits.append({
                 "pet": pet,
-                "saved": saved,
+                "saved": best_saved,
                 "score": capped_score,
                 "sort_score": combined_sim,
-                "visual_score": round((emb_sim if emb_sim is not None else best_vis) * 100),
-                "embedding_score": round(emb_sim * 100) if emb_sim is not None else None,
-                "coat_score": round(effective_coat_sim * 100),
+                "visual_score": round((best_emb if best_emb is not None else (best_raw_vis or 0.0)) * 100),
+                "embedding_score": round(best_emb * 100) if best_emb is not None else None,
+                "coat_score": round(best_coat * 100),
                 "attribute_score": round(metadata_score * 100),
                 "match_tier": MATCH_TIER_SIMILAR,
+                "matched_photo_filename": best_fn or pet.get("photo_filename"),
+                "matched_photo_role": best_role,
+                "matched_photo_index": best_slot,
+                "gallery_photo_count": gallery_count,
+                "potential_same_pet_review": potential_review,
             })
 
     similar_hits.sort(
@@ -763,10 +937,15 @@ def rank_pet_candidates_ai4a(
             if _tokens(color) & _tokens(result["pet"].get("coat_color", ""))
         ]
         if result["match_tier"] == MATCH_TIER_EXACT:
-            result["reasons"].append({"kind": "exact_photo", "value": ""})
+            if result.get("matched_photo_index", 1) > 1:
+                result["reasons"].append({"kind": "exact_gallery_photo", "value": f"#{result['matched_photo_index']}"})
+            else:
+                result["reasons"].append({"kind": "exact_photo", "value": ""})
         elif result["match_tier"] == MATCH_TIER_NEAR_DUP:
             result["reasons"].append({"kind": "near_duplicate", "value": ""})
         else:
+            if result.get("matched_photo_index", 1) > 1:
+                result["reasons"].append({"kind": "gallery_angle", "value": f"#{result['matched_photo_index']}"})
             if emb_pct is not None and emb_pct >= 70:
                 result["reasons"].append({"kind": "appearance_embedding", "value": ""})
             if coat_pct is not None and coat_pct >= 74:
@@ -807,6 +986,7 @@ def rank_pet_candidates_ai4a(
 
 rank_pet_candidates_ai4b = rank_pet_candidates_ai4a
 rank_pet_candidates_ai4c = rank_pet_candidates_ai4a
+rank_pet_candidates_ai4d = rank_pet_candidates_ai4a
 
 
 def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:

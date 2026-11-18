@@ -23,11 +23,20 @@ from petcare.timezones import DEFAULT_TIMEZONE, format_tenant_date, format_tenan
 
 _IMAGE_PROCESSING_ENDPOINTS = frozenset({
     "pets.find_similar", "pets.suggest_attributes", "pets.create", "pets.edit",
+    "pets.add_reference_photo",
     "products.create", "products.edit",
 })
 _CATALOG_IMAGE_UPLOAD_ENDPOINTS = frozenset({
-    "pets.create", "pets.edit", "products.create", "products.edit",
+    "pets.create", "pets.edit", "pets.add_reference_photo",
+    "products.create", "products.edit",
 })
+
+
+def _upload_hook_redirect_url():
+    view_args = request.view_args or {}
+    if request.endpoint == "pets.add_reference_photo":
+        return url_for("pets.detail", pet_id=view_args.get("pet_id"))
+    return url_for(request.endpoint, **view_args)
 
 
 def register_request_hooks(app, csrf: CSRFProtect):
@@ -64,7 +73,7 @@ def register_request_hooks(app, csrf: CSRFProtect):
             )
             if not allowed:
                 flash("Bạn đã tải lên nhiều ảnh trong thời gian ngắn. Vui lòng thử lại sau.", "warning")
-                response = redirect(url_for(request.endpoint, **(request.view_args or {})))
+                response = redirect(_upload_hook_redirect_url())
                 response.headers["Retry-After"] = str(retry_after)
                 return response
         slots = app.extensions["petcare_image_processing_slots"]
@@ -83,7 +92,7 @@ def register_request_hooks(app, csrf: CSRFProtect):
                 error=message,
             ), 429, {"Retry-After": "2"}
         flash("Đang xử lý ảnh khác. Vui lòng thử lại sau vài giây.", "warning")
-        response = redirect(url_for(request.endpoint, **(request.view_args or {})))
+        response = redirect(_upload_hook_redirect_url())
         response.headers["Retry-After"] = "2"
         return response
 

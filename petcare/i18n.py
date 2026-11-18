@@ -1221,6 +1221,12 @@ _ENGLISH = {
     "Vai trò lời mời không hợp lệ.": "The invitation role is invalid.",
     "Vui lòng chọn ảnh hồ sơ.": "Choose a profile photo.",
     "Đã phân tích nhiều ảnh. Hãy thử lại sau.": "Too many images have been analyzed. Please try again later.",
+    "Ảnh tham chiếu": "Reference photo",
+    "Không tìm thấy ảnh tham chiếu.": "Reference photo not found.",
+    "Không thể sửa ảnh của thú cưng đã bán.": "Photos of a sold pet cannot be modified.",
+    "Đã thêm ảnh tham chiếu đã xác minh vào bộ sưu tập cá thể.": "Verified reference photo added to the pet gallery.",
+    "Đã xóa ảnh tham chiếu khỏi bộ sưu tập cá thể.": "Reference photo removed from the pet gallery.",
+    "Đã cập nhật thứ tự ảnh trong bộ sưu tập.": "Gallery photo order updated.",
 }
 
 
@@ -1278,6 +1284,9 @@ def translate(message, locale=None):
             (r"Tạo hồ sơ thú cưng (.+)", lambda m: f"Created pet profile {m.group(1)}"),
             (r"Cập nhật hồ sơ thú cưng #(\d+)", lambda m: f"Updated pet profile #{m.group(1)}"),
             (r"(Ngừng bán|Đưa thú cưng trở lại bán) #(\d+)", lambda m: f"{'Removed pet' if m.group(1) == 'Ngừng bán' else 'Returned pet to sale'} #{m.group(2)}"),
+            (r"Thêm ảnh tham chiếu cho thú cưng #(\d+)", lambda m: f"Added reference photo for pet #{m.group(1)}"),
+            (r"Xóa ảnh tham chiếu #(\d+) của thú cưng #(\d+)", lambda m: f"Removed reference photo #{m.group(1)} for pet #{m.group(2)}"),
+            (r"Sắp xếp lại kho ảnh thú cưng #(\d+)", lambda m: f"Reordered gallery photos for pet #{m.group(1)}"),
             (r"Tạo hồ sơ khách hàng #(\d+)", lambda m: f"Created customer profile #{m.group(1)}"),
             (r"Cập nhật hồ sơ khách hàng #(\d+)", lambda m: f"Updated customer profile #{m.group(1)}"),
             (r"(Kích hoạt|Ngừng sử dụng) khách hàng #(\d+)", lambda m: f"{'Reactivated' if m.group(1) == 'Kích hoạt' else 'Deactivated'} customer #{m.group(2)}"),

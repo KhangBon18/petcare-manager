@@ -109,10 +109,11 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
             ("E2E-DOG-01", "Bắp Nhánh", "Chó", "Golden Retriever", "vàng kim", "nâu ấm", "lông dài vàng, dáng lớn", "demo-dog-01.png"),
             ("E2E-DOG-02", "Cam Nhánh", "Chó", "Pomeranian", "cam vàng", "nâu đậm", "lông xù dày, dáng nhỏ", "demo-dog-21.png"),
         )
+        cls.branch_pet_ids: list[int] = []
         with setup_app.app_context():
             for code, name, species, breed, coat, eyes, tags, asset in branch_seed:
                 raw = (DEMO_PETS_DIR / asset).read_bytes()
-                pet_service.create_pet(
+                pid = pet_service.create_pet(
                     cls.branch_user_id,
                     {
                         "code": code,
@@ -128,6 +129,7 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
                     image_upload=FileStorage(stream=io.BytesIO(raw), filename=asset, content_type="image/png"),
                     tenant_id=cls.branch_tenant_id,
                 )
+                cls.branch_pet_ids.append(pid)
 
         cls.app_port = _free_port()
         cls.base_url = f"http://127.0.0.1:{cls.app_port}"
@@ -146,6 +148,8 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
             "AI_MODEL": "",
             "VISION_RATE_LIMIT_PER_MINUTE": "1000",
             "VISION_IP_RATE_LIMIT_PER_MINUTE": "1000",
+            "CATALOG_IMAGE_UPLOAD_RATE_LIMIT_PER_MINUTE": "1000",
+            "CATALOG_IMAGE_UPLOAD_IP_RATE_LIMIT_PER_MINUTE": "1000",
             "MAIL_HOST": "",
             "MEDIA_STORAGE_BACKEND": "local",
             "TENANT_EXPORT_STORAGE_BACKEND": "local",
@@ -410,6 +414,129 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         new_resp = self.page.goto(f"{self.base_url}/pets/new")
         self.assertIsNotNone(new_resp)
         self.assertEqual(new_resp.status, 403)
+
+    # AI-4.0d Browser Scenarios TEST 1, 2, 3, 4, 8, 9, 10, 11, 12:
+    # Multi-photo gallery CRUD, secondary exact photo Rank-1, 5-photo single-card deduplication,
+    # over-limit safe rejection, cross-tenant secondary photo block, removal consistency, mobile 390px & axe-core.
+    def test_08_ai4d_gallery_management_secondary_match_limit_removal_and_mobile_a11y(self):
+        self.page.add_init_script(path=str(AXE_CORE_JS))
+        self.page.on("dialog", lambda dialog: dialog.accept())
+        self._login(self.branch_slug, self.branch_user, self.branch_pw)
+
+        cat_id = self.branch_pet_ids[0]  # E2E-CAT-01
+        dog_id = self.branch_pet_ids[4]  # E2E-DOG-01 (single-photo backward compatibility)
+
+        # TEST 11: Backward compatibility for 1-photo pet
+        self.page.goto(f"{self.base_url}/pets/{dog_id}", wait_until="domcontentloaded")
+        expect(self.page.locator("[data-gallery-count-badge]")).to_contain_text("1/5")
+        self.assertEqual(self.page.locator(".pet-gallery-card").count(), 1)
+
+        # TEST 1: Add 3 verified reference photos to existing cat record E2E-CAT-01 (reaches 4/5 photos)
+        self.page.goto(f"{self.base_url}/pets/{cat_id}", wait_until="domcontentloaded")
+        expect(self.page.locator("[data-gallery-count-badge]")).to_contain_text("1/5")
+        for expected_total, (asset_name, role) in enumerate(
+            (
+                ("demo-cat-25.png", "front_view"),
+                ("demo-cat-05.png", "side_view"),
+                ("demo-cat-07.png", "coat_detail"),
+            ),
+            start=2,
+        ):
+            self.page.locator("[data-gallery-photo]").set_input_files(str(DEMO_PETS_DIR / asset_name))
+            self.page.locator('select[name="image_role"]').select_option(role)
+            self.page.locator('input[name="verified_same_pet"]').check()
+            self.page.locator("[data-gallery-submit]").click()
+            expect(self.page.locator("[data-gallery-count-badge]")).to_contain_text(f"{expected_total}/5")
+
+        self.assertEqual(self.page.locator(".pet-gallery-card").count(), 4)
+        sec2_src = self.page.locator('[data-gallery-slot="2"] img').get_attribute("src")
+        self.assertIsNotNone(sec2_src)
+
+        # TEST 12 (part A): Accessibility & mobile 390px responsiveness on pet detail gallery + upload form
+        self._assert_axe_clean("pet_detail_multi_photo_gallery")
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), 390)
+        self.page.set_viewport_size({"width": 1440, "height": 960})
+
+        # TEST 2: Search using exact secondary photo (demo-cat-25.png, slot #2) -> returns E2E-CAT-01 at Rank 1!
+        self._submit_image_search(DEMO_PETS_DIR / "demo-cat-25.png", species="")
+        cards = self.page.locator(".visual-results-grid .pet-card")
+        self.assertGreaterEqual(cards.count(), 1)
+        self.assertEqual(cards.first.get_attribute("data-pet-code"), "E2E-CAT-01")
+        self.assertEqual(cards.first.get_attribute("data-match-tier"), "exact_image_match")
+        self.assertEqual(cards.first.get_attribute("data-matched-photo-index"), "2")
+        self.assertEqual(cards.first.get_attribute("data-gallery-count"), "4")
+
+        # Reach 5/5 photos, verify limit banner & TEST 9 over-limit POST rejection
+        self.page.goto(f"{self.base_url}/pets/{cat_id}", wait_until="domcontentloaded")
+        self.page.locator("[data-gallery-photo]").set_input_files(str(DEMO_PETS_DIR / "demo-cat-12.png"))
+        self.page.locator('select[name="image_role"]').select_option("lighting_variant")
+        self.page.locator('input[name="verified_same_pet"]').check()
+        self.page.locator("[data-gallery-submit]").click()
+        expect(self.page.locator("[data-gallery-count-badge]")).to_contain_text("5/5")
+        expect(self.page.locator("[data-gallery-limit-reached]")).to_be_visible()
+
+        # TEST 9: Direct POST over the 5-photo gallery limit must fail safely without adding a 6th photo
+        csrf_val = self.page.locator('input[name="csrf_token"]').first.input_value()
+        over_bytes = (DEMO_PETS_DIR / "demo-cat-14.png").read_bytes()
+        over_resp = self.context.request.post(
+            f"{self.base_url}/pets/{cat_id}/photos",
+            multipart={
+                "csrf_token": csrf_val,
+                "image_role": "additional",
+                "verified_same_pet": "1",
+                "photo": {"name": "over.png", "mimeType": "image/png", "buffer": over_bytes},
+            },
+        )
+        self.assertEqual(over_resp.status, 200)
+        self.assertIn("5", over_resp.text())
+        self.page.goto(f"{self.base_url}/pets/{cat_id}", wait_until="domcontentloaded")
+        self.assertEqual(self.page.locator(".pet-gallery-card").count(), 5)
+
+        # TEST 3, TEST 4 & TEST 12 (part B): With 5 reference photos, E2E-CAT-01 appears ONLY ONCE in search results!
+        self._submit_image_search(REAL_PACK_DIR / "real-cat-orange-hold-01.jpg", species="")
+        sim_cards = self.page.locator(".visual-results-grid .pet-card")
+        codes = [sim_cards.nth(i).get_attribute("data-pet-code") for i in range(sim_cards.count())]
+        self.assertEqual(codes.count("E2E-CAT-01"), 1)
+        for i in range(sim_cards.count()):
+            self.assertEqual(sim_cards.nth(i).get_attribute("data-pet-species"), "Mèo")
+
+        # Verify Phase 6 "Potential matching pet — staff verification required" label on a wider-cropped view
+        from PIL import Image
+        crop_path = ARTIFACT_DIR / "ai4d-wider-crop-query.jpg"
+        with Image.open(DEMO_PETS_DIR / "demo-cat-03.png") as src_img:
+            rgb = src_img.convert("RGB")
+            w, h = rgb.size
+            dx, dy = int(w * 0.14), int(h * 0.14)
+            rgb.crop((dx, dy, w - dx, h - dy)).save(crop_path, format="JPEG", quality=84)
+        self._submit_image_search(crop_path, species="")
+        crop_top = self.page.locator(".visual-results-grid .pet-card").first
+        self.assertEqual(crop_top.get_attribute("data-pet-code"), "E2E-CAT-01")
+        self.assertEqual(crop_top.get_attribute("data-match-tier"), "visually_similar_candidate")
+        expect(crop_top.locator("[data-potential-match-label]")).to_contain_text(
+            "Potential matching pet — staff verification required"
+        )
+        self._assert_axe_clean("search_results_with_5photo_gallery_and_potential_match")
+        self.page.set_viewport_size({"width": 390, "height": 844})
+        self.assertEqual(self.page.evaluate("document.documentElement.scrollWidth"), 390)
+        self.page.set_viewport_size({"width": 1440, "height": 960})
+
+        # TEST 10: Remove secondary photo #2 (demo-cat-25.png) and confirm search descriptors update immediately
+        self.page.goto(f"{self.base_url}/pets/{cat_id}", wait_until="domcontentloaded")
+        self.page.locator('[data-gallery-slot="2"] [data-gallery-delete]').click()
+        expect(self.page.locator("[data-gallery-count-badge]")).to_contain_text("4/5")
+        remaining_slot2_src = self.page.locator('[data-gallery-slot="2"] img').get_attribute("src")
+        self.assertIsNotNone(remaining_slot2_src)
+
+        self._submit_image_search(DEMO_PETS_DIR / "demo-cat-25.png", species="")
+        self.assertEqual(self.page.locator('[data-match-tier="exact_image_match"]').count(), 0)
+
+        # TEST 8: Cross-tenant access to secondary gallery photo from 'main' store must return 404
+        self.context.clear_cookies()
+        self._login("main", "admin", DEMO_ADMIN_PASSWORD)
+        cross_resp = self.page.goto(f"{self.base_url}{remaining_slot2_src}")
+        self.assertIsNotNone(cross_resp)
+        self.assertEqual(cross_resp.status, 404)
 
 
 if __name__ == "__main__":
