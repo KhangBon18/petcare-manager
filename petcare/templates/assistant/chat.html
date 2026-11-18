@@ -16,9 +16,9 @@
 >
   <header class="page-heading ai-workspace-header">
     <div class="ai-workspace-title-block">
-      <span class="eyebrow">{{ t('PETCARE AI · TRỢ LÝ MUA SẮM & CHĂM SÓC THÚ CƯNG') }}</span>
+      
       <h1>{{ t('Trợ lý AI') }}</h1>
-      <p>{{ t('Tư vấn chọn thú cưng, gợi ý & so sánh sản phẩm theo đơn giá thực tế, tra cứu kiến thức chăm sóc có trích dẫn nguồn và phân tích vận hành theo quyền.') }}</p>
+      <p>{{ t('Hỏi về thú cưng, sản phẩm, chăm sóc và vận hành cửa hàng.') }}</p>
       <div class="ai-status-strip">
         <span
           class="ai-engine-badge"
@@ -154,7 +154,7 @@
 
     <aside class="panel ai-side-rail" aria-label="{{ t('Nguyên tắc minh bạch & an toàn') }}">
       <div class="ai-rail-section">
-        <span class="eyebrow">{{ 'CAM KẾT CHẤT LƯỢNG DỮ LIỆU' if locale == 'vi' else 'GROUNDED AI PRINCIPLES' }}</span>
+        
         <h2>{{ t('Nguyên tắc minh bạch & an toàn') }}</h2>
         <ul class="ai-guardrail-list">
           <li>{{ t('Không suy đoán tính cách theo giống; thuộc tính chưa ghi nhận được báo rõ.') }}</li>
@@ -165,7 +165,7 @@
       </div>
 
       <div class="ai-rail-section ai-rail-links">
-        <span class="eyebrow">{{ 'CÔNG CỤ LIÊN QUAN' if locale == 'vi' else 'CONNECTED TOOLS' }}</span>
+        
         <a class="ai-rail-link" href="{{ url_for('pets.find_similar') }}">
           {{ icon('search') }}
           <span>

@@ -3,7 +3,7 @@
 {% block title %}{{ t('Tài khoản') }}{% endblock %}
 {% block content %}
 <div class="page-heading">
-  <div><span class="eyebrow">{{ t('QUẢN TRỊ CỬA HÀNG') }}</span><h1>{{ t('Tài khoản') }}</h1><p>{{ t('Quản lý quyền truy cập trong cửa hàng đang chọn.') }}</p></div>
+  <div><h1>{{ t('Tài khoản') }}</h1><p>{{ t('Quản lý quyền truy cập trong cửa hàng đang chọn.') }}</p></div>
   <div class="heading-actions">
     <a class="button button-light" href="{{ url_for('users.ownership') }}">{{ t('Bàn giao chủ cửa hàng') }}</a>
     <a class="button button-light" href="{{ url_for('users.export_current_store') }}">{{ t('Xuất dữ liệu cửa hàng') }}</a>

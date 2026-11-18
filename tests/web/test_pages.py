@@ -56,7 +56,7 @@ class WebPageTests(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn('<html lang="en">', body)
         self.assertIn("Sign in", body)
-        self.assertIn("YOUR PET STORE", body)
+        self.assertIn("Image recognition runs locally", body)
         self.assertNotIn(">Đăng nhập<", body)
 
         response = self.client.post("/language", data={"locale": "fr", "next": "/login"})
@@ -264,11 +264,11 @@ class WebPageTests(unittest.TestCase):
             })
 
         self.assertIn("Dashboard", html)
-        self.assertIn("STORE OVERVIEW", html)
-        self.assertIn("Paid invoices today", html)
+        self.assertIn("data-dashboard-greeting", html)
+        self.assertIn("Recent invoices", html)
         self.assertIn("1,250.50\u00a0USD", html)
         self.assertIn("1 product low in stock", html)
-        self.assertIn("1 item needs attention", html)
+        self.assertIn("Shortcuts", html)
         self.assertIn("No transactions yet", html)
         self.assertNotIn("Khách hàng đang hoạt động", html)
 

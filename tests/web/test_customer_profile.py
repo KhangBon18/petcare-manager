@@ -170,7 +170,6 @@ class CustomerProfileWebTests(TestCase):
             response = self.client.get("/customers/7")
 
         html = response.get_data(as_text=True)
-        self.assertIn("CUSTOMER PROFILE", html)
         self.assertIn("Contact information", html)
         self.assertIn("Invoice history", html)
         self.assertIn("Purchased pets", html)

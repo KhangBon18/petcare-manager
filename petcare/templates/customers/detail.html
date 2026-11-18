@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-heading compact-heading customer-profile-heading">
   <div>
-    <span class="eyebrow">{{ t('HỒ SƠ KHÁCH HÀNG') }}</span>
+    
     <h1>{{ customer.full_name }}</h1>
     <p>{{ t('Hồ sơ liên hệ và lịch sử mua hàng của khách.') }}</p>
   </div>
@@ -39,7 +39,7 @@
 
 <section class="panel customer-pets-panel" aria-labelledby="customer-pets-title">
   <div class="panel-heading">
-    <div><span class="eyebrow">{{ t('HỒ SƠ LIÊN QUAN') }}</span><h2 id="customer-pets-title">{{ t('Thú cưng đã mua') }}</h2></div>
+    <div><h2 id="customer-pets-title">{{ t('Thú cưng đã mua') }}</h2></div>
     <span class="soft-badge">{{ format_number(pet_pagination.total) }}</span>
   </div>
   {% if purchased_pets %}
@@ -65,7 +65,7 @@
 
 <section class="panel customer-money-panel" aria-labelledby="customer-money-title">
   <div class="panel-heading">
-    <div><span class="eyebrow">{{ t('TỔNG CHI TIÊU') }}</span><h2 id="customer-money-title">{{ t('Tổng tiền theo tiền tệ') }}</h2></div>
+    <div><h2 id="customer-money-title">{{ t('Tổng tiền theo tiền tệ') }}</h2></div>
     <small class="muted">{{ t('Không quy đổi giữa các loại tiền.') }}</small>
   </div>
   {% if summary.currencies %}
@@ -81,7 +81,7 @@
 
 <section class="panel customer-history-panel" aria-labelledby="customer-history-title">
   <div class="panel-heading">
-    <div><span class="eyebrow">{{ t('GIAO DỊCH') }}</span><h2 id="customer-history-title">{{ t('Lịch sử hóa đơn') }}</h2></div>
+    <div><h2 id="customer-history-title">{{ t('Lịch sử hóa đơn') }}</h2></div>
     <span class="soft-badge">{{ format_number(pagination.total) }} {{ t('hóa đơn') }}</span>
   </div>
   <div class="table-scroll"><table>

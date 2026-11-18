@@ -3,7 +3,7 @@
 {% block content %}
 <section class="auth-card invitation-card panel">
   <a class="brand auth-brand" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
-  <span class="eyebrow">{{ t('LỜI MỜI THÀNH VIÊN') }}</span>
+  
   <h1>{{ t('Tham gia cửa hàng') }} {{ invite.tenant_name }}</h1>
   <p>{{ t('Bạn được mời với vai trò') }} <strong>{{ t('quản trị viên') if invite.role == 'admin' else t('nhân viên') }}</strong>. {{ t('Email nhận lời mời:') }} <strong>{{ invite.email or t('lời mời cũ') }}</strong>.</p>
   <form method="post" class="form-stack">

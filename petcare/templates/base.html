@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body class="{% if g.user %}app-body{% else %}auth-body{% endif %}{% if request.endpoint == 'pets.find_similar' %} pet-search-page{% endif %}{% if request.endpoint == 'purchasing.create' %} purchase-order-page{% endif %}{% if request.endpoint == 'invoices.detail' %} invoice-detail-page{% endif %}{% if request.endpoint == 'assistant.workspace' %} assistant-chat-page{% endif %}">
@@ -21,16 +22,18 @@
       <span class="brand-mark">P</span>
       <span><strong>petcare</strong><small>SHOP MANAGER</small></span>
     </a>
-    <div class="side-caption">{{ t('CỬA HÀNG') }}</div>
     <nav class="side-nav" aria-label="{{ t('Điều hướng chính') }}">
       <a class="nav-link nav-link-dashboard {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}" {% if request.endpoint == 'main.dashboard' %}aria-current="page"{% endif %}>{{ icon('dashboard', 'nav-icon') }} <span class="nav-label">{{ t('Tổng quan') }}</span></a>
-      <a class="nav-link nav-link-assistant {% if request.blueprint == 'assistant' %}active{% endif %}" href="{{ url_for('assistant.workspace') }}" {% if request.blueprint == 'assistant' %}aria-current="page"{% endif %}>{{ icon('sparkle', 'nav-icon') }} <span class="nav-label">{{ t('Trợ lý AI') }}</span></a>
-      <a class="nav-link nav-link-customers {% if request.blueprint == 'customers' %}active{% endif %}" href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers', 'nav-icon') }} <span class="nav-label">{{ t('Khách hàng') }}</span></a>
-      <a class="nav-link nav-link-pets {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.index') }}" {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('pets', 'nav-icon') }} <span class="nav-label">{{ t('Thú cưng') }}</span></a>
-      <a class="nav-link nav-link-search {% if request.endpoint == 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search', 'nav-icon') }} <span class="nav-label">{{ t('Tìm bằng ảnh') }}</span></a>
-      <a class="nav-link nav-link-products {% if request.blueprint == 'products' %}active{% endif %}" href="{{ url_for('products.index') }}" {% if request.blueprint == 'products' %}aria-current="page"{% endif %}>{{ icon('products', 'nav-icon') }} <span class="nav-label">{{ t('Sản phẩm') }}</span></a>
+      <span class="nav-group-label" aria-hidden="true">{{ t('Bán hàng') }}</span>
       <a class="nav-link nav-link-invoices {% if request.blueprint == 'invoices' %}active{% endif %}" href="{{ url_for('invoices.index') }}" {% if request.blueprint == 'invoices' %}aria-current="page"{% endif %}>{{ icon('invoice', 'nav-icon') }} <span class="nav-label">{{ t('Hóa đơn') }}</span></a>
+      <a class="nav-link nav-link-customers {% if request.blueprint == 'customers' %}active{% endif %}" href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers', 'nav-icon') }} <span class="nav-label">{{ t('Khách hàng') }}</span></a>
       <a class="nav-link nav-link-reports {% if request.blueprint == 'reports' %}active{% endif %}" href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports', 'nav-icon') }} <span class="nav-label">{{ t('Báo cáo') }}</span></a>
+      <span class="nav-group-label" aria-hidden="true">{{ t('Hàng hóa') }}</span>
+      <a class="nav-link nav-link-pets {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.index') }}" {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('pets', 'nav-icon') }} <span class="nav-label">{{ t('Thú cưng') }}</span></a>
+      <a class="nav-link nav-link-products {% if request.blueprint == 'products' %}active{% endif %}" href="{{ url_for('products.index') }}" {% if request.blueprint == 'products' %}aria-current="page"{% endif %}>{{ icon('products', 'nav-icon') }} <span class="nav-label">{{ t('Sản phẩm') }}</span></a>
+      <span class="nav-group-label" aria-hidden="true">{{ t('Công cụ AI') }}</span>
+      <a class="nav-link nav-link-search {% if request.endpoint == 'pets.find_similar' %}active{% endif %}" href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search', 'nav-icon') }} <span class="nav-label">{{ t('Tìm bằng ảnh') }}</span></a>
+      <a class="nav-link nav-link-assistant {% if request.blueprint == 'assistant' %}active{% endif %}" href="{{ url_for('assistant.workspace') }}" {% if request.blueprint == 'assistant' %}aria-current="page"{% endif %}>{{ icon('sparkle', 'nav-icon') }} <span class="nav-label">{{ t('Trợ lý AI') }}</span></a>
       <details class="mobile-nav-more" data-mobile-menu>
         <summary>{{ icon('menu') }}<span>{{ t('Thêm') }}</span></summary>
         <nav aria-label="{{ t('Điều hướng khác') }}">
@@ -41,8 +44,8 @@
       </details>
     </nav>
     {% if g.user.role == 'admin' %}
-    <div class="side-caption side-caption-spaced">{{ t('QUẢN TRỊ') }}</div>
-    <nav class="side-nav">
+    <div class="side-caption side-caption-spaced">{{ t('Quản trị') }}</div>
+    <nav class="side-nav side-nav-admin" aria-label="{{ t('Quản trị') }}">
       <a class="nav-link nav-link-admin {% if request.blueprint == 'store' %}active{% endif %}" href="{{ url_for('store.settings') }}" {% if request.blueprint == 'store' %}aria-current="page"{% endif %}>{{ icon('store', 'nav-icon') }} {{ t('Cài đặt cửa hàng') }}</a>
       <a class="nav-link nav-link-admin {% if request.blueprint == 'users' %}active{% endif %}" href="{{ url_for('users.index') }}" {% if request.blueprint == 'users' %}aria-current="page"{% endif %}>{{ icon('team', 'nav-icon') }} {{ t('Tài khoản') }}</a>
       <a class="nav-link nav-link-admin {% if request.blueprint == 'purchasing' %}active{% endif %}" href="{{ url_for('purchasing.index') }}" {% if request.blueprint == 'purchasing' %}aria-current="page"{% endif %}>{{ icon('truck', 'nav-icon') }} {{ t('Nhập hàng') }}</a>
@@ -61,7 +64,6 @@
         <button class="button button-light button-small" type="submit">{{ t('Chuyển cửa hàng') }}</button>
       </form>
       {% endif %}
-      <div class="sidebar-note">{{ t('Quản lý bán hàng gọn gàng mỗi ngày.') }}</div>
     </div>
   </aside>
   <main class="main-area" id="main-content" tabindex="-1">
@@ -89,7 +91,6 @@
       {% include "partials/breadcrumbs.html" %}
       {% block content %}{% endblock %}
     </section>
-    <footer class="app-footer">PetCare Manager <span>•</span> {{ t('Quản lý cửa hàng thú cưng') }}</footer>
   </main>
 </div>
 <button class="assistant-launcher" id="assistant-launcher" type="button" aria-label="{{ t('Hỏi trợ lý') }}" aria-expanded="false" aria-controls="assistant-panel">{{ icon('sparkle') }} {{ t('Hỏi trợ lý') }}</button>

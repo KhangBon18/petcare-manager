@@ -379,7 +379,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
         admin = self._login("admin", DEMO_ADMIN_PASSWORD)
         response = admin.get("/dashboard")
         self.assertEqual(response.status_code, 200)
-        self.assertIn("TỔNG QUAN CỬA HÀNG", response.get_data(as_text=True))
+        self.assertIn("data-dashboard-greeting", response.get_data(as_text=True))
         self.assertEqual(admin.get("/users/").status_code, 200)
         self.assertEqual(admin.get("/activity/").status_code, 200)
         self.assertEqual(admin.get("/store/settings").status_code, 200)
@@ -3279,7 +3279,7 @@ class MySQLWebIntegrationTests(unittest.TestCase):
             phone_page = client.get("/pets/find-similar")
             self.assertEqual(phone_page.status_code, 200)
             phone_html = phone_page.get_data(as_text=True)
-            self.assertIn("DÙNG CAMERA ĐIỆN THOẠI", phone_html)
+            self.assertIn("Quét mã để mở trên điện thoại", phone_html)
             self.assertIn("data:image/png;base64,", phone_html)
         finally:
             self.app.config.update(LAN_ACCESS_ENABLED=False, LAN_ACCESS_BASE_URL="")

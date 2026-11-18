@@ -1230,6 +1230,24 @@ _ENGLISH = {
 }
 
 
+
+# UI/UX redesign v2: navigation groups, dashboard and image-search copy.
+_ENGLISH.update({
+    "Bán hàng": "Sales",
+    "Công cụ AI": "AI tools",
+    "Quản trị": "Admin",
+    "Sẵn sàng bán": "Ready to sell",
+    "Xem tất cả": "View all",
+    "Quản lý kho": "Manage stock",
+    "Lối tắt": "Shortcuts",
+    "Hàng hóa": "Catalog",
+    "Hỏi về tồn kho, doanh thu": "Ask about stock and revenue",
+    "Nhận diện mèo, chó": "Recognise cats and dogs",
+    "Nhận diện ảnh chạy cục bộ": "Image recognition runs locally",
+    "Dùng camera điện thoại": "Use a phone camera",
+    "Hỏi về thú cưng, sản phẩm, chăm sóc và vận hành cửa hàng.": "Ask about pets, products, care and store operations.",
+})
+
 def current_locale():
     """Return a validated locale for the current request or signed session."""
     try:

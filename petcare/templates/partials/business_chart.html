@@ -2,7 +2,7 @@
 <section class="panel business-panel">
   <div class="panel-heading">
     <div>
-      <span class="eyebrow">{{ 'BẢN TIN KINH DOANH' if locale == 'vi' else 'BUSINESS BRIEF' }}</span>
+      
       <h2>{{ 'Doanh thu theo ngày' if locale == 'vi' else 'Daily revenue' }}</h2>
       <small class="business-chart-freshness">{{ 'Cập nhật' if locale == 'vi' else 'Updated' }} {{ format_datetime(report.captured_at) }}</small>
     </div>

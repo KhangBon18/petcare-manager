@@ -156,7 +156,7 @@ class PhaseThreeWebTests(TestCase):
         page = self.client.get("/reports/?period=7d")
         self.assertEqual(page.status_code, 200)
         page_html = page.get_data(as_text=True)
-        self.assertIn("BUSINESS BRIEF", page_html)
+        self.assertIn("Daily revenue", page_html)
         self.assertIn("Snapshot at Oct 25, 2026 10:00 AM", page_html)
         self.assertIn("Oct 25, 2026 9:00 AM", page_html)
         self.assertIn("Oct 25, 2026", page_html)
