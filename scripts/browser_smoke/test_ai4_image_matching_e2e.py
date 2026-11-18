@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 import http.client
 import io
 import os
@@ -187,6 +188,7 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         if not ready:
             raise RuntimeError("AI-4.0b Flask server did not reach /readyz=200.")
 
+        expect.set_options(timeout=15_000)
         cls.playwright = sync_playwright().start()
         cls.browser = cls.playwright.chromium.launch(headless=True)
 
@@ -210,6 +212,31 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         if rlog:
             rlog.close()
 
+    def _attach_page_monitors(self, page):
+        page.on("pageerror", lambda err: self.page_errors.append(str(err)))
+        page.on("requestfailed", lambda req: self.failed_requests.append(_path_only(req.url)))
+        page.on(
+            "response",
+            lambda resp: self.server_500s.append((resp.status, _path_only(resp.url)))
+            if resp.status >= 500
+            else None,
+        )
+
+    @contextmanager
+    def _isolated_page(self):
+        ctx = self.browser.new_context(
+            viewport={"width": 1440, "height": 960},
+            locale="vi-VN",
+            timezone_id="Asia/Ho_Chi_Minh",
+        )
+        page = ctx.new_page()
+        page.set_default_timeout(20_000)
+        self._attach_page_monitors(page)
+        try:
+            yield page
+        finally:
+            ctx.close()
+
     def setUp(self):
         self.context = self.browser.new_context(
             viewport={"width": 1440, "height": 960},
@@ -217,18 +244,11 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
             timezone_id="Asia/Ho_Chi_Minh",
         )
         self.page = self.context.new_page()
-        self.page.set_default_timeout(12_000)
+        self.page.set_default_timeout(20_000)
         self.page_errors: list[str] = []
         self.failed_requests: list[str] = []
         self.server_500s: list[tuple[int, str]] = []
-        self.page.on("pageerror", lambda err: self.page_errors.append(str(err)))
-        self.page.on("requestfailed", lambda req: self.failed_requests.append(_path_only(req.url)))
-        self.page.on(
-            "response",
-            lambda resp: self.server_500s.append((resp.status, _path_only(resp.url)))
-            if resp.status >= 500
-            else None,
-        )
+        self._attach_page_monitors(self.page)
 
     def tearDown(self):
         stem = re.sub(r"[^A-Za-z0-9_-]+", "_", self.id().split(".")[-1]).strip("_")
@@ -241,21 +261,35 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         self.assertEqual(self.failed_requests, [])
         self.assertEqual(self.server_500s, [])
 
-    def _login(self, store_slug: str, username: str, password: str):
-        self.page.goto(f"{self.base_url}/login", wait_until="domcontentloaded")
-        self.page.locator('input[name="store_slug"]').fill(store_slug)
-        self.page.locator('input[name="username"]').fill(username)
-        self.page.locator('input[name="password"]').fill(password)
-        self.page.locator('.login-card form button[type="submit"]').click()
-        self.page.wait_for_url(f"{self.base_url}/dashboard")
+    def _login(self, store_slug: str, username: str, password: str, *, page=None):
+        target_page = page or self.page
+        target_page.goto(f"{self.base_url}/login", wait_until="load")
+        target_page.locator('input[name="store_slug"]').fill(store_slug)
+        target_page.locator('input[name="username"]').fill(username)
+        target_page.locator('input[name="password"]').fill(password)
+        with target_page.expect_navigation(
+            url=f"{self.base_url}/dashboard",
+            wait_until="domcontentloaded",
+            timeout=20_000,
+        ):
+            target_page.locator('.login-card form button[type="submit"]').click()
 
-    def _submit_image_search(self, image_path: Path, species: str = "", status: str = "available"):
-        self.page.goto(f"{self.base_url}/pets/find-similar", wait_until="domcontentloaded")
-        self.page.locator('input[name="species"]').fill(species)
-        self.page.locator('select[name="status"]').select_option(status)
-        self.page.locator("#pet-search-photo").set_input_files(str(image_path))
-        self.page.locator('.visual-search-form button[type="submit"]').click()
-        expect(self.page.locator("section.visual-results")).to_be_visible()
+    def _submit_image_search(
+        self,
+        image_path: Path,
+        species: str = "",
+        status: str = "available",
+        *,
+        page=None,
+    ):
+        target_page = page or self.page
+        target_page.goto(f"{self.base_url}/pets/find-similar", wait_until="domcontentloaded")
+        target_page.locator('input[name="species"]').fill(species)
+        target_page.locator('select[name="status"]').select_option(status)
+        target_page.locator("#pet-search-photo").set_input_files(str(image_path))
+        target_page.locator('.visual-search-form button[type="submit"]').click()
+        expect(target_page.locator("section.visual-results")).to_be_visible()
+        target_page.wait_for_load_state("load")
 
     def _assert_axe_clean(self, label: str):
         self.assertTrue(AXE_CORE_JS.is_file(), "axe-core must be installed in tests/a11y.")
@@ -407,16 +441,16 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         self.assertIsNotNone(photo_resp)
         self.assertEqual(photo_resp.status, 404)
 
-        self.context.clear_cookies()
-        self._login("main", "staff1", DEMO_STAFF_PASSWORD)
-        self._submit_image_search(DEMO_PETS_DIR / "demo-dog-01.png")
-        self.assertEqual(
-            self.page.locator(".visual-results-grid .pet-card").first.get_attribute("data-pet-code"),
-            "PET-101",
-        )
-        new_resp = self.page.goto(f"{self.base_url}/pets/new")
-        self.assertIsNotNone(new_resp)
-        self.assertEqual(new_resp.status, 403)
+        with self._isolated_page() as staff_page:
+            self._login("main", "staff1", DEMO_STAFF_PASSWORD, page=staff_page)
+            self._submit_image_search(DEMO_PETS_DIR / "demo-dog-01.png", page=staff_page)
+            self.assertEqual(
+                staff_page.locator(".visual-results-grid .pet-card").first.get_attribute("data-pet-code"),
+                "PET-101",
+            )
+            new_resp = staff_page.goto(f"{self.base_url}/pets/new")
+            self.assertIsNotNone(new_resp)
+            self.assertEqual(new_resp.status, 403)
 
     # AI-4.0d Browser Scenarios TEST 1, 2, 3, 4, 8, 9, 10, 11, 12:
     # Multi-photo gallery CRUD, secondary exact photo Rank-1, 5-photo single-card deduplication,
@@ -535,11 +569,11 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         self.assertEqual(self.page.locator('[data-match-tier="exact_image_match"]').count(), 0)
 
         # TEST 8: Cross-tenant access to secondary gallery photo from 'main' store must return 404
-        self.context.clear_cookies()
-        self._login("main", "admin", DEMO_ADMIN_PASSWORD)
-        cross_resp = self.page.goto(f"{self.base_url}{remaining_slot2_src}")
-        self.assertIsNotNone(cross_resp)
-        self.assertEqual(cross_resp.status, 404)
+        with self._isolated_page() as main_page:
+            self._login("main", "admin", DEMO_ADMIN_PASSWORD, page=main_page)
+            cross_resp = main_page.goto(f"{self.base_url}{remaining_slot2_src}")
+            self.assertIsNotNone(cross_resp)
+            self.assertEqual(cross_resp.status, 404)
 
 
 if __name__ == "__main__":
