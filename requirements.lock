@@ -17,7 +17,8 @@ Jinja2==3.1.6
 jmespath==1.1.0
 MarkupSafe==3.0.4
 mysql-connector-python==9.7.0
-numpy==2.5.5
+numpy==2.4.6; python_version < "3.12"
+numpy==2.5.5; python_version >= "3.12"
 onnxruntime==1.32.0
 packaging==26.3
 pillow==13.0.0
