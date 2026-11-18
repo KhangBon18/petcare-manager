@@ -78,6 +78,20 @@ MATCH_TIER_NEAR_DUP = "near_duplicate_image"
 MATCH_TIER_SIMILAR = "visually_similar_candidate"
 MATCH_OUTCOME_NONE = "no_confident_match"
 
+# AI-4.0e canonical 5-state identity-safe decision taxonomy
+IDENTITY_DECISION_EXACT = "exact_stored_image_match"
+IDENTITY_DECISION_NEAR_DUP = "near_duplicate_image"
+IDENTITY_DECISION_POTENTIAL_SAME_PET = "potential_same_pet_candidate"
+IDENTITY_DECISION_VISUALLY_SIMILAR = "visually_similar_pet"
+IDENTITY_DECISION_NO_MATCH = "no_confident_match"
+ALLOWED_IDENTITY_DECISIONS = frozenset({
+    IDENTITY_DECISION_EXACT,
+    IDENTITY_DECISION_NEAR_DUP,
+    IDENTITY_DECISION_POTENTIAL_SAME_PET,
+    IDENTITY_DECISION_VISUALLY_SIMILAR,
+    IDENTITY_DECISION_NO_MATCH,
+})
+
 # Thresholds derived strictly from the identity-disjoint AI-4.0a calibration split
 # (see scripts/evaluate_ai4_pet_image_matching.py):
 # - Resized/re-encoded JPEG copies (480px q=70): dHash <= 1, pHash <= 2, vis >= 0.9526, structure >= 0.9993
@@ -513,6 +527,7 @@ def rank_pet_candidates_ai4a(
             "results": [],
             "has_reference_photos": has_reference_photos,
             "match_outcome": MATCH_OUTCOME_NONE,
+            "identity_decision": IDENTITY_DECISION_NO_MATCH,
             "abstention_reason": "species_contradiction",
             "verified_species": species_gate.verified_species,
             "verified_species_source": "local_detector",
@@ -544,6 +559,7 @@ def rank_pet_candidates_ai4a(
                     "results": [],
                     "has_reference_photos": has_reference_photos,
                     "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
                     "abstention_reason": "species_contradiction",
                     "verified_species": pet_species,
                     "verified_species_source": "matched_store_photo",
@@ -624,6 +640,7 @@ def rank_pet_candidates_ai4a(
                 "results": [],
                 "has_reference_photos": has_reference_photos,
                 "match_outcome": MATCH_OUTCOME_NONE,
+                "identity_decision": IDENTITY_DECISION_NO_MATCH,
                 "abstention_reason": "multiple_animals_detected",
                 "verified_species": None,
                 "verified_species_source": None,
@@ -634,6 +651,7 @@ def rank_pet_candidates_ai4a(
                 "results": [],
                 "has_reference_photos": has_reference_photos,
                 "match_outcome": MATCH_OUTCOME_NONE,
+                "identity_decision": IDENTITY_DECISION_NO_MATCH,
                 "abstention_reason": species_gate.detail_reason,
                 "verified_species": None,
                 "verified_species_source": None,
@@ -645,6 +663,7 @@ def rank_pet_candidates_ai4a(
                     "results": [],
                     "has_reference_photos": has_reference_photos,
                     "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
                     "abstention_reason": "unsupported_other_animal",
                     "verified_species": None,
                     "verified_species_source": None,
@@ -658,6 +677,7 @@ def rank_pet_candidates_ai4a(
                     "results": [],
                     "has_reference_photos": has_reference_photos,
                     "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
                     "abstention_reason": "ambiguous_subject",
                     "verified_species": None,
                     "verified_species_source": None,
@@ -672,6 +692,7 @@ def rank_pet_candidates_ai4a(
                     "results": [],
                     "has_reference_photos": has_reference_photos,
                     "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
                     "abstention_reason": "species_contradiction",
                     "verified_species": None,
                     "verified_species_source": None,
@@ -702,6 +723,7 @@ def rank_pet_candidates_ai4a(
             "results": [],
             "has_reference_photos": has_reference_photos,
             "match_outcome": MATCH_OUTCOME_NONE,
+            "identity_decision": IDENTITY_DECISION_NO_MATCH,
             "abstention_reason": abstention_reason,
             "verified_species": None,
             "verified_species_source": None,
@@ -937,13 +959,20 @@ def rank_pet_candidates_ai4a(
             if _tokens(color) & _tokens(result["pet"].get("coat_color", ""))
         ]
         if result["match_tier"] == MATCH_TIER_EXACT:
+            result["identity_decision"] = IDENTITY_DECISION_EXACT
             if result.get("matched_photo_index", 1) > 1:
                 result["reasons"].append({"kind": "exact_gallery_photo", "value": f"#{result['matched_photo_index']}"})
             else:
                 result["reasons"].append({"kind": "exact_photo", "value": ""})
         elif result["match_tier"] == MATCH_TIER_NEAR_DUP:
+            result["identity_decision"] = IDENTITY_DECISION_NEAR_DUP
             result["reasons"].append({"kind": "near_duplicate", "value": ""})
         else:
+            result["identity_decision"] = (
+                IDENTITY_DECISION_POTENTIAL_SAME_PET
+                if result.get("potential_same_pet_review")
+                else IDENTITY_DECISION_VISUALLY_SIMILAR
+            )
             if result.get("matched_photo_index", 1) > 1:
                 result["reasons"].append({"kind": "gallery_angle", "value": f"#{result['matched_photo_index']}"})
             if emb_pct is not None and emb_pct >= 70:
@@ -959,15 +988,23 @@ def rank_pet_candidates_ai4a(
 
     if exact_hits:
         outcome = MATCH_TIER_EXACT
+        top_decision = IDENTITY_DECISION_EXACT
         abstention = None
     elif near_dup_hits:
         outcome = MATCH_TIER_NEAR_DUP
+        top_decision = IDENTITY_DECISION_NEAR_DUP
         abstention = None
     elif combined_results:
         outcome = "visually_similar_only"
+        top_decision = (
+            IDENTITY_DECISION_POTENTIAL_SAME_PET
+            if any(r.get("potential_same_pet_review") for r in combined_results)
+            else IDENTITY_DECISION_VISUALLY_SIMILAR
+        )
         abstention = None
     else:
         outcome = MATCH_OUTCOME_NONE
+        top_decision = IDENTITY_DECISION_NO_MATCH
         if non_photo_rejected:
             abstention = "non_photographic_or_low_texture"
         else:
@@ -977,6 +1014,7 @@ def rank_pet_candidates_ai4a(
         "results": combined_results,
         "has_reference_photos": has_reference_photos,
         "match_outcome": outcome,
+        "identity_decision": top_decision,
         "abstention_reason": abstention,
         "verified_species": verified_species,
         "verified_species_source": verified_species_source,
@@ -987,6 +1025,7 @@ def rank_pet_candidates_ai4a(
 rank_pet_candidates_ai4b = rank_pet_candidates_ai4a
 rank_pet_candidates_ai4c = rank_pet_candidates_ai4a
 rank_pet_candidates_ai4d = rank_pet_candidates_ai4a
+rank_pet_candidates_ai4e = rank_pet_candidates_ai4a
 
 
 def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:
@@ -1008,6 +1047,7 @@ def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:
             "visual_score": round(visual_score * 100) if visual_score is not None else None,
             "attribute_score": round(metadata_score * 100),
             "match_tier": MATCH_TIER_SIMILAR,
+            "identity_decision": IDENTITY_DECISION_VISUALLY_SIMILAR,
         }
         rank = (score, str(pet["name"]), -pet_id)
         if len(top_results) < _RESULT_LIMIT:

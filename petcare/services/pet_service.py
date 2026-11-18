@@ -161,6 +161,28 @@ def update_pet(actor_id, pet_id, data, image_upload=None, tenant_id=None):
                 raise NotFoundError("Không tìm thấy thú cưng.")
             if current["sale_status"] == "sold":
                 raise ValidationError("Không thể sửa thú cưng đã bán.")
+            existing_refs = pet_repo.list_reference_photos(connection, pet_id)
+            if existing_refs and canonicalize_species(pet["species"]) != canonicalize_species(current["species"]):
+                raise ValidationError(
+                    ui_text(
+                        "Không thể đổi loài khi cá thể đang có ảnh tham chiếu phụ đã xác minh theo loài cũ. Hãy xóa các ảnh tham chiếu phụ trước khi sửa loài.",
+                        "Cannot change species while verified reference photos exist for the current species. Remove the additional reference photos first.",
+                    )
+                )
+            if stored and existing_refs:
+                upload_hashes = {
+                    h for h in (stored.descriptor.raw_sha256, stored.descriptor.normalized_sha256) if len(h) == 64
+                }
+                ref_hashes: set[str] = set()
+                for ref in existing_refs:
+                    ref_hashes.update(_descriptor_hashes(ref.get("photo_descriptor")))
+                if upload_hashes and (upload_hashes & ref_hashes):
+                    raise ValidationError(
+                        ui_text(
+                            "Ảnh này đã có sẵn trong bộ sưu tập của thú cưng.",
+                            "This photograph is already stored in this pet's gallery.",
+                        )
+                    )
             pet["photo_filename"] = stored.filename if stored else current["photo_filename"]
             pet["photo_descriptor"] = (
                 stored.descriptor_json if stored else current["photo_descriptor"]
@@ -357,23 +379,11 @@ def add_reference_photo(
 
             if not locked.get("photo_filename"):
                 # Promote directly to primary representative photo when pet had 0 photos
-                pet_update = {
-                    "code": locked["code"],
-                    "name": locked["name"],
-                    "species": locked["species"],
-                    "breed": locked["breed"],
-                    "sex": locked["sex"],
-                    "birth_date": locked["birth_date"],
-                    "weight_kg": locked["weight_kg"],
-                    "coat_color": locked["coat_color"],
-                    "eye_color": locked["eye_color"],
-                    "appearance_tags": locked["appearance_tags"],
-                    "photo_filename": stored.filename,
-                    "photo_descriptor": stored.descriptor_json,
-                    "sale_price": locked["sale_price"],
-                    "legacy_sale_price_vnd": locked.get("sale_price_vnd") or 0,
-                }
-                pet_repo.update_pet(connection, pet_id, pet_update)
+                changed_primary = pet_repo.set_primary_photo(
+                    connection, pet_id, stored.filename, stored.descriptor_json
+                )
+                if not changed_primary:
+                    raise ValidationError("Không thể cập nhật thú cưng này.")
                 ref_id = 0
             else:
                 ref_id = pet_repo.add_reference_photo(

@@ -275,14 +275,17 @@ class AI4ImageMatchingBrowserE2ETests(unittest.TestCase):
         )
         self.assertEqual(violations, [], f"Axe violations in {label}: {violations}")
 
-    # Scenarios 1 & 2: Stored cat & stored dog -> exact match #1, zero cross-species
+    # Scenarios 1 & 2: Stored cat & stored dog -> exact match #1, zero cross-species, separated tier headers
     def test_01_stored_cat_and_dog_exact_matches_rank_first(self):
         self._login("main", "admin", DEMO_ADMIN_PASSWORD)
         self._submit_image_search(DEMO_PETS_DIR / "miu-orange-cream.png")
+        expect(self.page.locator('[data-tier-group="stored_photo_match"]')).to_be_visible()
+        expect(self.page.locator('[data-tier-group="visually_similar"]')).to_be_visible()
         cards = self.page.locator(".visual-results-grid .pet-card")
         self.assertGreaterEqual(cards.count(), 1)
         self.assertEqual(cards.first.get_attribute("data-pet-code"), "PET-001")
         self.assertEqual(cards.first.get_attribute("data-match-tier"), "exact_image_match")
+        self.assertEqual(cards.first.get_attribute("data-identity-decision"), "exact_stored_image_match")
         expect(cards.first.locator(".match-score-label")).to_contain_text("100/100")
         for idx in range(cards.count()):
             self.assertEqual(cards.nth(idx).get_attribute("data-pet-species"), "Mèo")

@@ -405,12 +405,15 @@ def swap_primary_with_reference_photo(connection, pet_id, photo_id, current_prim
     ref_row = get_reference_photo(connection, pet_id, photo_id, lock=True)
     if not ref_row:
         return False
-    execute(
+    updated = execute(
         connection,
         "UPDATE pets SET photo_filename = %s, photo_descriptor = %s "
-        "WHERE id = %s AND tenant_id = @petcare_tenant_id",
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND sale_status IN ('available', 'inactive')",
         (ref_row["photo_filename"], ref_row["photo_descriptor"], pet_id),
-    )
+    )[1]
+    if not updated:
+        return False
     if current_primary_filename and current_primary_descriptor:
         execute(
             connection,
@@ -428,6 +431,20 @@ def swap_primary_with_reference_photo(connection, pet_id, photo_id, current_prim
         resequence_reference_photos(connection, pet_id, [r["id"] for r in remaining])
     sync_pet_gallery_search_index(connection, pet_id)
     return True
+
+
+def set_primary_photo(connection, pet_id, photo_filename, photo_descriptor):
+    """Attach a primary photo to an available or inactive 0-photo pet and sync its gallery index."""
+    changed = execute(
+        connection,
+        "UPDATE pets SET photo_filename = %s, photo_descriptor = %s "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND sale_status IN ('available', 'inactive')",
+        (photo_filename, photo_descriptor, pet_id),
+    )[1]
+    if changed:
+        sync_pet_gallery_search_index(connection, pet_id)
+    return changed
 
 
 def create_pet(connection, data):

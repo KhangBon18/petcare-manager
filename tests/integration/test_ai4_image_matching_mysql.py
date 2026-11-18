@@ -544,6 +544,174 @@ class AI4ImageMatchingMySQLIntegrationTests(unittest.TestCase):
             )
             self.assertNotEqual(after_rm["match_outcome"], "exact_image_match")
 
+    def test_ai4e_phase6_duplicates_corrupt_staff_rbac_private_media_and_tenant_export(self):
+        import tempfile
+        import zipfile
+        from petcare.database.export_tenant import (
+            decrypt_tenant_export,
+            export_tenant,
+            verify_encrypted_tenant_export,
+        )
+        from petcare.services.exceptions import ValidationError
+
+        cat_pet_id = self.branch_pet_ids[0]  # BR-CAT-01
+        media_dir = Path(Config.PET_IMAGE_DIR)
+        ref_a_bytes = (DEMO_PETS_DIR / "demo-cat-05.png").read_bytes()
+        ref_b_bytes = (DEMO_PETS_DIR / "demo-cat-07.png").read_bytes()
+
+        rid_a = None
+        rid_b = None
+        with self.app.app_context():
+            rid_a = pet_service.add_reference_photo(
+                self.branch_user_id,
+                cat_pet_id,
+                FileStorage(stream=io.BytesIO(ref_a_bytes), filename="a.png", content_type="image/png"),
+                image_role="front_view",
+                verified_same_pet=True,
+                tenant_id=self.branch_tenant_id,
+            )
+            rid_b = pet_service.add_reference_photo(
+                self.branch_user_id,
+                cat_pet_id,
+                FileStorage(stream=io.BytesIO(ref_b_bytes), filename="b.png", content_type="image/png"),
+                image_role="side_view",
+                verified_same_pet=True,
+                tenant_id=self.branch_tenant_id,
+            )
+            files_snapshot = set(os.listdir(media_dir))
+
+            # 1. Duplicate upload rejected cleanly on both add_reference_photo AND update_pet (0 orphan files)
+            with self.assertRaises(ValidationError):
+                pet_service.add_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    FileStorage(stream=io.BytesIO(ref_a_bytes), filename="dup.png", content_type="image/png"),
+                    image_role="additional",
+                    verified_same_pet=True,
+                    tenant_id=self.branch_tenant_id,
+                )
+            with self.assertRaises(ValidationError):
+                pet_service.update_pet(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    {
+                        "code": "BR-CAT-01",
+                        "name": "Gừng Nhánh",
+                        "species": "Mèo",
+                        "breed": "British Shorthair",
+                        "coat_color": "cam vằn",
+                        "eye_color": "vàng đồng",
+                        "appearance_tags": "mèo mướp cam",
+                        "sale_price": "3500000",
+                    },
+                    image_upload=FileStorage(stream=io.BytesIO(ref_a_bytes), filename="dup_p.png", content_type="image/png"),
+                    tenant_id=self.branch_tenant_id,
+                )
+            self.assertEqual(set(os.listdir(media_dir)), files_snapshot)
+
+            # 2. Changing species on update_pet blocked while verified reference photos exist
+            with self.assertRaises(ValidationError):
+                pet_service.update_pet(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    {
+                        "code": "BR-CAT-01",
+                        "name": "Gừng Nhánh",
+                        "species": "Chó",
+                        "sale_price": "3500000",
+                    },
+                    image_upload=None,
+                    tenant_id=self.branch_tenant_id,
+                )
+
+            # 3. Corrupted and >5 MB uploads rejected with 0 orphan files
+            with self.assertRaises((ValidationError, ValueError)):
+                pet_service.add_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    FileStorage(stream=io.BytesIO(b"corrupted-not-an-image"), filename="bad.jpg", content_type="image/jpeg"),
+                    verified_same_pet=True,
+                    tenant_id=self.branch_tenant_id,
+                )
+            with self.assertRaises((ValidationError, ValueError)):
+                pet_service.add_reference_photo(
+                    self.branch_user_id,
+                    cat_pet_id,
+                    FileStorage(stream=io.BytesIO(b"\xff\xd8" + b"0" * (5 * 1024 * 1024 + 64)), filename="big.jpg", content_type="image/jpeg"),
+                    verified_same_pet=True,
+                    tenant_id=self.branch_tenant_id,
+                )
+            self.assertEqual(set(os.listdir(media_dir)), files_snapshot)
+
+            # 4. Reorder 'down' and 'up' verified in MySQL
+            pet_service.reorder_reference_photo(
+                self.branch_user_id, cat_pet_id, rid_a, "down", tenant_id=self.branch_tenant_id
+            )
+            reordered = pet_service.get_pet(self.branch_user_id, cat_pet_id, tenant_id=self.branch_tenant_id)
+            self.assertEqual([r["id"] for r in reordered["reference_photos"]], [rid_b, rid_a])
+            sec_fn = reordered["reference_photos"][0]["photo_filename"]
+            pet_service.reorder_reference_photo(
+                self.branch_user_id, cat_pet_id, rid_a, "up", tenant_id=self.branch_tenant_id
+            )
+
+        try:
+            # 5. Private media authorization (unauthenticated -> 302 login; owner -> 200 private, no-store)
+            anon = self.app.test_client()
+            anon_resp = anon.get(f"/pets/photo/{sec_fn}")
+            self.assertEqual(anon_resp.status_code, 302)
+
+            owner_client = self._login_client(self.branch_user, self.branch_pw, store_slug=self.branch_slug)
+            own_photo_resp = owner_client.get(f"/pets/photo/{sec_fn}")
+            self.assertEqual(own_photo_resp.status_code, 200)
+            self.assertIn("no-store", own_photo_resp.headers.get("Cache-Control", ""))
+
+            # 6. Staff RBAC: staff1 can view /pets/<main_pet_id>, but POST /photos, /delete, /reorder return 403
+            with get_connection() as conn:
+                main_pet_id = fetch_one(
+                    conn,
+                    "SELECT id FROM pets WHERE tenant_id = %s AND code = 'PET-001'",
+                    (self.main_tenant_id,),
+                )["id"]
+            staff_client = self._login_client("staff1", DEMO_STAFF_PASSWORD, store_slug="main")
+            detail_page = staff_client.get(f"/pets/{main_pet_id}")
+            self.assertEqual(detail_page.status_code, 200)
+            m_csrf = re.search(r'name="csrf_token" value="([^"]+)"', detail_page.get_data(as_text=True))
+            self.assertIsNotNone(m_csrf)
+            st_token = m_csrf.group(1)
+            self.assertEqual(
+                staff_client.post(f"/pets/{main_pet_id}/photos", data={"csrf_token": st_token}).status_code,
+                403,
+            )
+            self.assertEqual(
+                staff_client.post(f"/pets/{main_pet_id}/photos/1/delete", data={"csrf_token": st_token}).status_code,
+                403,
+            )
+            self.assertEqual(
+                staff_client.post(f"/pets/{main_pet_id}/photos/1/reorder", data={"csrf_token": st_token, "direction": "up"}).status_code,
+                403,
+            )
+
+            # 7. Encrypted tenant export includes pet_reference_photos.csv AND secondary media file
+            with tempfile.TemporaryDirectory() as exp_dir:
+                enc_path = Path(exp_dir) / "branch.pcarexport"
+                dec_zip = Path(exp_dir) / "branch.zip"
+                pw = secrets.token_urlsafe(20)
+                with self.app.app_context():
+                    export_tenant(self.branch_slug, enc_path, pw)
+                    verify_encrypted_tenant_export(enc_path, pw)
+                    decrypt_tenant_export(enc_path, dec_zip, pw)
+                with zipfile.ZipFile(dec_zip, "r") as zf:
+                    names = set(zf.namelist())
+                    self.assertIn("data/pet_reference_photos.csv", names)
+                    self.assertIn(f"media/pets/{sec_fn}", names)
+        finally:
+            with self.app.app_context():
+                for rid in (rid_a, rid_b):
+                    if rid:
+                        pet_service.remove_reference_photo(
+                            self.branch_user_id, cat_pet_id, rid, tenant_id=self.branch_tenant_id
+                        )
+
 
 if __name__ == "__main__":
     unittest.main()
