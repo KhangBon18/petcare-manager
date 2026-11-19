@@ -168,7 +168,7 @@
     return typeof url === "string" && /^https:\/\/[a-z0-9.-]+\//i.test(url) ? url : null;
   }
 
-  function renderSafetyNotice(notice, parent) {
+  function renderSafetyNotice(notice, parent, markEscalationAsReplyList = false) {
     if (!notice || typeof notice !== "object") return;
     const box = document.createElement("section");
     const sev = ["emergency", "medical_boundary", "vet_referral", "policy_boundary", "disclaimer"].includes(notice.severity)
@@ -185,6 +185,9 @@
 
     if (Array.isArray(notice.escalation_steps) && notice.escalation_steps.length) {
       const ul = document.createElement("ul");
+      if (markEscalationAsReplyList) {
+        ul.className = "ai-reply-list";
+      }
       for (const step of notice.escalation_steps) {
         const li = document.createElement("li");
         li.textContent = step;
@@ -193,6 +196,34 @@
       box.append(ul);
     }
     parent.append(box);
+  }
+
+  function normalizeNoticeCompare(value) {
+    return String(value || "")
+      .toLowerCase()
+      .replace(/[•*\s:.,!?()/\\-]+/g, " ")
+      .trim();
+  }
+
+  function safetyNoticeCoversReply(notice, replyText) {
+    const normReply = normalizeNoticeCompare(replyText);
+    if (!normReply) return true;
+    if (!notice || typeof notice !== "object") return false;
+    const normTitle = normalizeNoticeCompare(notice.title);
+    const normMsg = normalizeNoticeCompare(notice.message);
+    const normSteps = Array.isArray(notice.escalation_steps)
+      ? notice.escalation_steps.map(normalizeNoticeCompare).filter(Boolean)
+      : [];
+    const normTitleMsg = [normTitle, normMsg].filter(Boolean).join(" ").trim();
+    const normFull = [normTitle, normMsg, ...normSteps].filter(Boolean).join(" ").trim();
+    if (!normMsg && !normTitle) return false;
+    return (
+      normReply === normMsg ||
+      normReply === normTitleMsg ||
+      normReply === normFull ||
+      (normTitleMsg && normReply.startsWith(normTitleMsg) && normReply.length <= normFull.length + 16) ||
+      (normMsg.length >= 24 && normReply.includes(normMsg) && normReply.length <= normFull.length + 16)
+    );
   }
 
   function renderReasoning(summaryText, parent) {
@@ -767,8 +798,11 @@
       }
       updateHeaderEngineBadge(payload);
 
-      renderSafetyNotice(payload.safety_notice, botCard);
-      renderReplyBody(botCard, payload.reply || "");
+      const suppressDuplicateReply = safetyNoticeCoversReply(payload.safety_notice, payload.reply || "");
+      renderSafetyNotice(payload.safety_notice, botCard, suppressDuplicateReply);
+      if (!suppressDuplicateReply) {
+        renderReplyBody(botCard, payload.reply || "");
+      }
       renderReasoning(payload.reasoning_summary, botCard);
       const hasCards = Array.isArray(payload.cards) && payload.cards.length > 0;
       renderRecommendationCards(payload.cards, botCard);

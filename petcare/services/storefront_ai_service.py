@@ -98,6 +98,20 @@ def _format_public_cards(cards: list, currency_code: str, locale: str, reserved_
     return formatted
 
 
+def _clarification_response(packed_msg: str, packed_chips: list[str], locale: str) -> dict[str, Any]:
+    """Format a localized clarification prompt for public AI shoppers."""
+    msg, sugg = localize_clarification(packed_msg, packed_chips, locale)
+    return {
+        "reply": msg,
+        "response_type": ResponseType.CLARIFICATION.value,
+        "mode": "local",
+        "cards": [],
+        "citations": [],
+        "follow_up_questions": sugg,
+        "safety_notice": None,
+    }
+
+
 def answer_public_question(
     store: dict,
     question: str,
@@ -285,18 +299,11 @@ def answer_public_question(
             }
 
         if interpreted.intent == "pet_recommendation" or merged.active_domain == "pet":
-            clar = needs_pet_clarification(merged, prior_turn_count=prior_turn_count)
-            if clar:
-                msg, sugg = localize_clarification(clar, locale)
-                return {
-                    "reply": msg,
-                    "response_type": ResponseType.CLARIFICATION.value,
-                    "mode": "local",
-                    "cards": [],
-                    "citations": [],
-                    "follow_up_questions": sugg,
-                    "safety_notice": None,
-                }
+            should_clarify, packed_msg, packed_chips = needs_pet_clarification(
+                merged, prior_turn_count
+            )
+            if should_clarify:
+                return _clarification_response(packed_msg, packed_chips, locale)
             pet_res = match_available_pets(
                 connection,
                 merged,
@@ -342,18 +349,11 @@ def answer_public_question(
                 "safety_notice": None,
             }
 
-        clar = needs_product_clarification(merged, prior_turn_count=prior_turn_count)
-        if clar and not interpreted.comparison_codes:
-            msg, sugg = localize_clarification(clar, locale)
-            return {
-                "reply": msg,
-                "response_type": ResponseType.CLARIFICATION.value,
-                "mode": "local",
-                "cards": [],
-                "citations": [],
-                "follow_up_questions": sugg,
-                "safety_notice": None,
-            }
+        should_clarify, packed_msg, packed_chips = needs_product_clarification(
+            merged, prior_turn_count
+        )
+        if should_clarify and not interpreted.comparison_codes:
+            return _clarification_response(packed_msg, packed_chips, locale)
         prod_res = recommend_products(
             connection,
             merged,

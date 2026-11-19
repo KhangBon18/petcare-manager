@@ -1,23 +1,46 @@
-# PetCare Manager — quản lý cửa hàng thú cưng
+# PetCare Manager — quản lý cửa hàng thú cưng & Storefront
 
-Ứng dụng web quản trị nhiều cửa hàng trên cùng nền tảng, với backend Python + Flask, giao diện HTML/CSS/JavaScript thuần và MySQL. Mỗi cửa hàng có membership, quyền và dữ liệu riêng. Phạm vi nghiệp vụ gồm khách hàng, thú cưng, hàng tồn kho, nhà cung cấp/đơn nhập, hóa đơn, hoàn trả và báo cáo. Bản hiện tại là nền tảng multi-tenant đang phát triển; chưa đủ điều kiện production.
+Ứng dụng web quản lý cửa hàng thú cưng multi-tenant bằng **Python + Flask + Vanilla HTML/CSS/JS + MySQL 8 + Local ONNX AI Vision**. Bản tích hợp hoàn chỉnh trên `solo/khang-petcare` gồm 3 lớp sản phẩm đồng nhất giao diện **Option A (Precision Cloud SaaS Light)**:
 
-## Demo học thuật an toàn
+1. **Quản trị nội bộ & POS** (`/`): Dashboard doanh thu thuần, POS lập hóa đơn tại quầy, quản lý khách hàng/thú cưng/sản phẩm/kho, nhà cung cấp & nhập hàng, hoàn trả, báo cáo/xuất dữ liệu, và **Trợ lý AI nội bộ** (`/assistant/chat`).
+2. **AI Vision 4.0 cục bộ** (`/pets/find-similar`, `/shop/image-search`): nhận diện loài Mèo/Chó bằng `yolox_nano.onnx`, trích xuất đặc trưng hình thái (`mobilenetv2-12-features.onnx`) + sắc độ CIE-Lab + kho đa ảnh tham chiếu (`pet_reference_photos`) để gợi ý ứng viên cùng loài.
+3. **Customer Storefront** (`/shop`): trang mua sắm công khai cho khách hàng — duyệt sản phẩm & thú cưng, giỏ hàng, đặt đơn COD/nhận tại cửa hàng (giữ `unpaid` tới khi thu tiền tường minh), tìm thú cưng bằng ảnh và **Trợ lý mua sắm AI công khai** (`/shop/ai-assistant`).
 
-Ưu tiên dùng một QA database mới, không nối demo vào `petcare_shop_dev` hoặc production:
+> **Trạng thái môi trường**: Hiện sẵn sàng cho **demo học thuật có kiểm soát và staging** (`APP_ENV=production` với cấu hình HTTPS/TLS riêng khi lên staging). Chưa deploy production công khai.
+
+## Tài liệu hướng dẫn & vận hành chuẩn (Demo & Staging 1.0)
+
+- [Hướng dẫn cài đặt chi tiết (Setup Guide)](docs/SETUP_GUIDE.md) — bare-metal, MySQL 8, Docker Compose, `.env`, ONNX & troubleshooting.
+- [Kịch bản Demo 7–10 phút (Demo Guide)](docs/DEMO_GUIDE.md) — kịch bản nói tiếng Việt, luồng điều hướng 3 vai trò và phương án dự phòng offline.
+- [Checklist Nghiệm thu Người dùng & Giao diện (UAT Checklist)](docs/USER_ACCEPTANCE_CHECKLIST.md) — kiểm chứng Admin/Staff/Customer, COD & 4 viewport (`1440px`, `834px`, `390px`, `320px`).
+- [Kế hoạch Triển khai Staging (Staging Deployment Plan)](docs/STAGING_DEPLOYMENT_PLAN.md) — audit bảo mật, cấu hình proxy/TLS, migration & hạ tầng tối thiểu.
+- [Báo cáo Sẵn sàng Phát hành (Release Readiness Report)](docs/RELEASE_READINESS_REPORT.md) — tổng hợp kiểm thử, hình ảnh thực tế và các giới hạn hiện hành.
+
+## Demo nhanh trên database `_test` cô lập
+
+Không nối demo vào database sản xuất hoặc `petcare_shop_dev` có dữ liệu thật:
 
 ```sh
-python3 -m venv /tmp/petcare-demo-venv
-. /tmp/petcare-demo-venv/bin/activate
-python -m pip install -r requirements.txt -c requirements.lock -r requirements-browser.lock
-scripts/demo/classroom.sh --target qa
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt -c requirements.lock
+cp .env.example .env  # Chỉnh DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, SECRET_KEY
+
+# Nạp dữ liệu demo an toàn (Admin + Staff + Customer Storefront + 22 SP + 74 thú cưng + hóa đơn & đơn online)
+PETCARE_DEMO_MODE=1 APP_ENV=test DB_NAME=petcare_demo_stage_test \
+PETCARE_DEMO_ADMIN_PASSWORD='<16+ ký tự>' \
+PETCARE_DEMO_STAFF_PASSWORD='<16+ ký tự khác>' \
+PETCARE_DEMO_CUSTOMER_PASSWORD='<16+ ký tự khác>' \
+python scripts/demo_staging_setup.py --reset-disposable --json
+
+python run.py
+# Mở Workspace nội bộ: http://127.0.0.1:5055/login
+# Mở Customer Storefront: http://127.0.0.1:5055/shop
 ```
 
-Ứng dụng demo dùng browser hiện có và không cần Playwright để mở bằng tay. Nếu chạy automated classroom rehearsal, cài binary Chromium một lần bằng `python -m playwright install chromium`; để chạy cross-browser/axe, cài `python -m playwright install chromium firefox webkit` và `npm ci --prefix tests/a11y`. Lưu các binary/packages cache trước buổi demo nếu cần offline.
+Để trình diễn rehearsal tự động cũ theo lớp học AI-3.3/3.4, vẫn có `scripts/demo/classroom.sh --target qa` và [Classroom Demo Runbook](docs/CLASSROOM_DEMO_RUNBOOK.md).
 
-Launcher yêu cầu Docker Engine/Compose và mật khẩu demo riêng qua prompt ẩn (hoặc biến môi trường được cấp riêng). Nó tạo MySQL `_test` trong tmpfs, synthetic fixtures, local Vision mock, local workers và Flask trên loopback. `/readyz` và `/workersz` phải báo healthy. Nhập `r` để reset đúng QA project hoặc `q`/Ctrl-C để dừng và cleanup. Kịch bản trình diễn đầy đủ cả hai chế độ (**Mode A Offline** & **Mode B Live Google Gemini Free Tier `gemini-3.5-flash-lite`** qua `scripts/run_gemini_qa_web.py`) nằm tại [Classroom Demo Runbook AI-3.3](docs/CLASSROOM_DEMO_RUNBOOK.md); chi tiết workflow/fallback cũ ở [Phase 6.2 demo readiness](docs/PHASE62_DEMO_READINESS.md) và [academic demo script](docs/ACADEMIC_DEMO_SCRIPT.md).
-
-Không dùng lệnh seed trực tiếp trên dữ liệu thật. Demo provisioning cần `APP_ENV=test`, `PETCARE_DEMO_MODE=1` và mật khẩu do operator cung cấp; seed fail-closed nếu thiếu điều kiện.
+Không dùng lệnh seed trực tiếp trên dữ liệu thật. `seed` và `demo_staging_setup.py` đều fail-closed nếu thiếu `PETCARE_DEMO_MODE=1` hoặc sai hậu tố database (`_test` / `_dev`).
 
 Ứng dụng chọn tiếng Việt hoặc English theo `Accept-Language`; người dùng có thể đổi ngôn ngữ từ màn hình đăng nhập hoặc thanh điều hướng, và lựa chọn được lưu theo tài khoản để dùng xuyên các cửa hàng. Bản English bao phủ đăng nhập, điều hướng, dashboard, trợ lý, khách hàng, sản phẩm, hồ sơ thú cưng, hóa đơn, báo cáo, tìm bằng ảnh/camera, cài đặt tài khoản/cửa hàng, onboarding, quản lý thành viên, xuất dữ liệu, bàn giao chủ cửa hàng và các màn hình lỗi. Email xác minh/khôi phục, lời mời, bàn giao owner và Excel báo cáo hỗ trợ hai ngôn ngữ; các màn hình nghiệp vụ chính định dạng ngày/giờ theo locale và múi giờ cửa hàng, định dạng số theo locale. CSV giữ schema và giá trị trung tính locale để trao đổi dữ liệu. Các thông báo lỗi/flash tĩnh và loại/sự kiện audit đã biết có bản dịch được kiểm thử; nội dung audit nhập ngoài hoặc tự do chưa có mẫu dịch sẽ giữ nguyên ngôn ngữ nguồn. Cần kiểm thử QA bản địa hóa toàn bộ route trước public launch.
 
@@ -201,7 +224,7 @@ Seed idempotent tạo dữ liệu hoàn toàn tổng hợp trong store `main`, c
 
 `python -m petcare.database.seed` yêu cầu database hậu tố phù hợp với `APP_ENV`, `PETCARE_DEMO_MODE=1`, và operator-supplied admin/staff password riêng. Khi chuẩn bị dữ liệu demo, seed cập nhật lại ngày tương đối của các hóa đơn có marker demo; chỉ dùng trên database demo đã xác định, không dùng trên dữ liệu thật. Seed idempotent theo marker nhưng không xóa mọi record ngoài fixture.
 
-Database phát triển `petcare_shop_dev` hiện có **20 bảng** và giữ nguyên dữ liệu demo. Source có migration cộng dồn cho nhà cung cấp/đơn nhập, sổ trả hàng/hoàn tiền, request ledger chống nhận hàng lặp và kho ảnh tham chiếu thú cưng (`pet_reference_photos`); schema hiện hành sẽ có 27 bảng sau khi chạy `python -m petcare.database.initialize`. Lệnh bổ sung bảng/cột/index/FK, không xóa bảng hay dữ liệu; database local chưa chạy migrations mới nên vẫn ở 20 bảng cho tới khi chủ dự án chủ động áp dụng. Sau nghiệm thu Phase 2 ngày 2026-10-25, database local có 14 khách hàng (gồm dữ liệu giữ lại), 22 sản phẩm, 74 thú cưng, 68 ảnh thú cưng và 7 hóa đơn demo đã thanh toán. Bộ seed chuẩn trên database mới có 12 khách mẫu. Dashboard hiển thị doanh thu thuần; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
+Schema tích hợp hiện hành (`solo/khang-petcare`) gồm **31 bảng** MySQL sau khi chạy đầy đủ `python -m petcare.database.initialize` (bao gồm các migration: `datetime_storage_utc_v1`, `purchasing_orders_v1`, `invoice_refunds_v1`, `purchase_receipt_idempotency_v1`, `pet_reference_photos_v1`, `storefront_orders_v1`, `storefront_orders_v1_1`). Quá trình migration hoàn toàn cộng dồn, không xóa bảng hay dữ liệu đang có; cần sao lưu database trước khi chạy trên database cũ. Bộ dữ liệu demo chuẩn có 12 khách mẫu, 22 sản phẩm, 74 thú cưng (68 ảnh lưu trữ kèm kho ảnh tham chiếu & 6 ảnh minh họa danh mục), 7 hóa đơn bán hàng mẫu (hoặc 8 nếu thêm đơn online demo từ `demo_staging_setup.py`). Dashboard hiển thị doanh thu thuần; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
 
 Để dùng database mới với dữ liệu thật: tạo database riêng, cấu hình `.env`, chạy `python -m petcare.database.initialize`, rồi chạy `python -m petcare.database.create_admin`. Lệnh tạo admin yêu cầu xác nhận đúng tên database, nhập mật khẩu qua prompt ẩn và chỉ hoạt động khi database chưa có tài khoản. Sau đó đăng nhập, tạo nhân viên trong **Tài khoản**, rồi nhập danh mục và khách hàng thật. Không chạy seed demo trên database thật. Mật khẩu được băm PBKDF2-HMAC-SHA256; ứng dụng không lưu mật khẩu rõ.
 
