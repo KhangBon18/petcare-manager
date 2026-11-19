@@ -62,6 +62,8 @@ def detail(order_id: int):
 def process(order_id: int):
     action = request.form.get("action", "")
     staff_note = request.form.get("staff_note", "")
+    payment_confirmed = request.form.get("payment_confirmed") == "1"
+    collected_amount = request.form.get("collected_amount")
     try:
         result = storefront_service.process_staff_order(
             g.user["id"],
@@ -69,6 +71,8 @@ def process(order_id: int):
             action,
             staff_note=staff_note,
             tenant_id=g.tenant_id,
+            payment_confirmed=payment_confirmed,
+            collected_amount=collected_amount,
         )
         if result["status"] in {"unchanged", "already_completed"}:
             flash("Trạng thái đơn hàng đã được cập nhật trước đó.", "info")
@@ -76,6 +80,8 @@ def process(order_id: int):
             flash("Đã xác nhận đơn hàng và giữ cá thể thú cưng (nếu có).", "success")
         elif action == "prepare":
             flash("Đã chuyển đơn sang trạng thái đang chuẩn bị.", "success")
+        elif action == "fulfill":
+            flash("Đã đánh dấu đã giao hàng (chờ đối soát thu tiền).", "success")
         elif action == "complete_payment":
             flash("Đã hoàn tất đơn hàng, ghi nhận thanh toán, tạo hóa đơn và cập nhật tồn kho.", "success")
         elif action == "reject":

@@ -235,5 +235,29 @@
     var initQ = chatRoot.getAttribute("data-initial-prompt");
     if (initQ) submitQuestion(initQ);
   }
+  document.querySelectorAll("form[data-sf-confirm]").forEach(function (cfmForm) {
+    cfmForm.addEventListener("submit", function (e) {
+      var msg = cfmForm.getAttribute("data-sf-confirm");
+      if (msg && !window.confirm(msg)) {
+        e.preventDefault();
+      }
+    });
+  });
+
+  document.querySelectorAll("form[data-sf-submit-lock]").forEach(function (lockForm) {
+    lockForm.addEventListener("submit", function (e) {
+      if (lockForm.getAttribute("data-sf-submitting") === "1") {
+        e.preventDefault();
+        return;
+      }
+      lockForm.setAttribute("data-sf-submitting", "1");
+      var btn = lockForm.querySelector('button[type="submit"]');
+      if (btn) {
+        btn.disabled = true;
+        var label = lockForm.getAttribute("data-sf-submit-lock");
+        if (label) btn.textContent = label;
+      }
+    });
+  });
 })();
 

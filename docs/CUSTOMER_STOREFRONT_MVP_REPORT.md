@@ -1,9 +1,9 @@
-# Customer Storefront MVP 1.0 — Architecture, Security, Migration & QA Report
+# Customer Storefront 1.1 — Architecture, Payment Safety, Security, Migration & QA Report
 
 **Project**: PetCare Manager  
-**Branch**: `feature/customer-storefront-mvp` (branched from UI checkpoint `b84e09e`)  
+**Branch**: `feature/customer-storefront-mvp`  
 **Visual Design Direction**: Option A — *Premium SaaS Light*  
-**Database Migration**: `storefront_orders_v1` (additive, idempotent)
+**Database Migrations**: `storefront_orders_v1`, `storefront_orders_v1_1` (additive, idempotent)
 
 ---
 
@@ -16,8 +16,8 @@ Storefront MVP 1.0 được tích hợp trực tiếp vào ứng dụng Flask/My
    - Không yêu cầu `@login_required` của nhân viên, nhưng bị ràng buộc chặt chẽ bởi CSRF, rate limit theo IP (`request_throttle_service`), `Cache-Control: no-store` cho mọi route riêng tư (`/shop/cart`, `/shop/checkout`, `/shop/orders*`, `/shop/login`, `/shop/register`, `/shop/account`), và tách biệt hoàn toàn với `users` / `tenant_users` / dashboard ERP.
 2. **`orders` Blueprint (`/orders`)** — [order_routes.py](file:///Users/heisenbon/Documents/Workspace%20Code/NNLTPython/petcare-manager/petcare/routes/order_routes.py)
    - Dành riêng cho nhân viên (`staff`) và quản trị viên (`admin`) đã đăng nhập nội bộ (`@login_required`).
-   - Cho phép lọc, xem chi tiết, xác nhận (`confirm`), đánh dấu đang chuẩn bị (`prepare`), từ chối (`reject`), hủy (`cancel`), và hoàn tất thanh toán (`complete_payment`).
-   - Khi thu tiền (`complete_payment`), [storefront_service.py](file:///Users/heisenbon/Documents/Workspace%20Code/NNLTPython/petcare-manager/petcare/services/storefront_service.py) tái sử dụng luồng nghiệp vụ chuẩn để tạo/liên kết khách hàng CRM (`customers`), tạo hóa đơn thật (`invoices` + `invoice_items`), ghi nhận xuất kho (`stock_movements`), chuyển `pets.sale_status = 'sold'` và mở khóa `customer_order_pet_locks`.
+   - Cho phép lọc, xem chi tiết, xác nhận (`confirm`), đánh dấu đang chuẩn bị (`prepare`), đánh dấu đã giao / sẵn sàng bàn giao chưa thu tiền (`fulfill` -> `fulfilled`), từ chối (`reject`), hủy (`cancel`), và xác nhận thu tiền thực tế (`complete_payment` với `payment_confirmed=1` và đối chiếu `collected_amount`).
+   - Thanh toán COD giữ nguyên `payment_status='unpaid'` qua cả các bước `pending -> confirmed -> preparing -> fulfilled`; chỉ khi thu tiền thực tế được nhân viên xác nhận rõ ràng mới tạo hóa đơn thật (`invoices` + `invoice_items`), ghi nhận xuất kho (`stock_movements`), chuyển `pets.sale_status = 'sold'`, đặt `order_status = 'ready_completed'`, `payment_status = 'paid'` và mở khóa `customer_order_pet_locks`. Nếu giao COD thất bại (`fulfilled` + `unpaid`), hủy/từ chối sẽ giải phóng toàn bộ giữ hàng mà không bao giờ tạo hóa đơn đã thu tiền.
 
 ```
 Khách hàng (Guest / Customer Session)
@@ -60,16 +60,16 @@ Nhân viên / Admin (Staff Session @login_required)
 
 ---
 
-## 3. Migration CSDL (`storefront_orders_v1`) & Rollback
+## 3. Migration CSDL (`storefront_orders_v1` & `storefront_orders_v1_1`) & Rollback
 
 ### Bảng bổ sung trong [storefront.sql](file:///Users/heisenbon/Documents/Workspace%20Code/NNLTPython/petcare-manager/petcare/database/storefront.sql)
 1. `customer_accounts`: tài khoản người mua hàng, scoped theo `tenant_id`, mật khẩu băm qua chuẩn bảo mật hệ thống, có `session_version` và `active`.
-2. `customer_orders`: đơn hàng trực tuyến với `order_code`, `request_key` (idempotency chống submit đúp), `customer_account_id`, `customer_id`, `invoice_id`, `processed_by`, `fulfillment_method` (`pickup` / `cod_delivery`), `payment_method` (`pay_at_store` / `cod`), `payment_status` (`unpaid` / `paid`), `order_status` (`pending` / `confirmed` / `preparing` / `ready_completed` / `rejected` / `cancelled`).
+2. `customer_orders`: đơn hàng trực tuyến với `order_code`, `request_key` (idempotency chống submit đúp), `customer_account_id`, `customer_id`, `invoice_id`, `processed_by`, `fulfillment_method` (`pickup` / `cod_delivery`), `payment_method` (`pay_at_store` / `cod`), `payment_status` (`unpaid` / `paid`), `order_status` (`pending` / `confirmed` / `preparing` / `fulfilled` / `ready_completed` / `rejected` / `cancelled`), kèm `confirmed_at`, `fulfilled_at`, `completed_at`, `cancelled_at`.
 3. `customer_order_items`: dòng chi tiết `product` hoặc `pet`, ràng buộc CHECK bảo đảm thú cưng luôn có `quantity = 1` và `line_total = unit_price * quantity`.
 4. `customer_order_pet_locks`: `PRIMARY KEY (tenant_id, pet_id)` bảo đảm tính duy nhất ở mức CSDL cho thú cưng đang giữ chỗ.
 
 ### Tính an toàn khi nâng cấp & Rollback
-- **Nâng cấp (Forward / Idempotent)**: `initialize_database()` trong [initialize.py](file:///Users/heisenbon/Documents/Workspace%20Code/NNLTPython/petcare-manager/petcare/database/initialize.py) áp dụng `storefront.sql` và ghi nhận marker `storefront_orders_v1` trong `schema_migrations`, chạy lặp lại an toàn không phá dữ liệu cũ (`CREATE TABLE IF NOT EXISTS`).
+- **Nâng cấp (Forward / Idempotent)**: `initialize_database()` trong [initialize.py](file:///Users/heisenbon/Documents/Workspace%20Code/NNLTPython/petcare-manager/petcare/database/initialize.py) áp dụng `storefront.sql` và ghi nhận marker `storefront_orders_v1`, sau đó kiểm tra `information_schema.columns` để bổ sung trạng thái `'fulfilled'` + cột `fulfilled_at` nếu DB được nâng cấp từ MVP 1.0 và ghi nhận `storefront_orders_v1_1` trong `schema_migrations`, chạy lặp lại an toàn không phá dữ liệu cũ.
 - **Rollback an toàn**:
   - Bước 1 (Ứng dụng): Quay lại commit nền `cab2446` hoặc tắt route `/shop` & `/orders` trước khi đụng schema; toàn bộ dữ liệu POS (`invoices`, `products`, `pets`, `customers`) không bị thay đổi cấu trúc.
   - Bước 2 (CSDL nếu cần gỡ sạch bảng storefront trên môi trường staging/dev): `DROP TABLE IF EXISTS customer_order_pet_locks, customer_order_items, customer_orders, customer_accounts;` và `DELETE FROM schema_migrations WHERE version = 'storefront_orders_v1';` (chỉ thực hiện khi chưa có hoặc đã đối soát hết `customer_orders`).

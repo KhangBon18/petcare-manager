@@ -599,7 +599,7 @@ img { max-width: 100%; display: block; }
   color: var(--sf-muted);
 }
 .sf-status-pending { background: var(--sf-warn-soft); color: var(--sf-warn); }
-.sf-status-confirmed, .sf-status-preparing { background: var(--sf-brand-soft); color: var(--sf-brand); }
+.sf-status-confirmed, .sf-status-preparing, .sf-status-fulfilled { background: var(--sf-brand-soft); color: var(--sf-brand); }
 .sf-status-ready_completed { background: var(--sf-ok-soft); color: var(--sf-ok); }
 .sf-status-rejected, .sf-status-cancelled { background: var(--sf-danger-soft); color: var(--sf-danger); }
 

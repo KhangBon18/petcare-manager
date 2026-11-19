@@ -109,7 +109,7 @@ def register_request_hooks(app, csrf: CSRFProtect):
         # let browsers or shared intermediaries retain one tenant's records
         # after logout or a store switch.
         if g.get("user") or g.get("customer") or request.path.startswith((
-            "/shop/cart", "/shop/checkout", "/shop/orders", "/shop/account"
+            "/shop/cart", "/shop/checkout", "/shop/orders", "/shop/account", "/shop/login", "/shop/register"
         )):
             response.headers["Cache-Control"] = "private, no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"

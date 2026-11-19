@@ -40,12 +40,12 @@
       <div><dt>{{ 'Điện thoại' if locale == 'vi' else 'Phone' }}</dt><dd>{{ order.customer_phone }}</dd></div>
       {% if order.delivery_address %}<div><dt>{{ 'Địa chỉ' if locale == 'vi' else 'Address' }}</dt><dd>{{ order.delivery_address }}</dd></div>{% endif %}
       <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Delivery' }}</dt><dd>{{ 'Giao tận nơi (COD)' if order.fulfillment_method == 'cod_delivery' else ('Nhận tại cửa hàng' if locale == 'vi' else 'Store pickup') }}</dd></div>
-      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ 'Đã thanh toán' if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</dd></div>
+      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd><strong>{{ 'Đã thanh toán' if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</strong> ({{ 'COD khi nhận hàng' if order.payment_method == 'cod' else ('Tại cửa hàng' if locale == 'vi' else 'Pay at store') }})</dd></div>
       {% if order.staff_note %}<div><dt>{{ 'Phản hồi shop' if locale == 'vi' else 'Store note' }}</dt><dd>{{ order.staff_note }}</dd></div>{% endif %}
     </dl>
 
     {% if order.order_status == 'pending' %}
-    <form method="post" action="{{ url_for('storefront.cancel_order', order_code=order.order_code) }}">
+    <form method="post" action="{{ url_for('storefront.cancel_order', order_code=order.order_code) }}" data-sf-confirm="{{ 'Bạn chắc chắn muốn hủy đơn hàng này?' if locale == 'vi' else 'Are you sure you want to cancel this order?' }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="sf-btn sf-btn-danger" type="submit">{{ 'Hủy đơn hàng' if locale == 'vi' else 'Cancel order' }}</button>
     </form>

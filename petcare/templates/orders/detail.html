@@ -46,7 +46,7 @@
       {% if order.processed_by_name %}<div><dt>{{ 'Người xử lý' if locale == 'vi' else 'Processed by' }}</dt><dd>{{ order.processed_by_name }}</dd></div>{% endif %}
     </dl>
 
-    {% if order.order_status in ('pending', 'confirmed', 'preparing') %}
+    {% if order.order_status in ('pending', 'confirmed', 'preparing', 'fulfilled') %}
     <form class="form-stack" method="post" action="{{ url_for('orders.process', order_id=order.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label class="field">
@@ -61,11 +61,36 @@
         <button class="button button-light" type="submit" name="action" value="prepare">{{ 'Đang chuẩn bị' if locale == 'vi' else 'Mark preparing' }}</button>
         {% endif %}
         {% if order.order_status in ('confirmed', 'preparing') %}
-        <button class="button button-primary" type="submit" name="action" value="complete_payment">{{ 'Hoàn tất & Thu tiền (Tạo hóa đơn)' if locale == 'vi' else 'Complete & Collect Payment' }}</button>
+        <button class="button button-light" type="submit" name="action" value="fulfill">{{ 'Đã giao · Chờ thu tiền' if locale == 'vi' else 'Mark fulfilled (Unpaid)' }}</button>
         {% endif %}
-        <button class="button button-light danger-link" type="submit" name="action" value="reject">{{ 'Từ chối' if locale == 'vi' else 'Reject' }}</button>
       </div>
     </form>
+
+    {% if order.order_status in ('confirmed', 'preparing', 'fulfilled') and order.payment_status != 'paid' %}
+    <form class="form-stack order-payment-confirm-box" method="post" action="{{ url_for('orders.process', order_id=order.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label class="order-confirm-check">
+        <input type="checkbox" name="payment_confirmed" value="1" required>
+        <span>{{ 'Tôi xác nhận đã thu đủ' if locale == 'vi' else 'I confirm receiving' }} <strong>{{ format_money(order.total_amount, order.currency_code) }}</strong> ({{ 'COD' if order.payment_method == 'cod' else ('Tại quầy' if locale == 'vi' else 'In store') }})</span>
+      </label>
+      <label class="field">
+        <span>{{ 'Số tiền thực thu (đối chiếu)' if locale == 'vi' else 'Collected amount check' }}</span>
+        <input type="text" name="collected_amount" value="{{ money_input_value(order.total_amount, order.currency_code) }}" required>
+      </label>
+      <button class="button button-primary button-wide" type="submit" name="action" value="complete_payment">{{ 'Xác nhận đã thu tiền & Xuất hóa đơn' if locale == 'vi' else 'Verify Payment & Issue Invoice' }}</button>
+    </form>
+    {% endif %}
+
+    <div class="heading-actions order-danger-actions">
+      <form method="post" action="{{ url_for('orders.process', order_id=order.id) }}" data-confirm="{{ 'Từ chối đơn hàng này và giải phóng hàng đang giữ?' if locale == 'vi' else 'Reject this order and release reserved stock/pets?' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="button button-light danger-link" type="submit" name="action" value="reject">{{ 'Từ chối đơn' if locale == 'vi' else 'Reject order' }}</button>
+      </form>
+      <form method="post" action="{{ url_for('orders.process', order_id=order.id) }}" data-confirm="{{ 'Hủy đơn hàng này và giải phóng hàng đang giữ?' if locale == 'vi' else 'Cancel this order and release reserved stock/pets?' }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="button button-light danger-link" type="submit" name="action" value="cancel">{{ 'Hủy đơn' if locale == 'vi' else 'Cancel order' }}</button>
+      </form>
+    </div>
     {% endif %}
   </section>
 </div>

@@ -5,12 +5,12 @@
 <div class="sf-page-head">
   <div>
     <h1>{{ 'Xác nhận thông tin đặt hàng' if locale == 'vi' else 'Checkout & order review' }}</h1>
-    <p>{{ 'Không thu tiền thẻ giả lập. Đơn hàng được lưu ở trạng thái Chờ cửa hàng xác nhận.' if locale == 'vi' else 'Orders stay pending until store staff confirms and processes fulfillment.' }}</p>
+    <p>{{ 'Thanh toán trực tiếp bằng tiền mặt khi nhận hàng (COD) hoặc tại cửa hàng. Đơn hàng sẽ được nhân viên xác nhận trước khi chuẩn bị.' if locale == 'vi' else 'Pay in cash on delivery (COD) or at pickup. Store staff will confirm your order before preparation.' }}</p>
   </div>
 </div>
 
 <div class="sf-split-layout">
-  <form class="sf-panel sf-form-stack" method="post" action="{{ url_for('storefront.checkout') }}">
+  <form class="sf-panel sf-form-stack" method="post" action="{{ url_for('storefront.checkout') }}" data-sf-submit-lock="{{ 'Đang gửi đơn hàng...' if locale == 'vi' else 'Submitting order...' }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="request_key" value="{{ form_data.get('request_key', '') }}">
 

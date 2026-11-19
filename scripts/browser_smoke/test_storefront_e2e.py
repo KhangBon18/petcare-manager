@@ -297,9 +297,18 @@ class StorefrontBrowserE2ETests(unittest.TestCase):
             staff_page.wait_for_load_state("networkidle")
             expect(staff_page.locator("body")).to_contain_text(re.compile("Đã xác nhận|Confirmed"))
 
+            staff_page.locator('button[name="action"][value="prepare"]').click()
+            staff_page.wait_for_load_state("networkidle")
+            staff_page.locator('button[name="action"][value="fulfill"]').click()
+            staff_page.wait_for_load_state("networkidle")
+            expect(staff_page.locator("body")).to_contain_text(re.compile("Đã giao · Chờ thu tiền|Fulfilled · Awaiting payment"))
+            expect(staff_page.locator("body")).to_contain_text(re.compile("Chưa thanh toán|Unpaid"))
+
+            staff_page.locator('input[name="payment_confirmed"]').check()
             staff_page.locator('button[name="action"][value="complete_payment"]').click()
             staff_page.wait_for_load_state("networkidle")
             expect(staff_page.locator("body")).to_contain_text(re.compile("Hoàn tất|Completed"))
+            expect(staff_page.locator("body")).to_contain_text(re.compile("Đã thanh toán|paid", re.I))
             expect(staff_page.locator("body")).to_contain_text(re.compile("Xem hóa đơn #|View invoice #"))
             staff_page.screenshot(path=str(self.screenshot_dir / "staff-order-detail-1440.png"), full_page=True)
 

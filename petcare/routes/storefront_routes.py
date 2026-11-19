@@ -341,7 +341,8 @@ def checkout():
             order = result["order"]
             session["storefront_cart"] = []
             session["checkout_request_key"] = str(uuid4())
-            _remember_guest_order(store["id"], order["order_code"])
+            if customer is None:
+                _remember_guest_order(store["id"], order["order_code"])
             flash(
                 f"Đã tiếp nhận đơn hàng {order['order_code']}. Cửa hàng sẽ liên hệ xác nhận sớm."
                 if g.locale != "en"
@@ -494,6 +495,8 @@ def customer_logout():
     session.pop("customer_account_id", None)
     session.pop("customer_tenant_id", None)
     session.pop("customer_session_version", None)
+    session.pop("guest_orders", None)
+    session.pop("checkout_request_key", None)
     flash("Bạn đã đăng xuất tài khoản khách hàng." if g.locale != "en" else "Signed out.", "success")
     return redirect(url_for("storefront.home"))
 

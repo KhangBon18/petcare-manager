@@ -13,7 +13,7 @@ from uuid import uuid4
 from petcare import create_app
 from petcare.config import Config
 from petcare.database.connection import get_connection, set_tenant_context, transaction
-from petcare.database.initialize import STOREFRONT_MIGRATION, initialize_database
+from petcare.database.initialize import STOREFRONT_MIGRATION, STOREFRONT_V1_1_MIGRATION, initialize_database
 from petcare.database.seed import seed_database
 from petcare.repositories.base import fetch_one
 from petcare.services import (
@@ -27,7 +27,7 @@ from petcare.services import (
     storefront_service,
     storefront_vision_service,
 )
-from petcare.services.exceptions import ConflictError, ForbiddenError
+from petcare.services.exceptions import ConflictError, ForbiddenError, ValidationError
 from scripts.demo.test_accounts import DEMO_ADMIN_PASSWORD, DEMO_STAFF_PASSWORD
 
 
@@ -80,12 +80,13 @@ class StorefrontMySQLIntegrationTests(unittest.TestCase):
     def test_01_schema_migration_recorded_and_idempotent(self):
         initialize_database()
         with get_connection() as conn:
-            marker = fetch_one(
-                conn,
-                "SELECT version FROM schema_migrations WHERE version = %s",
-                (STOREFRONT_MIGRATION,),
-            )
-            self.assertIsNotNone(marker)
+            for ver in (STOREFRONT_MIGRATION, STOREFRONT_V1_1_MIGRATION):
+                marker = fetch_one(
+                    conn,
+                    "SELECT version FROM schema_migrations WHERE version = %s",
+                    (ver,),
+                )
+                self.assertIsNotNone(marker, f"Missing migration marker {ver}")
 
     def test_02_pending_order_does_not_distort_financial_reports_until_staff_completes(self):
         with self.app.app_context():
@@ -159,17 +160,52 @@ class StorefrontMySQLIntegrationTests(unittest.TestCase):
             mid_prod = product_service.get_product(self.admin_id, prod["id"], tenant_id=tenant_id)
             self.assertEqual(int(mid_prod["stock_qty"]), initial_stock)
 
-            # Staff confirms then completes payment
+            # Staff confirms, prepares, then marks COD order fulfilled — MUST STAY UNPAID & NOT inflate revenue!
             storefront_service.process_staff_order(
                 self.admin_id, order["id"], "confirm", tenant_id=tenant_id
             )
+            storefront_service.process_staff_order(
+                self.admin_id, order["id"], "prepare", tenant_id=tenant_id
+            )
+            fulfilled = storefront_service.process_staff_order(
+                self.admin_id, order["id"], "fulfill", tenant_id=tenant_id
+            )["order"]
+            self.assertEqual(fulfilled["order_status"], "fulfilled")
+            self.assertEqual(fulfilled["payment_status"], "unpaid")
+            self.assertIsNone(fulfilled["invoice_id"])
+            self.assertEqual(
+                Decimal(report_service.report(self.admin_id, tenant_id=tenant_id)["summary"]["revenue"]),
+                before_revenue,
+            )
+
+            # Unverified complete_payment or mismatched collected_amount MUST fail!
+            with self.assertRaises(ValidationError):
+                storefront_service.process_staff_order(
+                    self.admin_id, order["id"], "complete_payment", tenant_id=tenant_id
+                )
+            with self.assertRaises(ValidationError):
+                storefront_service.process_staff_order(
+                    self.admin_id, order["id"], "complete_payment", tenant_id=tenant_id,
+                    payment_confirmed=True, collected_amount="1000",
+                )
+
+            # Explicit verified cash collection transitions to ready_completed + paid
             done = storefront_service.process_staff_order(
-                self.admin_id, order["id"], "complete_payment", tenant_id=tenant_id
+                self.admin_id, order["id"], "complete_payment", tenant_id=tenant_id,
+                payment_confirmed=True, collected_amount=str(expected_total),
             )
             completed = done["order"]
             self.assertEqual(completed["order_status"], "ready_completed")
             self.assertEqual(completed["payment_status"], "paid")
             self.assertIsNotNone(completed["invoice_id"])
+
+            # Duplicate complete_payment call is strictly idempotent
+            dup_done = storefront_service.process_staff_order(
+                self.admin_id, order["id"], "complete_payment", tenant_id=tenant_id,
+                payment_confirmed=True, collected_amount=str(expected_total),
+            )
+            self.assertEqual(dup_done["status"], "already_completed")
+            self.assertEqual(dup_done["order"]["invoice_id"], completed["invoice_id"])
 
             # Verify stock decremented, pet marked sold, and financial revenue updated accurately
             after_prod = product_service.get_product(self.admin_id, prod["id"], tenant_id=tenant_id)
@@ -275,12 +311,13 @@ class StorefrontMySQLIntegrationTests(unittest.TestCase):
             neg_chair = Path("tests/fixtures/vision_ai4/real_pack/real-neg-chair-hold-03.jpg")
             if orange_cat.is_file():
                 # Seed one orange cat photo in store gallery so ONNX search has a real stored target
-                cat_pet_id = pet_service.create_pet(
-                    self.admin_id,
-                    {"code": f"OCAT-{uuid4().hex[:6]}", "name": "Cam Storefront", "species": "Mèo", "coat_color": "vàng cam", "sale_price": "2200000"},
-                    FileStorage(stream=orange_cat.open("rb"), filename="cam.jpg", content_type="image/jpeg"),
-                    tenant_id=self.store["id"],
-                )
+                with orange_cat.open("rb") as orange_stream:
+                    cat_pet_id = pet_service.create_pet(
+                        self.admin_id,
+                        {"code": f"OCAT-{uuid4().hex[:6]}", "name": "Cam Storefront", "species": "Mèo", "coat_color": "vàng cam", "sale_price": "2200000"},
+                        FileStorage(stream=orange_stream, filename="cam.jpg", content_type="image/jpeg"),
+                        tenant_id=self.store["id"],
+                    )
                 self.assertGreater(cat_pet_id, 0)
                 vis = storefront_vision_service.search_public_pets_by_image(
                     self.store["id"], orange_cat.read_bytes()
@@ -315,4 +352,117 @@ class StorefrontMySQLIntegrationTests(unittest.TestCase):
             # Trying to fetch main customer account inside tenant2 context returns None
             self.assertIsNone(
                 storefront_auth_service.load_active_customer(account_main["id"], tenant2_id, account_main["session_version"])
+            )
+
+    def test_05_order_state_edge_cases_cancellation_and_expired_sessions(self):
+        with self.app.app_context():
+            tenant_id = self.store["id"]
+            cust1 = storefront_auth_service.register_customer(tenant_id, {
+                "email": f"c1-{uuid4().hex[:6]}@example.com",
+                "full_name": "Khách Một",
+                "phone": "0951" + f"{uuid4().int % 1_000_000:06d}",
+                "default_address": "10 Trần Hưng Đạo, Q1",
+                "password": "CustomerPass#2026!",
+            })
+            cust2 = storefront_auth_service.register_customer(tenant_id, {
+                "email": f"c2-{uuid4().hex[:6]}@example.com",
+                "full_name": "Khách Hai",
+                "phone": "0952" + f"{uuid4().int % 1_000_000:06d}",
+                "password": "CustomerPass#2026!",
+            })
+            prod_id = product_service.create_product(
+                self.admin_id,
+                {"code": f"EDGE-{uuid4().hex[:6]}", "name": "Hạt Edge Test", "category": "Thức ăn", "unit_price": "90000", "stock_qty": "2", "reorder_level": "1"},
+                None,
+                tenant_id=tenant_id,
+            )
+            pet_id = pet_service.create_pet(
+                self.admin_id,
+                {"code": f"EPET-{uuid4().hex[:6]}", "name": "Milo Edge", "species": "Chó", "sale_price": "3000000"},
+                None,
+                tenant_id=tenant_id,
+            )
+
+            # 1. Customer cancels own pending order cleanly + repeat is idempotent + other customer forbidden
+            pending_ord = storefront_service.place_order(
+                tenant_id, "VND", "Asia/Ho_Chi_Minh",
+                [{"item_type": "product", "item_id": prod_id, "quantity": 2}],
+                {"request_key": str(uuid4()), "customer_name": cust1["full_name"], "customer_phone": cust1["phone"], "fulfillment_method": "pickup"},
+                customer_account_id=cust1["id"],
+            )["order"]
+            with self.assertRaises(ForbiddenError):
+                storefront_service.cancel_customer_pending_order(
+                    tenant_id, pending_ord["order_code"], customer_account_id=cust2["id"]
+                )
+            cancelled = storefront_service.cancel_customer_pending_order(
+                tenant_id, pending_ord["order_code"], customer_account_id=cust1["id"]
+            )
+            self.assertEqual(cancelled["order_status"], "cancelled")
+            self.assertEqual(
+                storefront_service.cancel_customer_pending_order(
+                    tenant_id, pending_ord["order_code"], customer_account_id=cust1["id"]
+                )["order_status"],
+                "cancelled",
+            )
+            # Cancelled order releases stock availability and blocks subsequent staff confirmation
+            self.assertEqual(int(storefront_service.get_public_product(tenant_id, prod_id)["available_online_qty"]), 2)
+            with self.assertRaises(ConflictError):
+                storefront_service.process_staff_order(self.admin_id, pending_ord["id"], "confirm", tenant_id=tenant_id)
+
+            # 2. Failed COD delivery (pending -> confirmed -> preparing -> fulfilled -> cancel) releases pet & stock
+            cod_ord = storefront_service.place_order(
+                tenant_id, "VND", "Asia/Ho_Chi_Minh",
+                [{"item_type": "product", "item_id": prod_id, "quantity": 2}, {"item_type": "pet", "item_id": pet_id, "quantity": 1}],
+                {"request_key": str(uuid4()), "customer_name": cust1["full_name"], "customer_phone": cust1["phone"], "fulfillment_method": "cod_delivery", "delivery_address": "10 Trần Hưng Đạo"},
+                customer_account_id=cust1["id"],
+            )["order"]
+            storefront_service.process_staff_order(self.admin_id, cod_ord["id"], "confirm", tenant_id=tenant_id)
+            with self.assertRaises(ConflictError):
+                storefront_service.cancel_customer_pending_order(tenant_id, cod_ord["order_code"], customer_account_id=cust1["id"])
+            storefront_service.process_staff_order(self.admin_id, cod_ord["id"], "prepare", tenant_id=tenant_id)
+            fulfilled_ord = storefront_service.process_staff_order(self.admin_id, cod_ord["id"], "fulfill", tenant_id=tenant_id)["order"]
+            self.assertEqual(fulfilled_ord["order_status"], "fulfilled")
+            self.assertEqual(fulfilled_ord["payment_status"], "unpaid")
+            # Pet & product remain reserved while fulfilled/unpaid
+            self.assertTrue(bool(storefront_service.get_public_pet(tenant_id, pet_id)["is_reserved"]))
+            self.assertEqual(int(storefront_service.get_public_product(tenant_id, prod_id)["available_online_qty"]), 0)
+            # Cancel failed COD delivery -> releases lock & reservation, stays unpaid, no invoice
+            failed_cod = storefront_service.process_staff_order(
+                self.admin_id, cod_ord["id"], "cancel", staff_note="Khách không nghe máy", tenant_id=tenant_id
+            )["order"]
+            self.assertEqual(failed_cod["order_status"], "cancelled")
+            self.assertEqual(failed_cod["payment_status"], "unpaid")
+            self.assertIsNone(failed_cod["invoice_id"])
+            self.assertFalse(bool(storefront_service.get_public_pet(tenant_id, pet_id)["is_reserved"]))
+            self.assertEqual(int(storefront_service.get_public_product(tenant_id, prod_id)["available_online_qty"]), 2)
+            with self.assertRaises(ConflictError):
+                storefront_service.process_staff_order(
+                    self.admin_id, cod_ord["id"], "complete_payment", tenant_id=tenant_id, payment_confirmed=True
+                )
+
+            # 3. Stock depleted before complete_payment must fail cleanly with ConflictError
+            short_ord = storefront_service.place_order(
+                tenant_id, "VND", "Asia/Ho_Chi_Minh",
+                [{"item_type": "product", "item_id": prod_id, "quantity": 2}],
+                {"request_key": str(uuid4()), "customer_name": cust1["full_name"], "customer_phone": cust1["phone"], "fulfillment_method": "pickup"},
+                customer_account_id=cust1["id"],
+            )["order"]
+            storefront_service.process_staff_order(self.admin_id, short_ord["id"], "confirm", tenant_id=tenant_id)
+            product_service.adjust_stock(self.admin_id, prod_id, {"quantity_delta": "-1", "reason": "Hàng hỏng"}, tenant_id=tenant_id)
+            with self.assertRaises(ConflictError):
+                storefront_service.process_staff_order(
+                    self.admin_id, short_ord["id"], "complete_payment", tenant_id=tenant_id, payment_confirmed=True
+                )
+
+            # 4. Expired customer session (session_version mismatch / deactivated) returns None
+            with transaction() as conn:
+                set_tenant_context(conn, tenant_id)
+                cur = conn.cursor()
+                cur.execute(
+                    "UPDATE customer_accounts SET session_version = session_version + 1 WHERE tenant_id = %s AND id = %s",
+                    (tenant_id, cust1["id"]),
+                )
+                cur.close()
+            self.assertIsNone(
+                storefront_auth_service.load_active_customer(cust1["id"], tenant_id, cust1["session_version"])
             )

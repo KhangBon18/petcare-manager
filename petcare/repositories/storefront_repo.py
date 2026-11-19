@@ -5,7 +5,7 @@ from __future__ import annotations
 from petcare.repositories.base import contains_filter, execute, fetch_all, fetch_one
 
 
-_ACTIVE_ORDER_STATES_SQL = "('pending', 'confirmed', 'preparing')"
+_ACTIVE_ORDER_STATES_SQL = "('pending', 'confirmed', 'preparing', 'fulfilled')"
 
 _PUBLIC_PET_COLUMNS = (
     "p.id, p.code, p.name, p.species, p.breed, p.sex, p.birth_date, p.weight_kg, "
@@ -19,7 +19,7 @@ _PUBLIC_PRODUCT_COLUMNS = (
     "SELECT SUM(oi.quantity) FROM customer_order_items oi "
     "JOIN customer_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id "
     "WHERE oi.tenant_id = p.tenant_id AND oi.product_id = p.id "
-    "AND o.order_status IN " + _ACTIVE_ORDER_STATES_SQL +
+    "AND o.order_status IN ('pending', 'confirmed', 'preparing', 'fulfilled')"
     "), 0)) AS available_online_qty"
 )
 
@@ -79,10 +79,7 @@ def list_public_products_page(
         "price_desc": "p.unit_price DESC, p.name ASC, p.id ASC",
         "name": "p.name ASC, p.id ASC",
     }.get(sort, "CASE WHEN p.stock_qty > 0 THEN 0 ELSE 1 END ASC, p.id ASC")
-    sql = (
-        f"SELECT {_PUBLIC_PRODUCT_COLUMNS} FROM products p WHERE {where_sql} "
-        f"ORDER BY {order_by} LIMIT %s OFFSET %s"
-    )  # nosec B608
+    sql = f"SELECT {_PUBLIC_PRODUCT_COLUMNS} FROM products p WHERE {where_sql} ORDER BY {order_by} LIMIT %s OFFSET %s"  # nosec B608
     return fetch_all(connection, sql, (*params, limit, offset))
 
 
@@ -149,10 +146,7 @@ def list_public_pets_page(
         "price_desc": "p.sale_price DESC, p.name ASC, p.id ASC",
         "name": "p.name ASC, p.id ASC",
     }.get(sort, "CASE WHEN p.photo_filename IS NOT NULL THEN 0 ELSE 1 END ASC, p.id ASC")
-    sql = (
-        f"SELECT {_PUBLIC_PET_COLUMNS} FROM pets p WHERE {where_sql} "
-        f"ORDER BY {order_by} LIMIT %s OFFSET %s"
-    )  # nosec B608
+    sql = f"SELECT {_PUBLIC_PET_COLUMNS} FROM pets p WHERE {where_sql} ORDER BY {order_by} LIMIT %s OFFSET %s"  # nosec B608
     return fetch_all(connection, sql, (*params, limit, offset))
 
 
@@ -325,13 +319,21 @@ def get_order_by_code(connection, order_code: str):
 
 
 def get_order_by_id(connection, order_id: int, lock: bool = False):
-    suffix = " FOR UPDATE" if lock else ""
+    if lock:
+        return fetch_one(
+            connection,
+            "SELECT o.*, u.full_name AS processed_by_name "
+            "FROM customer_orders o "
+            "LEFT JOIN users u ON u.id = o.processed_by "
+            "WHERE o.tenant_id = @petcare_tenant_id AND o.id = %s FOR UPDATE",
+            (order_id,),
+        )
     return fetch_one(
         connection,
         "SELECT o.*, u.full_name AS processed_by_name "
         "FROM customer_orders o "
         "LEFT JOIN users u ON u.id = o.processed_by "
-        "WHERE o.tenant_id = @petcare_tenant_id AND o.id = %s" + suffix,
+        "WHERE o.tenant_id = @petcare_tenant_id AND o.id = %s",
         (order_id,),
     )
 
@@ -381,7 +383,18 @@ def add_order_item(connection, order_id: int, line: dict):
 
 
 def list_order_items(connection, order_id: int, lock: bool = False):
-    suffix = " FOR UPDATE" if lock else ""
+    if lock:
+        return fetch_all(
+            connection,
+            "SELECT oi.*, p.photo_filename AS product_photo_filename, pt.photo_filename AS pet_photo_filename, "
+            "p.category AS product_category, pt.species AS pet_species "
+            "FROM customer_order_items oi "
+            "LEFT JOIN products p ON p.id = oi.product_id AND p.tenant_id = oi.tenant_id "
+            "LEFT JOIN pets pt ON pt.id = oi.pet_id AND pt.tenant_id = oi.tenant_id "
+            "WHERE oi.tenant_id = @petcare_tenant_id AND oi.order_id = %s "
+            "ORDER BY oi.id FOR UPDATE",
+            (order_id,),
+        )
     return fetch_all(
         connection,
         "SELECT oi.*, p.photo_filename AS product_photo_filename, pt.photo_filename AS pet_photo_filename, "
@@ -390,7 +403,7 @@ def list_order_items(connection, order_id: int, lock: bool = False):
         "LEFT JOIN products p ON p.id = oi.product_id AND p.tenant_id = oi.tenant_id "
         "LEFT JOIN pets pt ON pt.id = oi.pet_id AND pt.tenant_id = oi.tenant_id "
         "WHERE oi.tenant_id = @petcare_tenant_id AND oi.order_id = %s "
-        "ORDER BY oi.id" + suffix,
+        "ORDER BY oi.id",
         (order_id,),
     )
 
@@ -429,13 +442,8 @@ def list_orders_for_staff_page(connection, search: str = "", status: str = "", l
     if status:
         clauses.append("o.order_status = %s")
         params.append(status)
-    sql = (
-        "SELECT o.*, (SELECT COUNT(*) FROM customer_order_items oi WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id) AS item_count, "
-        "u.full_name AS processed_by_name "
-        "FROM customer_orders o "
-        "LEFT JOIN users u ON u.id = o.processed_by "
-        "WHERE " + " AND ".join(clauses) + " ORDER BY FIELD(o.order_status, 'pending', 'confirmed', 'preparing', 'ready_completed', 'rejected', 'cancelled'), o.created_at DESC, o.id DESC LIMIT %s OFFSET %s"
-    )  # nosec B608
+    where_sql = " AND ".join(clauses)
+    sql = "SELECT o.*, (SELECT COUNT(*) FROM customer_order_items oi WHERE oi.tenant_id = o.tenant_id AND oi.order_id = o.id) AS item_count, u.full_name AS processed_by_name FROM customer_orders o LEFT JOIN users u ON u.id = o.processed_by WHERE " + where_sql + " ORDER BY FIELD(o.order_status, 'pending', 'confirmed', 'preparing', 'fulfilled', 'ready_completed', 'rejected', 'cancelled'), o.created_at DESC, o.id DESC LIMIT %s OFFSET %s"  # nosec B608
     return fetch_all(connection, sql, (*params, limit, offset))
 
 
@@ -458,6 +466,7 @@ def update_order_state(
     customer_id: int | None = None,
     invoice_id: int | None = None,
     set_confirmed_at: bool = False,
+    set_fulfilled_at: bool = False,
     set_completed_at: bool = False,
     set_cancelled_at: bool = False,
 ):
@@ -480,14 +489,13 @@ def update_order_state(
         params.append(invoice_id)
     if set_confirmed_at:
         sets.append("confirmed_at = COALESCE(confirmed_at, NOW())")
+    if set_fulfilled_at:
+        sets.append("fulfilled_at = COALESCE(fulfilled_at, NOW())")
     if set_completed_at:
         sets.append("completed_at = COALESCE(completed_at, NOW())")
     if set_cancelled_at:
         sets.append("cancelled_at = COALESCE(cancelled_at, NOW())")
     params.append(order_id)
-    sql = (
-        "UPDATE customer_orders SET " + ", ".join(sets)
-        + " WHERE tenant_id = @petcare_tenant_id AND id = %s"
-    )  # nosec B608
+    sql = "UPDATE customer_orders SET " + ", ".join(sets) + " WHERE tenant_id = @petcare_tenant_id AND id = %s"  # nosec B608
     return execute(connection, sql, tuple(params))[1]
 

@@ -59,6 +59,13 @@
     <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.pets') }}">{{ 'Xem tất cả' if locale == 'vi' else 'View all' }} {{ icon('arrow') }}</a>
   </div>
 
+  <div class="sf-chip-row">
+    <a class="sf-chip is-active" href="{{ url_for('storefront.pets') }}">{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
+    <a class="sf-chip" href="{{ url_for('storefront.pets', species='cat') }}">{{ 'Mèo' if locale == 'vi' else 'Cats' }}</a>
+    <a class="sf-chip" href="{{ url_for('storefront.pets', species='dog') }}">{{ 'Chó' if locale == 'vi' else 'Dogs' }}</a>
+    <a class="sf-chip" href="{{ url_for('storefront.pets', species='other') }}">{{ 'Thú nhỏ khác' if locale == 'vi' else 'Other small pets' }}</a>
+  </div>
+
   <div class="sf-grid">
     {% for pet in featured_pets %}
     {% set pvis = pet_visual(pet, public=True) %}

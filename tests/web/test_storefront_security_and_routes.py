@@ -218,3 +218,62 @@ class StorefrontWebSecurityTests(TestCase):
             self.assertEqual(r.status_code, 302)
             self.assertIn("/shop/orders/lookup", r.headers.get("Location", ""))
 
+    def test_customer_logout_clears_guest_order_tokens_and_payment_requires_confirmation(self):
+        with self.client.session_transaction() as sess:
+            sess["customer_account_id"] = 901
+            sess["customer_tenant_id"] = 1
+            sess["customer_session_version"] = 0
+            sess["guest_orders"] = {"ORD-20261119-SECRET": "sig"}
+            sess["checkout_request_key"] = "req-123"
+        with patch(
+            "petcare.services.storefront_auth_service.load_active_customer",
+            return_value={"id": 901, "tenant_id": 1, "full_name": "K", "session_version": 0},
+        ):
+            resp = self.client.post("/shop/logout", follow_redirects=False)
+        self.assertEqual(resp.status_code, 302)
+        with self.client.session_transaction() as sess:
+            self.assertNotIn("customer_account_id", sess)
+            self.assertNotIn("guest_orders", sess)
+            self.assertNotIn("checkout_request_key", sess)
+
+        staff_user = {
+            "id": 2,
+            "tenant_id": 1,
+            "username": "staff1",
+            "full_name": "Nhân viên",
+            "role": "staff",
+            "active": 1,
+            "session_version": 0,
+            "preferred_locale": "vi",
+        }
+        tenant_row = dict(STORE_FIXTURE)
+        with patch(
+            "petcare.auth.load_active_user",
+            side_effect=lambda *args: {**staff_user, "tenant": dict(tenant_row)},
+        ):
+            with self.client.session_transaction() as sess:
+                sess["user_id"] = 2
+                sess["tenant_id"] = 1
+                sess["session_version"] = 0
+            # Verify /orders/<id>/process passes payment_confirmed=False when checkbox omitted
+            with patch(
+                "petcare.services.storefront_service.process_staff_order",
+                return_value={"status": "updated", "order": {"id": 5}},
+            ) as mock_proc:
+                self.client.post("/orders/5/process", data={"action": "complete_payment"})
+                mock_proc.assert_called_once_with(
+                    2, 5, "complete_payment",
+                    staff_note="", tenant_id=1,
+                    payment_confirmed=False, collected_amount=None,
+                )
+                mock_proc.reset_mock()
+                self.client.post(
+                    "/orders/5/process",
+                    data={"action": "complete_payment", "payment_confirmed": "1", "collected_amount": "100000"},
+                )
+                mock_proc.assert_called_once_with(
+                    2, 5, "complete_payment",
+                    staff_note="", tenant_id=1,
+                    payment_confirmed=True, collected_amount="100000",
+                )
+

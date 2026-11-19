@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import hashlib
 import hmac
 import re
@@ -37,6 +37,7 @@ ORDER_STATUS_LABELS_VI = {
     "pending": "Chờ xác nhận",
     "confirmed": "Đã xác nhận",
     "preparing": "Đang chuẩn bị",
+    "fulfilled": "Đã giao · Chờ thu tiền",
     "ready_completed": "Hoàn tất",
     "rejected": "Từ chối",
     "cancelled": "Đã hủy",
@@ -46,6 +47,7 @@ ORDER_STATUS_LABELS_EN = {
     "pending": "Pending confirmation",
     "confirmed": "Confirmed",
     "preparing": "Preparing",
+    "fulfilled": "Fulfilled · Awaiting payment",
     "ready_completed": "Completed",
     "rejected": "Rejected",
     "cancelled": "Cancelled",
@@ -631,7 +633,7 @@ def cancel_customer_pending_order(
 
 # ---------- Staff / Admin Storefront Order Processing ----------
 def list_staff_orders(actor_id: int, search: str = "", status: str = "", page=1, tenant_id=None) -> dict:
-    if status not in ("", "pending", "confirmed", "preparing", "ready_completed", "rejected", "cancelled"):
+    if status not in ("", "pending", "confirmed", "preparing", "fulfilled", "ready_completed", "rejected", "cancelled"):
         status = ""
     search = (search or "").strip()[:120]
     with read_connection() as connection:
@@ -654,10 +656,19 @@ def get_staff_order(actor_id: int, order_id, tenant_id=None) -> dict:
         return _hydrate_order(connection, order)
 
 
-def process_staff_order(actor_id: int, order_id, action: str, staff_note: str = "", tenant_id=None) -> dict:
+def process_staff_order(
+    actor_id: int,
+    order_id,
+    action: str,
+    staff_note: str = "",
+    tenant_id=None,
+    *,
+    payment_confirmed: bool = False,
+    collected_amount=None,
+) -> dict:
     oid = positive_id(order_id, "Đơn hàng")
     action = (action or "").strip()
-    if action not in {"confirm", "prepare", "complete_payment", "reject", "cancel"}:
+    if action not in {"confirm", "prepare", "fulfill", "complete_payment", "reject", "cancel"}:
         raise ValidationError("Thao tác xử lý đơn hàng không hợp lệ.")
     clean_note = text_value(staff_note, "Ghi chú xử lý", 500, required=False)
 
@@ -705,10 +716,29 @@ def process_staff_order(actor_id: int, order_id, action: str, staff_note: str = 
                 f"Chuẩn bị đơn online {order['order_code']}",
                 {"order_code": order["order_code"]},
             )
+        elif action == "fulfill":
+            if current_status == "fulfilled":
+                return {"status": "unchanged", "order": _hydrate_order(connection, order)}
+            if current_status not in {"confirmed", "preparing"}:
+                raise ConflictError("Đơn hàng cần được xác nhận trước khi bàn giao hoặc giao hàng.")
+            storefront_repo.update_order_state(
+                connection,
+                oid,
+                order_status="fulfilled",
+                payment_status="unpaid",
+                processed_by=actor_id,
+                staff_note=clean_note or order["staff_note"],
+                set_fulfilled_at=True,
+            )
+            audit_repo.add_event(
+                connection, actor_id, "storefront_order.fulfilled", "customer_order", oid,
+                f"Đã giao / sẵn sàng bàn giao đơn {order['order_code']} (chờ thu tiền)",
+                {"order_code": order["order_code"], "payment_status": "unpaid"},
+            )
         elif action in {"reject", "cancel"}:
             if current_status in {"rejected", "cancelled"}:
                 return {"status": "unchanged", "order": _hydrate_order(connection, order)}
-            if current_status == "ready_completed":
+            if current_status == "ready_completed" or order["payment_status"] == "paid":
                 raise ConflictError("Đơn đã hoàn tất thanh toán; không thể từ chối hoặc hủy.")
             target_status = "rejected" if action == "reject" else "cancelled"
             storefront_repo.release_pet_locks_for_order(connection, oid)
@@ -728,8 +758,20 @@ def process_staff_order(actor_id: int, order_id, action: str, staff_note: str = 
         elif action == "complete_payment":
             if current_status == "ready_completed" and order["payment_status"] == "paid":
                 return {"status": "already_completed", "order": _hydrate_order(connection, order)}
-            if current_status not in {"confirmed", "preparing"}:
+            if current_status not in {"confirmed", "preparing", "fulfilled"}:
                 raise ConflictError("Cần xác nhận đơn hàng trước khi hoàn tất và thu tiền.")
+            if not payment_confirmed:
+                raise ValidationError(
+                    "Cần xác nhận đã thu đủ tiền thực tế trước khi hoàn tất thanh toán."
+                )
+            if collected_amount is not None and str(collected_amount).strip() != "":
+                raw_amt = str(collected_amount).strip().replace(",", "")
+                try:
+                    parsed_amt = Decimal(raw_amt)
+                except InvalidOperation as exc:
+                    raise ValidationError("Số tiền thực thu không hợp lệ.") from exc
+                if parsed_amt != Decimal(order["total_amount"]):
+                    raise ValidationError("Số tiền thực thu phải khớp đúng tổng giá trị đơn hàng.")
             _complete_order_to_paid_invoice(connection, actor_id, actor, order, items, clean_note)
 
         updated = storefront_repo.get_order_by_id(connection, oid)
