@@ -25,6 +25,7 @@ _IMAGE_PROCESSING_ENDPOINTS = frozenset({
     "pets.find_similar", "pets.suggest_attributes", "pets.create", "pets.edit",
     "pets.add_reference_photo",
     "products.create", "products.edit",
+    "storefront.image_search",
 })
 _CATALOG_IMAGE_UPLOAD_ENDPOINTS = frozenset({
     "pets.create", "pets.edit", "pets.add_reference_photo",
@@ -53,8 +54,9 @@ def register_request_hooks(app, csrf: CSRFProtect):
 
     @app.before_request
     def reserve_image_processing_slot():
+        is_public_image_search = request.endpoint == "storefront.image_search"
         if (
-            not g.get("user")
+            (not g.get("user") and not is_public_image_search)
             or request.method != "POST"
             or request.endpoint not in _IMAGE_PROCESSING_ENDPOINTS
         ):
@@ -106,7 +108,9 @@ def register_request_hooks(app, csrf: CSRFProtect):
         # Authenticated pages and JSON responses can contain store data. Do not
         # let browsers or shared intermediaries retain one tenant's records
         # after logout or a store switch.
-        if g.get("user"):
+        if g.get("user") or g.get("customer") or request.path.startswith((
+            "/shop/cart", "/shop/checkout", "/shop/orders", "/shop/account"
+        )):
             response.headers["Cache-Control"] = "private, no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -165,12 +169,14 @@ def register_template_helpers(app):
         from petcare.services.catalog_visuals import pet_visual, product_visual
 
         def format_money(amount, currency_code=None):
-            code = currency_code or (g.tenant or {}).get("default_currency", "VND")
+            tenant = g.tenant or getattr(g, "public_store", None) or {}
+            code = currency_code or tenant.get("default_currency", "VND")
             locale = "en_US" if current_locale() == "en" else "vi_VN"
             return render_money(amount, code, locale)
 
         def format_datetime(value, date_format=None):
-            zone = (g.tenant or {}).get("timezone", DEFAULT_TIMEZONE)
+            tenant = g.tenant or getattr(g, "public_store", None) or {}
+            zone = tenant.get("timezone", DEFAULT_TIMEZONE)
             return format_tenant_datetime(value, zone, date_format, current_locale())
 
         def format_date(value):

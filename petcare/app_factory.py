@@ -31,16 +31,19 @@ def create_app(test_config=None):
     from petcare.routes.health_routes import bp as health_bp
     from petcare.routes.main_routes import bp as main_bp
     from petcare.routes.metrics_routes import bp as metrics_bp
+    from petcare.routes.order_routes import bp as orders_bp
     from petcare.routes.pet_routes import bp as pet_bp
     from petcare.routes.product_routes import bp as product_bp
     from petcare.routes.purchasing_routes import bp as purchasing_bp
     from petcare.routes.report_routes import bp as report_bp
     from petcare.routes.store_routes import bp as store_bp
+    from petcare.routes.storefront_routes import bp as storefront_bp
     from petcare.routes.user_routes import bp as user_bp
 
     for blueprint in (
         health_bp, metrics_bp, auth_bp, assistant_bp, main_bp, customer_bp, pet_bp, product_bp,
-        invoice_bp, purchasing_bp, report_bp, user_bp, audit_bp, account_bp, store_bp,
+        invoice_bp, orders_bp, purchasing_bp, report_bp, user_bp, audit_bp, account_bp, store_bp,
+        storefront_bp,
     ):
         app.register_blueprint(blueprint)
 

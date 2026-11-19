@@ -56,14 +56,15 @@ def _pet_fallback_filename(item) -> str:
     return "img/catalog/fallbacks/pet-generic.svg"
 
 
-def product_visual(item) -> dict:
+def product_visual(item, public: bool = False) -> dict:
     """Resolve the display URL, resilient fallback URL, and provenance for a product."""
     fallback_rel = _product_fallback_filename(item)
     fallback_url = url_for("static", filename=fallback_rel)
     photo_filename = _get(item, "photo_filename")
     if photo_filename:
+        endpoint = "storefront.public_product_photo" if public else "products.photo"
         return {
-            "url": url_for("products.photo", filename=photo_filename),
+            "url": url_for(endpoint, filename=photo_filename),
             "fallback_url": fallback_url,
             "source": "verified_uploaded_photo",
             "is_illustrative": False,
@@ -84,14 +85,15 @@ def product_visual(item) -> dict:
     }
 
 
-def pet_visual(item) -> dict:
+def pet_visual(item, public: bool = False) -> dict:
     """Resolve display URL and provenance for a pet portrait without fabricating ID data."""
     fallback_rel = _pet_fallback_filename(item)
     fallback_url = url_for("static", filename=fallback_rel)
     photo_filename = _get(item, "photo_filename")
     if photo_filename:
+        endpoint = "storefront.public_pet_photo" if public else "pets.photo"
         return {
-            "url": url_for("pets.photo", filename=photo_filename),
+            "url": url_for(endpoint, filename=photo_filename),
             "fallback_url": fallback_url,
             "source": "verified_stored_photo",
             "is_illustrative": False,

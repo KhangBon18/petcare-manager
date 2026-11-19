@@ -1,0 +1,68 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ 'Tài khoản của tôi' if locale == 'vi' else 'My account' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ customer.full_name }}</h1>
+    <p>{{ customer.email }}</p>
+  </div>
+  <form method="post" action="{{ url_for('storefront.customer_logout') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="sf-btn sf-btn-sm" type="submit">{{ 'Đăng xuất' if locale == 'vi' else 'Sign out' }}</button>
+  </form>
+</div>
+
+<div class="sf-split-layout">
+  <section class="sf-panel">
+    <h2>{{ 'Đơn hàng gần đây' if locale == 'vi' else 'Recent orders' }}</h2>
+    {% if recent_orders %}
+    <div class="sf-table-wrap">
+      <table class="sf-table">
+        <thead>
+          <tr>
+            <th>{{ 'Mã đơn' if locale == 'vi' else 'Order #' }}</th>
+            <th>{{ 'Trạng thái' if locale == 'vi' else 'Status' }}</th>
+            <th>{{ 'Tổng tiền' if locale == 'vi' else 'Total' }}</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for ord in recent_orders %}
+          <tr>
+            <td><strong>{{ ord.order_code }}</strong></td>
+            <td><span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span></td>
+            <td>{{ format_money(ord.total_amount, ord.currency_code) }}</td>
+            <td><a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Chi tiết' if locale == 'vi' else 'View' }}</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p>{{ 'Chưa có đơn hàng nào.' if locale == 'vi' else 'No orders placed yet.' }}</p>
+    {% endif %}
+  </section>
+
+  <section class="sf-panel">
+    <h2>{{ 'Cập nhật thông tin liên hệ' if locale == 'vi' else 'Contact information' }}</h2>
+    <form class="sf-form-stack" method="post" action="{{ url_for('storefront.account') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="sf-field">
+        <label for="acc-name">{{ 'Họ tên' if locale == 'vi' else 'Full name' }}</label>
+        <input id="acc-name" name="full_name" type="text" required value="{{ customer.full_name }}">
+      </div>
+      <div class="sf-field">
+        <label for="acc-phone">{{ 'Số điện thoại' if locale == 'vi' else 'Phone' }}</label>
+        <input id="acc-phone" name="phone" type="tel" required value="{{ customer.phone }}">
+      </div>
+      <div class="sf-field">
+        <label for="acc-addr">{{ 'Địa chỉ giao hàng mặc định' if locale == 'vi' else 'Default address' }}</label>
+        <input id="acc-addr" name="default_address" type="text" value="{{ customer.default_address }}">
+      </div>
+      <button class="sf-btn sf-btn-primary" type="submit">{{ 'Lưu thay đổi' if locale == 'vi' else 'Save changes' }}</button>
+    </form>
+  </section>
+</div>
+{% endblock %}
+

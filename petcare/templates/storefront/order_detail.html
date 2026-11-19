@@ -1,0 +1,56 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ order.order_code }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Đơn hàng' if locale == 'vi' else 'Order' }} {{ order.order_code }}</h1>
+    <p>{{ 'Đặt lúc' if locale == 'vi' else 'Placed at' }} {{ format_datetime(order.created_at) }}</p>
+  </div>
+  <span class="sf-status-pill sf-status-{{ order.order_status }}">{{ g.storefront_order_status_labels.get(order.order_status, order.order_status) }}</span>
+</div>
+
+<div class="sf-split-layout">
+  <section class="sf-panel">
+    <h2>{{ 'Sản phẩm & thú cưng trong đơn' if locale == 'vi' else 'Order items' }}</h2>
+    <div class="sf-cart-list">
+      {% for item in order['items'] %}
+      {% set vis = pet_visual({'code': item.item_code_snapshot, 'species': item.pet_species, 'photo_filename': item.pet_photo_filename}, public=True) if item.item_type == 'pet' else product_visual({'code': item.item_code_snapshot, 'category': item.product_category, 'photo_filename': item.product_photo_filename}, public=True) %}
+      <div class="sf-cart-row">
+        <img class="sf-cart-thumb" src="{{ vis.url }}" data-fallback-src="{{ vis.fallback_url }}" alt="{{ item.name_snapshot }}">
+        <div>
+          <div class="sf-card-meta">{{ 'Thú cưng' if item.item_type == 'pet' else ('Sản phẩm' if locale == 'vi' else 'Product') }} · {{ item.item_code_snapshot }}</div>
+          <strong>{{ item.name_snapshot }}</strong>
+          <div class="sf-card-meta">{{ format_money(item.unit_price, order.currency_code) }} × {{ format_number(item.quantity) }}</div>
+        </div>
+        <strong>{{ format_money(item.line_total, order.currency_code) }}</strong>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="sf-summary-line sf-summary-total">
+      <span>{{ 'Tổng cộng' if locale == 'vi' else 'Total' }}</span>
+      <span>{{ format_money(order.total_amount, order.currency_code) }}</span>
+    </div>
+  </section>
+
+  <aside class="sf-panel">
+    <h2>{{ 'Thông tin nhận hàng & thanh toán' if locale == 'vi' else 'Fulfillment & payment' }}</h2>
+    <dl class="sf-specs">
+      <div><dt>{{ 'Người nhận' if locale == 'vi' else 'Recipient' }}</dt><dd>{{ order.customer_name }}</dd></div>
+      <div><dt>{{ 'Điện thoại' if locale == 'vi' else 'Phone' }}</dt><dd>{{ order.customer_phone }}</dd></div>
+      {% if order.delivery_address %}<div><dt>{{ 'Địa chỉ' if locale == 'vi' else 'Address' }}</dt><dd>{{ order.delivery_address }}</dd></div>{% endif %}
+      <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Delivery' }}</dt><dd>{{ 'Giao tận nơi (COD)' if order.fulfillment_method == 'cod_delivery' else ('Nhận tại cửa hàng' if locale == 'vi' else 'Store pickup') }}</dd></div>
+      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ 'Đã thanh toán' if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</dd></div>
+      {% if order.staff_note %}<div><dt>{{ 'Phản hồi shop' if locale == 'vi' else 'Store note' }}</dt><dd>{{ order.staff_note }}</dd></div>{% endif %}
+    </dl>
+
+    {% if order.order_status == 'pending' %}
+    <form method="post" action="{{ url_for('storefront.cancel_order', order_code=order.order_code) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="sf-btn sf-btn-danger" type="submit">{{ 'Hủy đơn hàng' if locale == 'vi' else 'Cancel order' }}</button>
+    </form>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}
+

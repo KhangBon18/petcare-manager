@@ -1,0 +1,47 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ 'Đơn hàng của tôi' if locale == 'vi' else 'My orders' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Lịch sử đơn hàng' if locale == 'vi' else 'Order history' }}</h1>
+    <p>{{ 'Theo dõi trạng thái xử lý từng đơn đặt mua của bạn.' if locale == 'vi' else 'Track status of your placed orders.' }}</p>
+  </div>
+  <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.account') }}">{{ 'Hồ sơ tài khoản' if locale == 'vi' else 'Account profile' }}</a>
+</div>
+
+<section class="sf-panel">
+  {% if orders %}
+  <div class="sf-table-wrap">
+    <table class="sf-table">
+      <thead>
+        <tr>
+          <th>{{ 'Mã đơn' if locale == 'vi' else 'Order #' }}</th>
+          <th>{{ 'Ngày đặt' if locale == 'vi' else 'Placed at' }}</th>
+          <th>{{ 'Trạng thái' if locale == 'vi' else 'Status' }}</th>
+          <th>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</th>
+          <th>{{ 'Tổng tiền' if locale == 'vi' else 'Total' }}</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ord in orders %}
+        <tr>
+          <td><strong>{{ ord.order_code }}</strong></td>
+          <td>{{ format_datetime(ord.created_at) }}</td>
+          <td><span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span></td>
+          <td>{{ 'Đã thanh toán' if ord.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</td>
+          <td><strong>{{ format_money(ord.total_amount, ord.currency_code) }}</strong></td>
+          <td><a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Xem đơn' if locale == 'vi' else 'View' }}</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p>{{ 'Bạn chưa có đơn hàng nào.' if locale == 'vi' else 'You have no orders yet.' }}</p>
+  <a class="sf-btn sf-btn-primary" href="{{ url_for('storefront.products') }}">{{ 'Bắt đầu mua sắm' if locale == 'vi' else 'Start shopping' }}</a>
+  {% endif %}
+</section>
+{% endblock %}
+

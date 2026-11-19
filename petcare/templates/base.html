@@ -26,6 +26,7 @@
       <a class="nav-link nav-link-dashboard {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}" {% if request.endpoint == 'main.dashboard' %}aria-current="page"{% endif %}>{{ icon('dashboard', 'nav-icon') }} <span class="nav-label">{{ t('Tổng quan') }}</span></a>
       <span class="nav-group-label" aria-hidden="true">{{ t('Bán hàng') }}</span>
       <a class="nav-link nav-link-invoices {% if request.blueprint == 'invoices' %}active{% endif %}" href="{{ url_for('invoices.index') }}" {% if request.blueprint == 'invoices' %}aria-current="page"{% endif %}>{{ icon('invoice', 'nav-icon') }} <span class="nav-label">{{ t('Hóa đơn') }}</span></a>
+      <a class="nav-link nav-link-orders {% if request.blueprint == 'orders' %}active{% endif %}" href="{{ url_for('orders.index') }}" {% if request.blueprint == 'orders' %}aria-current="page"{% endif %}>{{ icon('bag', 'nav-icon') }} <span class="nav-label">{{ 'Đơn online' if locale == 'vi' else 'Online orders' }}</span></a>
       <a class="nav-link nav-link-customers {% if request.blueprint == 'customers' %}active{% endif %}" href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers', 'nav-icon') }} <span class="nav-label">{{ t('Khách hàng') }}</span></a>
       <a class="nav-link nav-link-reports {% if request.blueprint == 'reports' %}active{% endif %}" href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports', 'nav-icon') }} <span class="nav-label">{{ t('Báo cáo') }}</span></a>
       <span class="nav-group-label" aria-hidden="true">{{ t('Hàng hóa') }}</span>
@@ -37,6 +38,7 @@
       <details class="mobile-nav-more" data-mobile-menu>
         <summary>{{ icon('menu') }}<span>{{ t('Thêm') }}</span></summary>
         <nav aria-label="{{ t('Điều hướng khác') }}">
+          <a href="{{ url_for('orders.index') }}" {% if request.blueprint == 'orders' %}aria-current="page"{% endif %}>{{ icon('bag') }} {{ 'Đơn online' if locale == 'vi' else 'Online orders' }}</a>
           <a href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers') }} {{ t('Khách hàng') }}</a>
           <a href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search') }} {{ t('Tìm bằng ảnh') }}</a>
           <a href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports') }} {{ t('Báo cáo') }}</a>

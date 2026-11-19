@@ -17,7 +17,7 @@ def consume(actor_id, scope):
         if scope in {
             "password_reset", "password_reset_ip", "email_verification",
             "email_verification_ip", "tenant_invitation", "tenant_owner_transfer", "public_signup_email",
-            "public_signup_ip",
+            "public_signup_ip", "public_ai_ip", "public_vision_ip", "public_checkout_ip", "public_order_lookup_ip",
         }:
             request_throttle_repo.prune_old(connection)
         return result
@@ -58,6 +58,10 @@ def _configured_limit(scope):
         "tenant_owner_transfer": "TENANT_OWNER_TRANSFER_RATE_LIMIT_PER_MINUTE",
         "public_signup_email": "PUBLIC_SIGNUP_EMAIL_RATE_LIMIT_PER_MINUTE",
         "public_signup_ip": "PUBLIC_SIGNUP_IP_RATE_LIMIT_PER_MINUTE",
+        "public_ai_ip": "PUBLIC_AI_IP_RATE_LIMIT_PER_MINUTE",
+        "public_vision_ip": "PUBLIC_VISION_IP_RATE_LIMIT_PER_MINUTE",
+        "public_checkout_ip": "PUBLIC_CHECKOUT_IP_RATE_LIMIT_PER_MINUTE",
+        "public_order_lookup_ip": "PUBLIC_ORDER_LOOKUP_IP_RATE_LIMIT_PER_MINUTE",
     }.get(scope)
     if not setting:
         raise ValueError("Unknown request limit scope.")
