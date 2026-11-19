@@ -33,6 +33,7 @@
   }
 
   var fulfillmentInputs = document.querySelectorAll('input[name="fulfillment_method"]');
+  var addressGroup = document.getElementById("checkout-address-group");
   var addressInput = document.getElementById("checkout-address");
   var paymentLabel = document.getElementById("checkout-payment-label");
   function syncCheckoutFulfillment() {
@@ -41,13 +42,18 @@
     fulfillmentInputs.forEach(function (inp) {
       if (inp.checked) selected = inp.value;
     });
+    var isCod = selected === "cod_delivery";
+    if (addressGroup) {
+      addressGroup.hidden = !isCod;
+    }
     if (addressInput) {
-      addressInput.required = selected === "cod_delivery";
+      addressInput.required = isCod;
+      addressInput.disabled = !isCod;
     }
     if (paymentLabel) {
       var storeText = paymentLabel.getAttribute("data-store-text") || "";
       var codText = paymentLabel.getAttribute("data-cod-text") || "";
-      paymentLabel.textContent = selected === "cod_delivery" ? codText : storeText;
+      paymentLabel.textContent = isCod ? codText : storeText;
     }
   }
   fulfillmentInputs.forEach(function (inp) {
@@ -58,15 +64,28 @@
   // Public Image Search preview & 5MB size check
   var imageInput = document.getElementById("sf-image-input");
   var imageStatus = document.getElementById("sf-image-file-note");
+  var imagePreviewWrap = document.getElementById("sf-image-preview-wrap");
+  var imagePreviewImg = document.getElementById("sf-image-preview-img");
+  var currentPreviewUrl = null;
   if (imageInput && imageStatus) {
     imageInput.addEventListener("change", function () {
       var file = imageInput.files && imageInput.files[0];
-      if (!file) return;
+      if (!file) {
+        if (imagePreviewWrap) imagePreviewWrap.hidden = true;
+        return;
+      }
       if (file.size > 5 * 1024 * 1024) {
         imageStatus.textContent = imageStatus.getAttribute("data-too-large") || "File exceeds 5 MB limit.";
         imageInput.value = "";
+        if (imagePreviewWrap) imagePreviewWrap.hidden = true;
       } else {
         imageStatus.textContent = file.name;
+        if (imagePreviewWrap && imagePreviewImg && window.URL && window.URL.createObjectURL) {
+          if (currentPreviewUrl) window.URL.revokeObjectURL(currentPreviewUrl);
+          currentPreviewUrl = window.URL.createObjectURL(file);
+          imagePreviewImg.src = currentPreviewUrl;
+          imagePreviewWrap.hidden = false;
+        }
       }
     });
   }
@@ -150,12 +169,20 @@
 
     function appendMessage(role, text, data) {
       var wrap = document.createElement("div");
-      wrap.className = "sf-msg " + (role === "user" ? "sf-msg-user" : "sf-msg-bot");
+      var hasCards = !!(data && Array.isArray(data.cards) && data.cards.length);
+      wrap.className = "sf-msg " + (role === "user" ? "sf-msg-user" : "sf-msg-bot") + (hasCards ? " sf-msg-has-cards" : "");
       var noticeMsg = data && data.safety_notice && data.safety_notice.message
         ? data.safety_notice.message.trim()
         : "";
+      var noticeTitle = data && data.safety_notice && data.safety_notice.title
+        ? data.safety_notice.title.trim()
+        : "";
       var trimmedText = (text || "").trim();
-      if (!noticeMsg || noticeMsg !== trimmedText) {
+      var sameNotice = noticeMsg && (
+        trimmedText === noticeMsg ||
+        (noticeTitle && trimmedText === noticeTitle + ": " + noticeMsg)
+      );
+      if (trimmedText && !sameNotice) {
         var p = document.createElement("div");
         p.textContent = text || "";
         wrap.appendChild(p);
@@ -163,13 +190,13 @@
       if (noticeMsg) {
         var notice = document.createElement("div");
         notice.className = "sf-notice";
-        notice.textContent = noticeMsg;
+        notice.textContent = noticeTitle ? noticeTitle + ": " + noticeMsg : noticeMsg;
         wrap.appendChild(notice);
       }
 
-      if (data && Array.isArray(data.cards) && data.cards.length) {
+      if (hasCards) {
         var grid = document.createElement("div");
-        grid.className = "sf-ai-cards";
+        grid.className = "sf-ai-cards" + (data.cards.length === 1 ? " sf-ai-cards-single" : "");
         data.cards.forEach(function (card) {
           grid.appendChild(createCardNode(card));
         });

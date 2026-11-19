@@ -17,7 +17,7 @@
   <section class="sf-panel">
     <h2>{{ 'Đơn hàng gần đây' if locale == 'vi' else 'Recent orders' }}</h2>
     {% if recent_orders %}
-    <div class="sf-table-wrap">
+    <div class="sf-table-wrap sf-orders-table-wrap">
       <table class="sf-table">
         <thead>
           <tr>
@@ -38,6 +38,20 @@
           {% endfor %}
         </tbody>
       </table>
+    </div>
+    <div class="sf-order-cards" aria-label="{{ 'Đơn hàng gần đây' if locale == 'vi' else 'Recent orders' }}">
+      {% for ord in recent_orders %}
+      <article class="sf-order-card">
+        <div class="sf-order-card-head">
+          <strong>{{ ord.order_code }}</strong>
+          <span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span>
+        </div>
+        <div class="sf-order-card-foot">
+          <span class="sf-order-card-total">{{ format_money(ord.total_amount, ord.currency_code) }}</span>
+          <a class="sf-btn sf-btn-sm sf-order-card-action" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Chi tiết' if locale == 'vi' else 'View' }}</a>
+        </div>
+      </article>
+      {% endfor %}
     </div>
     {% else %}
     <p>{{ 'Chưa có đơn hàng nào.' if locale == 'vi' else 'No orders placed yet.' }}</p>

@@ -41,8 +41,8 @@
       </label>
     </div>
 
-    <div class="sf-field">
-      <label for="checkout-address">{{ 'Địa chỉ giao hàng (bắt buộc nếu chọn Giao tận nơi)' if locale == 'vi' else 'Delivery address (required for COD delivery)' }}</label>
+    <div class="sf-field" id="checkout-address-group" {% if form_data.get('fulfillment_method', 'pickup') != 'cod_delivery' %}hidden{% endif %}>
+      <label for="checkout-address">{{ 'Địa chỉ giao hàng (bắt buộc khi chọn Giao tận nơi)' if locale == 'vi' else 'Delivery address (required for COD delivery)' }}</label>
       <input id="checkout-address" name="delivery_address" type="text" maxlength="255" value="{{ form_data.get('delivery_address', '') }}">
     </div>
 
@@ -51,8 +51,8 @@
       <textarea id="checkout-note" name="customer_note" rows="2" maxlength="500">{{ form_data.get('customer_note', '') }}</textarea>
     </div>
 
-    <div class="sf-notice" id="checkout-payment-label" data-store-text="{{ 'Phương thức: Thanh toán tại quầy khi đến nhận.' if locale == 'vi' else 'Payment: Pay in person at store pickup.' }}" data-cod-text="{{ 'Phương thức: Thanh toán tiền mặt khi nhận hàng (COD).' if locale == 'vi' else 'Payment: Cash on Delivery (COD).' }}">
-      {{ 'Phương thức: Thanh toán tại quầy khi đến nhận.' if locale == 'vi' else 'Payment: Pay in person at store pickup.' }}
+    <div class="sf-notice" id="checkout-payment-label" data-store-text="{{ 'Phương thức: Thanh toán tại quầy khi đến nhận. Không thu phí giao hàng.' if locale == 'vi' else 'Payment: Pay in person at store pickup. No delivery fee.' }}" data-cod-text="{{ 'Phương thức: Thanh toán tiền mặt khi nhận hàng (COD). Không thu phí giao online; nhân viên xác nhận thỏa thuận giao hàng trước khi xuất đơn.' if locale == 'vi' else 'Payment: Cash on Delivery (COD). No online shipping fee is charged; staff confirm delivery terms before dispatch.' }}">
+      {{ 'Phương thức: Thanh toán tại quầy khi đến nhận. Không thu phí giao hàng.' if locale == 'vi' else 'Payment: Pay in person at store pickup. No delivery fee.' }}
     </div>
 
     <button class="sf-btn sf-btn-primary" type="submit" {% if cart.has_unavailable %}disabled{% endif %}>{{ 'Xác nhận đặt hàng' if locale == 'vi' else 'Place pending order' }}</button>

@@ -499,3 +499,35 @@ test("renders structured bullet/numbered lists, vet_referral banner, and distinc
   assert.match(footers[1].textContent, /Offline Python Fallback/);
   assert.doesNotMatch(footers[1].textContent, /Approved Real LLM/);
 });
+
+test("suppresses duplicate plain-text reply when safety banner already renders identical guidance", async () => {
+  const h = buildWorkspaceTree({lang: "vi"});
+  h.input.value = "Mèo bỏ ăn nôn";
+  h.form.dispatchEvent(new UIEvent("submit"));
+  assert.equal(h.requests.length, 1);
+
+  h.requests[0].resolve({
+    ok: true,
+    json: async () => ({
+      reply:
+        "Khuyến nghị thăm khám thú y trước khi chọn sản phẩm: Dấu hiệu bạn mô tả cần bác sĩ thú y kiểm tra trực tiếp.\n" +
+        "• Ghi nhận thời điểm bắt đầu triệu chứng.\n" +
+        "• Chỉ chọn sản phẩm sau khi bác sĩ khám.",
+      response_type: "safety_referral",
+      safety_notice: {
+        severity: "vet_referral",
+        title: "Khuyến nghị thăm khám thú y trước khi chọn sản phẩm",
+        message: "Dấu hiệu bạn mô tả cần bác sĩ thú y kiểm tra trực tiếp.",
+        escalation_steps: [
+          "Ghi nhận thời điểm bắt đầu triệu chứng.",
+          "Chỉ chọn sản phẩm sau khi bác sĩ khám.",
+        ],
+      },
+    }),
+  });
+  await settle();
+
+  const botTurn = h.stream.querySelector(".ai-turn-bot");
+  assert.ok(botTurn.querySelector(".ai-safety-banner--vet_referral"));
+  assert.equal(botTurn.querySelector(".ai-reply-text"), null);
+});

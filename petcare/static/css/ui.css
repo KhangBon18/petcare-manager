@@ -861,20 +861,42 @@ a.stat-card { display: block; color: inherit; }
 .quick-customer-dialog[open] { animation: ui-pop var(--motion-standard) var(--ease-out); }
 .quick-customer-dialog::backdrop { background: rgba(15, 23, 42, .45); }
 
-/* ---------- 13. AI assistant (Clean product UX, no crowded diagnostic noise) ---------- */
-.assistant-launcher {
-  min-height: 42px;
-  padding: 0 15px 0 13px;
-  gap: 8px;
+/* ---------- 13. AI assistant (Docked in topbar: zero action occlusion, clean product UX) ---------- */
+.topbar .assistant-launcher {
+  position: static;
+  right: auto;
+  bottom: auto;
+  z-index: auto;
+  flex-shrink: 0;
+  min-height: 34px;
+  height: 34px;
+  padding: 0 12px 0 10px;
+  gap: 6px;
+  border-radius: 999px;
   background: var(--color-ink);
   color: #FFFFFF;
-  box-shadow: var(--shadow-float);
-  font-size: 13px;
+  box-shadow: var(--shadow-xs);
+  font-size: 12.5px;
   font-weight: var(--weight-semibold);
+  white-space: nowrap;
 }
 .assistant-launcher:hover { background: var(--color-brand); }
-.assistant-launcher > .ui-icon { color: #60A5FA; }
-.assistant-panel { border-color: var(--color-border); border-radius: 14px; box-shadow: var(--shadow-float); transform-origin: bottom right; animation: ui-pop var(--motion-standard) var(--ease-out); }
+.assistant-launcher > .ui-icon { color: #60A5FA; width: 15px; height: 15px; }
+.pet-search-page .assistant-launcher,
+.purchase-order-page .assistant-launcher,
+.invoice-detail-page .assistant-launcher,
+.assistant-chat-page .assistant-launcher { display: none; }
+.assistant-panel {
+  top: calc(var(--topbar-h, 58px) + 8px);
+  right: clamp(12px, 2vw, 24px);
+  bottom: auto;
+  height: min(520px, calc(100dvh - 82px));
+  border-color: var(--color-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-float);
+  transform-origin: top right;
+  animation: ui-pop var(--motion-standard) var(--ease-out);
+}
 .assistant-avatar { background: var(--color-brand); color: #FFFFFF; }
 .assistant-privacy { background: var(--color-canvas); border-bottom: 1px solid var(--color-border); color: var(--color-faint); font-size: 11.5px; }
 .assistant-messages { background: var(--color-surface); }
@@ -933,7 +955,7 @@ a.stat-card { display: block; color: inherit; }
 
 .ai-workspace-grid { grid-template-columns: minmax(0, 1fr) 256px; gap: 16px; }
 .ai-chat-panel { border-radius: var(--radius-lg); }
-.ai-stream { min-height: 410px; padding: 18px 20px; gap: 12px; background: var(--color-surface); }
+.ai-stream { min-height: 360px; padding: 16px 18px; gap: 12px; background: var(--color-surface); }
 .ai-welcome-card { gap: 14px; padding: 0; border: 0; background: transparent; }
 .ai-welcome-icon { width: 34px; height: 34px; flex-basis: 34px; border-radius: 9px; background: var(--color-brand-soft); color: var(--color-brand); }
 .ai-welcome-lead h2 { font: var(--weight-semibold) 17px/1.3 var(--font-display); color: var(--color-ink); }
@@ -959,6 +981,7 @@ a.stat-card { display: block; color: inherit; }
 .ai-turn-user { background: var(--color-brand); border-bottom-right-radius: 5px; }
 .ai-turn-bot { border-color: var(--color-border); background: var(--color-canvas); box-shadow: none; }
 .ai-turn-bot.is-loading { background: var(--color-canvas); color: var(--color-muted); }
+.ai-safety-banner .ai-reply-list { font-size: inherit; color: inherit; margin: 4px 0 0; padding-left: 18px; }
 .ai-rec-card { border-color: var(--color-border); border-radius: var(--radius-md); background: var(--color-surface); }
 .ai-composer { padding: 12px 16px; border-top: 1px solid var(--color-border); background: var(--color-surface); }
 .ai-composer-row {
@@ -1144,7 +1167,7 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .topbar-mobile-admin:not(.topbar-multi-store) .account-menu { margin-left: 0; }
   .topbar:not(.topbar-multi-store) .mobile-admin-link,
   .topbar-mobile-admin:not(.topbar-multi-store) .mobile-admin-link { min-height: 36px; padding: 0; border: 0; border-radius: 0; background: transparent; }
-  .mobile-admin-link > summary { min-height: 36px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: 12.5px; color: var(--color-ink); }
+  .mobile-admin-link > summary { min-height: 36px; padding: 0 11px; border-radius: 999px; border: 1px solid var(--color-border); background: var(--color-surface); font-size: 12.5px; color: var(--color-ink); white-space: nowrap; flex-shrink: 0; }
   .heading-actions { flex-wrap: wrap; }
   .page-wrap { padding-top: 16px; }
   .page-heading { align-items: stretch; }
@@ -1167,12 +1190,32 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .pos-catalog-grid, .pos-skeleton { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 14px 14px; }
   .pos-filters { width: 100%; }
   .pos-filters button { flex: 1; }
-  .assistant-launcher { width: 46px; min-width: 46px; height: 46px; justify-content: center; gap: 0; padding: 0; font-size: 0; }
+  .topbar .assistant-launcher { width: 34px; min-width: 34px; min-height: 34px; height: 34px; justify-content: center; gap: 0; padding: 0; font-size: 0; }
+  .topbar .assistant-launcher > span { display: none; }
+  .topbar .assistant-launcher > .ui-icon { width: 16px; height: 16px; }
+  .assistant-panel {
+    top: calc(var(--topbar-h, 54px) + 6px);
+    right: 12px;
+    bottom: auto;
+    height: min(470px, calc(100dvh - 150px - env(safe-area-inset-bottom)));
+  }
+  body:has(.topbar-multi-store) .assistant-panel {
+    top: 104px;
+    height: min(440px, calc(100dvh - 186px - env(safe-area-inset-bottom)));
+  }
   .login-panel { padding: 32px 22px; }
   .ai-stream { padding: 14px; }
   .ai-prompt-groups { grid-template-columns: minmax(0, 1fr); }
   .ai-composer-row { flex-direction: row; }
   .ai-send-btn { width: auto; }
+}
+@media (max-width: 420px) {
+  .topbar-multi-store .assistant-launcher {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    margin: 0;
+  }
 }
 @media (max-width: 780px) {
   .product-profile { grid-template-columns: 1fr; padding: 16px; gap: 18px; }
@@ -1187,7 +1230,11 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .page-wrap { padding: 14px 12px 76px; }
   .pos-catalog-grid, .pos-skeleton { grid-template-columns: 1fr; padding: 0 10px 12px; }
   .login-panel { padding: 24px 14px; }
-  .topbar { padding: 0 10px; }
+  .topbar,
+  .topbar:not(.topbar-multi-store).topbar-mobile-admin { gap: 4px; padding: 0 8px; }
+  .topbar:not(.topbar-multi-store) .mobile-brand strong { font-size: 12.5px; }
+  .account-menu-trigger { padding: 2px 6px 2px 3px; gap: 5px; }
+  .mobile-admin-link > summary { padding: 0 8px; font-size: 11.5px; gap: 4px; }
 }
 @media print {
   .topbar { display: none !important; }

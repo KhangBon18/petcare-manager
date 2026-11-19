@@ -17,6 +17,10 @@
       {{ icon('camera') }}
       <label for="sf-image-input"><strong>{{ 'Chọn ảnh mèo hoặc chó (JPEG, PNG, WebP · tối đa 5 MB)' if locale == 'vi' else 'Choose a pet photo (JPEG, PNG, WebP · max 5 MB)' }}</strong></label>
       <input id="sf-image-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
+      <div class="sf-query-preview sf-query-preview-inline" id="sf-image-preview-wrap" hidden>
+        <img id="sf-image-preview-img" src="" alt="{{ 'Ảnh đã chọn' if locale == 'vi' else 'Selected photo preview' }}">
+        <small>{{ 'Ảnh vừa chọn để đối chiếu' if locale == 'vi' else 'Selected image preview' }}</small>
+      </div>
       <small id="sf-image-file-note" data-too-large="{{ 'Ảnh vượt quá giới hạn 5 MB.' if locale == 'vi' else 'Image exceeds 5 MB limit.' }}">{{ 'Hệ thống xử lý ảnh cục bộ trên máy chủ cửa hàng, tự nhận diện mèo/chó.' if locale == 'vi' else 'Processed locally with automatic cat/dog verification.' }}</small>
     </div>
 
@@ -37,11 +41,18 @@
 {% if matches is not none %}
 <section class="sf-section">
   <div class="sf-section-head">
-    <div>
-      <h2>{{ 'Kết quả phù hợp' if locale == 'vi' else 'Matching pets' }}</h2>
-      {% if matches.verified_species %}
-      <p>{{ 'Loài xác nhận:' if locale == 'vi' else 'Detected species:' }} <strong>{{ 'Mèo' if matches.verified_species == 'cat' else ('Chó' if matches.verified_species == 'dog' else matches.verified_species) }}</strong></p>
+    <div class="sf-search-match-head">
+      {% if matches.query_preview %}
+      <div class="sf-query-preview">
+        <img src="{{ matches.query_preview }}" alt="{{ 'Ảnh bạn đã tải lên' if locale == 'vi' else 'Uploaded query photo' }}">
+      </div>
       {% endif %}
+      <div>
+        <h2>{{ 'Kết quả phù hợp' if locale == 'vi' else 'Matching pets' }}</h2>
+        {% if matches.verified_species %}
+        <p>{{ 'Loài xác nhận:' if locale == 'vi' else 'Detected species:' }} <strong>{{ 'Mèo' if matches.verified_species == 'cat' else ('Chó' if matches.verified_species == 'dog' else matches.verified_species) }}</strong></p>
+        {% endif %}
+      </div>
     </div>
   </div>
 
@@ -55,7 +66,7 @@
         <a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">
           <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ pet.species }} {{ pet.name }}">
         </a>
-        <span class="sf-card-badge">{{ format_number(r.score) }}%</span>
+        <span class="sf-card-badge">{{ format_number(r.score) }}/100</span>
         {% if pvis.is_illustrative %}<span class="sf-card-illus">{{ 'Minh họa' if locale == 'vi' else 'Illustrative' }}</span>{% endif %}
       </div>
       <div class="sf-card-body">

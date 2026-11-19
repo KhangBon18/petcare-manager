@@ -98,8 +98,8 @@
                 ["style", "transform", "data-svg-origin"].map(name => [name, node.getAttribute(name)]),
               ]));
               entrance.fromTo(bars, {
-              scaleY: 0.06, transformOrigin: "50% 100%",
-            }, {scaleY: 1, stagger: {amount: 0.22}, duration: 0.48}, 0.16);
+              scaleY: 0.72, transformOrigin: "50% 100%",
+            }, {scaleY: 1, stagger: {amount: 0.14}, duration: 0.24}, 0.06);
             }
             if (!entrance.duration()) restore(entrance);
           });
