@@ -2,7 +2,7 @@
 
 This document lists third-party software packages, vendored frontend scripts, pre-trained machine learning models, and image assets used or included with **PetCare Manager**.
 
-> **Scope Notice**: Third-party components retain their respective upstream licenses and notices. Any first-party license later chosen for PetCare Manager applies solely to first-party source code created for this project and does not re-license third-party or vendored components (such as GSAP, ONNX models, or third-party Python packages).
+> **Scope Notice**: Original first-party PetCare Manager source code and documentation authored by the project owner are licensed under the MIT License ([LICENSE](LICENSE)). Third-party libraries, vendored frontend runtime assets, pre-trained ONNX models, Wikimedia Commons evaluation images, and historical independent artifacts listed below retain their respective upstream licenses and attribution terms and are **not** re-licensed under MIT.
 
 ---
 
@@ -75,14 +75,41 @@ Source archives declare dependency constraints rather than bundling Python wheel
 
 ---
 
-## 4. Synthetic Demo & Catalog Imagery
+## 4. Synthetic Demo, UI & Catalog Imagery
 
-- **`assets/demo/pets/`** (`68` portraits + `README.md`): Synthetic AI-generated portraits (`demo-dog-01..32.png`, `demo-cat-01..32.png` plus 4 sample demo photos). Fictional demo data only; not live shop inventory or biometric animal identification claims.
-- **`petcare/static/img/catalog/`** (`28` `.webp`, `10` `.svg`) and **`petcare/static/img/login/`** (`3` `.webp`): Project-created catalog product/pet thumbnails, vector fallback icons, and login illustrations.
+- **`assets/demo/pets/`** (`68` portraits + `README.md`): AI-generated synthetic demo portraits (`demo-dog-01..32.png`, `demo-cat-01..32.png`, plus `miu-orange-cream.png`, `nori-tabby.png`, `may-calico.png`, `bo-mixed-dog.png`). Fictional demo profiles only; not live shop inventory or biometric animal identification claims.
+- **`petcare/static/img/catalog/`** (`28` `.webp`, `10` `.svg`) and **`petcare/static/img/login/`** (`3` `.webp`): Project-generated studio illustrations and vector fallback icons documented in `docs/assets/FE_POLISH2_ASSET_MANIFEST.json`.
+- **`tests/fixtures/vision/`**: Flat geometric test illustrations (`synthetic-cat-black.png`, `synthetic-dog-brown.webp`) and malformed upload test inputs created for deterministic validation testing.
 
 ---
 
-## 5. Development & QA-Only Tooling (Excluded from Source Release Archive)
+## 5. Evaluation Real-Photo Test Fixtures (`tests/fixtures/vision_ai4/real_pack/`)
+
+The offline Vision evaluation pack contains `34` photographs sourced from Wikimedia Commons with per-file metadata recorded in `tests/fixtures/vision_ai4/real_pack/PROVENANCE.json` (and `tests/fixtures/vision_ai4/real_identities_v4/manifest_v4_identities.json`):
+- `23` photographs released under **`CC0`** (public domain dedication)
+- `3` photographs marked **`Public domain`** (`real-dog-other-hold-04.jpg`, `real-neg-toy-cal-01.jpg`, `real-multi-catdog-cal-01.jpg`)
+- `8` photographs redistributed under **Creative Commons Attribution (`CC BY`)** licenses, which are **not** re-licensed under MIT and require preserving attribution:
+
+| Fixture File | Photographer / Artist | License | Source URL |
+| :--- | :--- | :--- | :--- |
+| `real-cat-orange-cal-01.jpg` | YuJeen from Riga, Latvia | **CC BY 2.0** | `https://commons.wikimedia.org/wiki/File:Ginger_cat_(14358857469).jpg` |
+| `real-cat-orange-hold-01.jpg` | Greg Mote from Glendora, CA, USA | **CC BY 2.0** | `https://commons.wikimedia.org/wiki/File:Red_mackerel_tabby_cat_2011-12-08_(8653607508).jpg` |
+| `real-cat-orange-hold-02.jpg` | Ioutpizzaedthehut12 | **CC BY 4.0** | `https://commons.wikimedia.org/wiki/File:Orange_and_white_cat_01.jpg` |
+| `real-dog-other-cal-03.jpg` | Peter Wadsworth | **CC BY 2.0** | `https://commons.wikimedia.org/wiki/File:Labrador_Retriever_black_portrait_Flickr.jpg` |
+| `real-dog-other-cal-04.jpg` | Randi Hausken | **CC BY 2.0** | `https://commons.wikimedia.org/wiki/File:Siberian_Husky_Ivan_portrait.jpg` |
+| `real-dog-golden-hold-01.jpg` | Jason Hargrove from New York | **CC BY 2.0** | `https://commons.wikimedia.org/wiki/File:Shiba_Inu_Dog_Portrait_(cc)_(4115686100).jpg` |
+| `real-dog-golden-hold-02.jpg` | Marek Ślusarczyk (Tupungato) Photo portfolio | **CC BY 3.0** | `https://commons.wikimedia.org/wiki/File:43_Old_dog_-_senior_labrador_dog_with_collar_resting_on_sidewalk.jpg` |
+| `real-neg-blanket-hold-02.jpg` | Rosmarie Voegtli | **CC BY 2.0** | `https://commons.wikimedia.org/wiki/File:Wool_-_Flickr_-_Rosmarie_Voegtli.jpg` |
+
+---
+
+## 6. Historical Archived Contributions
+
+- **`docs/archive/desktop_data/quan_ly_thu_cung.sql`** (`147` bytes, single `CREATE DATABASE` DDL statement): Historical desktop-era SQL artifact originally introduced in commit `92cf654` by `Vo Thanh Nhan` (`docs/archive/README.md`). Excluded from the active Flask/MySQL runtime schema and omitted from the first-party MIT ownership claim unless confirmed by that contributor.
+
+---
+
+## 7. Development & QA-Only Tooling (Excluded from Source Release Archive)
 
 - **`axe-core@4.14.0`** (`tests/a11y/package.json`): **MPL-2.0** (installed solely inside gitignored `tests/a11y/node_modules/` for accessibility audits).
 - **`playwright==1.64.1`**, `greenlet==3.5.6`, `pyee==14.0.0`, `typing-extensions==4.16.0` (`requirements-browser.lock`): **Apache-2.0 / MIT / PSF** (optional browser QA dependencies, excluded from `requirements.lock` and runtime container installs).
