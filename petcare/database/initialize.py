@@ -9,11 +9,14 @@ from petcare.database.tenancy import migrate_tenancy
 SCHEMA_PATH = Path(__file__).with_name("schema.sql")
 PURCHASING_SCHEMA_PATH = Path(__file__).with_name("purchasing.sql")
 REFUNDS_SCHEMA_PATH = Path(__file__).with_name("refunds.sql")
+STOREFRONT_SCHEMA_PATH = Path(__file__).with_name("storefront.sql")
 UTC_DATETIME_MIGRATION = "datetime_storage_utc_v1"
 PURCHASING_MIGRATION = "purchasing_orders_v1"
 REFUNDS_MIGRATION = "invoice_refunds_v1"
 PURCHASE_RECEIPTS_MIGRATION = "purchase_receipt_idempotency_v1"
 PET_REFERENCE_PHOTOS_MIGRATION = "pet_reference_photos_v1"
+STOREFRONT_MIGRATION = "storefront_orders_v1"
+STOREFRONT_V1_1_MIGRATION = "storefront_orders_v1_1"
 
 
 def migrate_datetime_storage_to_utc(cursor):
@@ -573,6 +576,38 @@ def initialize_database():
             _migrate_invoice_refunds(cursor)
             _migrate_purchase_receipt_idempotency(cursor)
             _migrate_pet_reference_photos(cursor)
+            storefront_statements = [
+                statement.strip()
+                for statement in STOREFRONT_SCHEMA_PATH.read_text(encoding="utf-8").split(";")
+                if statement.strip()
+            ]
+            for statement in storefront_statements:
+                cursor.execute(statement)
+            cursor.execute(
+                "INSERT INTO schema_migrations (version) VALUES (%s) "
+                "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+                (STOREFRONT_MIGRATION,),
+            )
+            cursor.execute(
+                "SELECT column_name, column_type FROM information_schema.columns "
+                "WHERE table_schema = DATABASE() AND table_name = 'customer_orders'"
+            )
+            order_columns = {row[0]: str(row[1] or "").lower() for row in cursor.fetchall()}
+            if "'fulfilled'" not in order_columns.get("order_status", ""):
+                cursor.execute(
+                    "ALTER TABLE customer_orders MODIFY COLUMN order_status "
+                    "ENUM('pending', 'confirmed', 'preparing', 'fulfilled', 'ready_completed', 'rejected', 'cancelled') "
+                    "NOT NULL DEFAULT 'pending'"
+                )
+            if "fulfilled_at" not in order_columns:
+                cursor.execute(
+                    "ALTER TABLE customer_orders ADD COLUMN fulfilled_at DATETIME NULL AFTER confirmed_at"
+                )
+            cursor.execute(
+                "INSERT INTO schema_migrations (version) VALUES (%s) "
+                "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+                (STOREFRONT_V1_1_MIGRATION,),
+            )
         finally:
             cursor.close()
 

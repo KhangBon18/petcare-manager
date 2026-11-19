@@ -59,6 +59,7 @@
       {% if public_signup_enabled %}
       <p class="login-recovery">{{ t('Mở cửa hàng mới?') }} <a href="{{ url_for('auth.signup') }}">{{ t('Tạo tài khoản cửa hàng') }}</a></p>
       {% endif %}
+      <p class="login-recovery"><a href="{{ url_for('storefront.home') }}">{{ 'Ghé thăm cửa hàng khách hàng (/shop)' if locale == 'vi' else 'Visit public customer shop (/shop)' }}</a></p>
       <p class="login-help-quiet">{{ 'Liên hệ quản trị viên cửa hàng nếu bạn chưa có tài khoản.' if locale == 'vi' else 'Contact your store administrator if you need an account.' }}</p>
     </div>
   </section>

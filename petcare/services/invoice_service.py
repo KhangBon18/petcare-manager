@@ -2,7 +2,7 @@ from collections import defaultdict
 from decimal import Decimal
 
 from petcare.database.connection import read_connection, transaction
-from petcare.repositories import audit_repo, customer_repo, invoice_repo, pet_repo, product_repo, refund_repo
+from petcare.repositories import audit_repo, customer_repo, invoice_repo, pet_repo, product_repo, refund_repo, storefront_repo
 from petcare.services.common import (
     integer_value,
     page_window,
@@ -222,6 +222,9 @@ def pay_invoice(actor_id, invoice_id, tenant_id=None):
             by_id = {pet["id"]: pet for pet in pets}
             if any(by_id.get(pet_id, {}).get("sale_status") != "available" for pet_id in pet_ids):
                 raise ConflictError("Một cá thể thú cưng đã được bán.")
+            locked_online = storefront_repo.locked_pet_ids(connection, pet_ids)
+            if locked_online:
+                raise ConflictError("Một cá thể thú cưng đang được giữ cho đơn hàng online đã xác nhận.")
             for pet_id in sorted(pet_ids):
                 if pet_repo.mark_sold(connection, pet_id, invoice["customer_id"]) != 1:
                     raise ConflictError("Thú cưng vừa được bán ở giao dịch khác.")

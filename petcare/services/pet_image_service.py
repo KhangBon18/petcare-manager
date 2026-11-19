@@ -13,7 +13,7 @@ from flask import current_app
 import numpy as np
 
 from petcare.ai import client as ai_client
-from petcare.database.connection import read_connection
+from petcare.database.connection import read_connection, set_tenant_context
 from petcare.i18n import current_locale
 from petcare.repositories import pet_repo
 from petcare.services.common import require_actor, text_value
@@ -1064,28 +1064,16 @@ def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:
     return results[:12]
 
 
-def search_similar(
-    actor_id: int,
+def _execute_similarity_search(
     image_bytes: bytes,
-    species="",
-    status="available",
-    tenant_id=None,
     *,
+    species: str = "",
+    status: str = "available",
     include_similar: bool = True,
+    tenant_id_scope: int | None = None,
+    actor_id: int | None = None,
 ) -> dict:
-    """Precision-first local pet photo matcher with SHA-256 exact priority and hard species filtering."""
-    species = text_value(species, "Loài", 80, required=False)
-    if status not in {"available", "sold", "inactive", ""}:
-        raise ValidationError(
-            ui_text(
-                "Trạng thái tìm ảnh không hợp lệ.",
-                "The image search status is invalid.",
-            )
-        )
-    # Validate membership before spending model quota or sending the uploaded
-    # image to an external vision endpoint.
-    with read_connection() as connection:
-        require_actor(connection, actor_id, tenant_id=tenant_id)
+    """Shared local AI-4.0 precision-first pet similarity pipeline for staff and public storefront."""
     raw_sha = sha256_hex(image_bytes)
     normalized = normalize_image_bytes(image_bytes)
     norm_sha = sha256_hex(normalized)
@@ -1102,9 +1090,13 @@ def search_similar(
     search_scope = "full"
 
     with read_connection() as connection:
-        require_actor(connection, actor_id, tenant_id=tenant_id)
-        # Note: When explicit species is provided, still scan available candidates if we need to detect
-        # an exact stored photo contradiction when local_gate_enabled is False, otherwise iter_filtered_for_image_search.
+        if actor_id is not None:
+            require_actor(connection, actor_id, tenant_id=tenant_id_scope)
+        elif tenant_id_scope is not None:
+            set_tenant_context(connection, tenant_id_scope)
+        else:
+            raise ValueError("Tenant scope is required.")
+
         filtered = bool(species or status != "available")
         has_reference_photos = (
             False if filtered else pet_repo.has_available_reference_photos(connection)
@@ -1180,10 +1172,57 @@ def search_similar(
             if species_gate is not None
             else None
         ),
-        # The normalized query is rendered only in this authenticated response;
-        # it is not persisted with pet records or sent to a remote provider.
         "query_preview": "data:image/jpeg;base64," + base64.b64encode(normalized).decode("ascii"),
     }
+
+
+def search_similar(
+    actor_id: int,
+    image_bytes: bytes,
+    species="",
+    status="available",
+    tenant_id=None,
+    *,
+    include_similar: bool = True,
+) -> dict:
+    """Precision-first local pet photo matcher with SHA-256 exact priority and hard species filtering."""
+    species = text_value(species, "Loài", 80, required=False)
+    if status not in {"available", "sold", "inactive", ""}:
+        raise ValidationError(
+            ui_text(
+                "Trạng thái tìm ảnh không hợp lệ.",
+                "The image search status is invalid.",
+            )
+        )
+    with read_connection() as connection:
+        require_actor(connection, actor_id, tenant_id=tenant_id)
+    return _execute_similarity_search(
+        image_bytes,
+        species=species,
+        status=status,
+        include_similar=include_similar,
+        tenant_id_scope=tenant_id,
+        actor_id=actor_id,
+    )
+
+
+def search_similar_for_storefront(
+    tenant_id: int,
+    image_bytes: bytes,
+    species: str = "",
+    *,
+    include_similar: bool = True,
+) -> dict:
+    """Public storefront AI-4.0 search restricted strictly to available pets of one active tenant."""
+    species = text_value(species, "Loài", 80, required=False)
+    return _execute_similarity_search(
+        image_bytes,
+        species=species,
+        status="available",
+        include_similar=include_similar,
+        tenant_id_scope=tenant_id,
+        actor_id=None,
+    )
 
 
 def suggest_attributes(actor_id, image_bytes, tenant_id=None):

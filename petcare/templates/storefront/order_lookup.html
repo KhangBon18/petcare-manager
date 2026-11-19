@@ -1,0 +1,22 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Track order' }}{% endblock %}
+
+{% block content %}
+<div class="sf-auth-card">
+  <h1>{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Track your order' }}</h1>
+  <p>{{ 'Nhập mã đơn hàng và số điện thoại đã dùng khi đặt mua để xem chi tiết.' if locale == 'vi' else 'Enter your order code and phone number to inspect order details.' }}</p>
+  <form class="sf-form-stack" method="post" action="{{ url_for('storefront.order_lookup') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sf-field">
+      <label for="lookup-code">{{ 'Mã đơn hàng' if locale == 'vi' else 'Order code' }}</label>
+      <input id="lookup-code" name="order_code" type="text" required placeholder="ORD-20261119-XXXXXX">
+    </div>
+    <div class="sf-field">
+      <label for="lookup-phone">{{ 'Số điện thoại' if locale == 'vi' else 'Phone number' }}</label>
+      <input id="lookup-phone" name="phone" type="tel" required placeholder="0901234567">
+    </div>
+    <button class="sf-btn sf-btn-primary" type="submit">{{ 'Tra cứu' if locale == 'vi' else 'Find order' }}</button>
+  </form>
+</div>
+{% endblock %}
+

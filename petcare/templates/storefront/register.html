@@ -1,0 +1,35 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ 'Đăng ký khách hàng' if locale == 'vi' else 'Create customer account' }}{% endblock %}
+
+{% block content %}
+<div class="sf-auth-card">
+  <h1>{{ 'Đăng ký tài khoản mua sắm' if locale == 'vi' else 'Create customer account' }}</h1>
+  <p>{{ 'Dùng để quản lý đơn hàng và địa chỉ giao hàng cá nhân.' if locale == 'vi' else 'Manage your orders and saved delivery information.' }}</p>
+  <form class="sf-form-stack" method="post" action="{{ url_for('storefront.register') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sf-field">
+      <label for="reg-name">{{ 'Họ và tên' if locale == 'vi' else 'Full name' }} *</label>
+      <input id="reg-name" name="full_name" type="text" required maxlength="160" value="{{ form_data.get('full_name', '') }}">
+    </div>
+    <div class="sf-field">
+      <label for="reg-email">Email *</label>
+      <input id="reg-email" name="email" type="email" required maxlength="254" value="{{ form_data.get('email', '') }}">
+    </div>
+    <div class="sf-field">
+      <label for="reg-phone">{{ 'Số điện thoại (8–15 số)' if locale == 'vi' else 'Phone number' }} *</label>
+      <input id="reg-phone" name="phone" type="tel" required maxlength="32" value="{{ form_data.get('phone', '') }}">
+    </div>
+    <div class="sf-field">
+      <label for="reg-addr">{{ 'Địa chỉ mặc định' if locale == 'vi' else 'Default address' }}</label>
+      <input id="reg-addr" name="default_address" type="text" maxlength="255" value="{{ form_data.get('default_address', '') }}">
+    </div>
+    <div class="sf-field">
+      <label for="reg-pw">{{ 'Mật khẩu (ít nhất 8 ký tự)' if locale == 'vi' else 'Password (min 8 characters)' }} *</label>
+      <input id="reg-pw" name="password" type="password" required minlength="8" autocomplete="new-password">
+    </div>
+    <button class="sf-btn sf-btn-primary" type="submit">{{ 'Tạo tài khoản' if locale == 'vi' else 'Register' }}</button>
+  </form>
+  <p>{{ 'Đã có tài khoản?' if locale == 'vi' else 'Already have an account?' }} <a href="{{ url_for('storefront.customer_login') }}">{{ 'Đăng nhập' if locale == 'vi' else 'Sign in' }}</a></p>
+</div>
+{% endblock %}
+

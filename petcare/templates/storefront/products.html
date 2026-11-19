@@ -1,0 +1,95 @@
+{% extends "storefront/shop_base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ 'Sản phẩm' if locale == 'vi' else 'Products' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Danh mục sản phẩm' if locale == 'vi' else 'Shop products' }}</h1>
+    <p>{{ 'Thức ăn dinh dưỡng, cát vệ sinh, phụ kiện và đồ chơi cho thú cưng.' if locale == 'vi' else 'Nutrition, hygiene, accessories, and enrichment essentials.' }}</p>
+  </div>
+  <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.ai_assistant', q=('So sánh sản phẩm nổi bật' if locale == 'vi' else 'Compare top products')) }}">{{ icon('sparkle') }} {{ 'Nhờ AI tư vấn chọn' if locale == 'vi' else 'Ask AI advisor' }}</a>
+</div>
+
+<div class="sf-chip-row">
+  <a class="sf-chip {% if not selected_category %}is-active{% endif %}" href="{{ url_for('storefront.products', q=search, sort=sort, in_stock='1' if in_stock_only else None) }}">{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
+  {% for cat in categories %}
+  <a class="sf-chip {% if selected_category == cat %}is-active{% endif %}" href="{{ url_for('storefront.products', category=cat, q=search, sort=sort, in_stock='1' if in_stock_only else None) }}">{{ cat }}</a>
+  {% endfor %}
+</div>
+
+<form class="sf-filter-bar" method="get" action="{{ url_for('storefront.products') }}" role="search">
+  {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+  <input type="search" name="q" value="{{ search }}" placeholder="{{ 'Tìm tên sản phẩm, mã SKU...' if locale == 'vi' else 'Search products, SKU...' }}" aria-label="{{ 'Tìm sản phẩm' if locale == 'vi' else 'Search products' }}">
+  <select name="sort" aria-label="{{ 'Sắp xếp' if locale == 'vi' else 'Sort by' }}">
+    <option value="featured" {% if sort == 'featured' %}selected{% endif %}>{{ 'Nổi bật' if locale == 'vi' else 'Featured' }}</option>
+    <option value="price_asc" {% if sort == 'price_asc' %}selected{% endif %}>{{ 'Giá: thấp đến cao' if locale == 'vi' else 'Price: Low to High' }}</option>
+    <option value="price_desc" {% if sort == 'price_desc' %}selected{% endif %}>{{ 'Giá: cao đến thấp' if locale == 'vi' else 'Price: High to Low' }}</option>
+    <option value="name" {% if sort == 'name' %}selected{% endif %}>{{ 'Tên A → Z' if locale == 'vi' else 'Name A → Z' }}</option>
+  </select>
+  <label class="sf-check-inline">
+    <input type="checkbox" name="in_stock" value="1" {% if in_stock_only %}checked{% endif %}>
+    <span>{{ 'Chỉ hiện còn hàng' if locale == 'vi' else 'In stock only' }}</span>
+  </label>
+  <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit">{{ 'Lọc' if locale == 'vi' else 'Apply' }}</button>
+  {% if search or selected_category or in_stock_only or sort != 'featured' %}
+  <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.products') }}">{{ 'Đặt lại' if locale == 'vi' else 'Reset' }}</a>
+  {% endif %}
+</form>
+
+{% if products %}
+<div class="sf-grid">
+  {% for product in products %}
+  {% set pvis = product_visual(product, public=True) %}
+  <article class="sf-card">
+    <div class="sf-card-media sf-card-media-product">
+      <a href="{{ url_for('storefront.product_detail', product_id=product.id) }}">
+        <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ product.name }}">
+      </a>
+      {% if product.available_online_qty > 0 %}
+      <span class="sf-card-badge">{{ 'Còn' if locale == 'vi' else 'Left' }} {{ format_number(product.available_online_qty) }}</span>
+      {% else %}
+      <span class="sf-card-badge sf-card-badge-muted">{{ 'Tạm hết' if locale == 'vi' else 'Out of stock' }}</span>
+      {% endif %}
+    </div>
+    <div class="sf-card-body">
+      <div class="sf-card-meta">{{ product.category }} · {{ product.code }}</div>
+      <h2 class="sf-card-title"><a href="{{ url_for('storefront.product_detail', product_id=product.id) }}">{{ product.name }}</a></h2>
+      <div class="sf-card-price">{{ format_money(product.unit_price) }}</div>
+      <div class="sf-card-actions">
+        <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.product_detail', product_id=product.id) }}">{{ 'Chi tiết' if locale == 'vi' else 'Details' }}</a>
+        <form method="post" action="{{ url_for('storefront.cart_add') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="item_type" value="product">
+          <input type="hidden" name="item_id" value="{{ product.id }}">
+          <input type="hidden" name="quantity" value="1">
+          <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+          <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit" {% if product.available_online_qty <= 0 %}disabled{% endif %}>{{ 'Thêm vào giỏ' if locale == 'vi' else 'Add to cart' }}</button>
+        </form>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="sf-panel">
+  <p>{{ 'Không tìm thấy sản phẩm phù hợp bộ lọc hiện tại.' if locale == 'vi' else 'No products match the selected filters.' }}</p>
+</div>
+{% endif %}
+
+{% if pagination and pagination.pages > 1 %}
+<nav class="sf-pagination" aria-label="{{ 'Phân trang sản phẩm' if locale == 'vi' else 'Product pagination' }}">
+  <span>{{ format_number(pagination.first) }}–{{ format_number(pagination.last) }} / {{ format_number(pagination.total) }}</span>
+  <div class="sf-pagination-links">
+    {% if pagination.has_previous %}
+    <a class="sf-btn sf-btn-sm" href="{{ page_url(pagination.page - 1) }}">← {{ 'Trước' if locale == 'vi' else 'Prev' }}</a>
+    {% endif %}
+    <span>{{ pagination.page }} / {{ pagination.pages }}</span>
+    {% if pagination.has_next %}
+    <a class="sf-btn sf-btn-sm" href="{{ page_url(pagination.page + 1) }}">{{ 'Tiếp' if locale == 'vi' else 'Next' }} →</a>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}
+{% endblock %}
+

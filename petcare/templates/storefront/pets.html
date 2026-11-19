@@ -1,0 +1,94 @@
+{% extends "storefront/shop_base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ 'Thú cưng đang mở bán' if locale == 'vi' else 'Available pets' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Thú cưng đang mở bán' if locale == 'vi' else 'Available pets' }}</h1>
+    <p>{{ 'Mỗi bé đều có hồ sơ ngoại hình rõ ràng và được xác minh trực tiếp tại cửa hàng.' if locale == 'vi' else 'Each pet includes verified attributes and in-store verification before handover.' }}</p>
+  </div>
+  <a class="sf-btn sf-btn-primary sf-btn-sm" href="{{ url_for('storefront.image_search') }}">{{ icon('camera') }} {{ 'Tìm bé tương tự bằng ảnh' if locale == 'vi' else 'Find by photo' }}</a>
+</div>
+
+<div class="sf-chip-row">
+  <a class="sf-chip {% if not selected_species %}is-active{% endif %}" href="{{ url_for('storefront.pets', q=search, sort=sort) }}">{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
+  <a class="sf-chip {% if selected_species in ('cat', 'mèo') %}is-active{% endif %}" href="{{ url_for('storefront.pets', species='cat', q=search, sort=sort) }}">{{ 'Mèo' if locale == 'vi' else 'Cats' }}</a>
+  <a class="sf-chip {% if selected_species in ('dog', 'chó') %}is-active{% endif %}" href="{{ url_for('storefront.pets', species='dog', q=search, sort=sort) }}">{{ 'Chó' if locale == 'vi' else 'Dogs' }}</a>
+  <a class="sf-chip {% if selected_species in ('other', 'khác') %}is-active{% endif %}" href="{{ url_for('storefront.pets', species='other', q=search, sort=sort) }}">{{ 'Thú nhỏ khác' if locale == 'vi' else 'Other small pets' }}</a>
+</div>
+
+<form class="sf-filter-bar" method="get" action="{{ url_for('storefront.pets') }}" role="search">
+  {% if selected_species %}<input type="hidden" name="species" value="{{ selected_species }}">{% endif %}
+  <input type="search" name="q" value="{{ search }}" placeholder="{{ 'Tìm theo tên bé, giống, màu lông...' if locale == 'vi' else 'Search by name, breed, coat color...' }}" aria-label="{{ 'Tìm thú cưng' if locale == 'vi' else 'Search pets' }}">
+  <select name="sort" aria-label="{{ 'Sắp xếp' if locale == 'vi' else 'Sort by' }}">
+    <option value="featured" {% if sort == 'featured' %}selected{% endif %}>{{ 'Nổi bật' if locale == 'vi' else 'Featured' }}</option>
+    <option value="price_asc" {% if sort == 'price_asc' %}selected{% endif %}>{{ 'Giá: thấp đến cao' if locale == 'vi' else 'Price: Low to High' }}</option>
+    <option value="price_desc" {% if sort == 'price_desc' %}selected{% endif %}>{{ 'Giá: cao đến thấp' if locale == 'vi' else 'Price: High to Low' }}</option>
+    <option value="name" {% if sort == 'name' %}selected{% endif %}>{{ 'Tên A → Z' if locale == 'vi' else 'Name A → Z' }}</option>
+  </select>
+  <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit">{{ 'Lọc' if locale == 'vi' else 'Apply' }}</button>
+  {% if search or selected_species or sort != 'featured' %}
+  <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.pets') }}">{{ 'Đặt lại' if locale == 'vi' else 'Reset' }}</a>
+  {% endif %}
+</form>
+
+{% if pets %}
+<div class="sf-grid">
+  {% for pet in pets %}
+  {% set pvis = pet_visual(pet, public=True) %}
+  <article class="sf-card">
+    <div class="sf-card-media">
+      <a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">
+        <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ pet.species }} {{ pet.name }}">
+      </a>
+      {% if pet.is_reserved %}
+      <span class="sf-card-badge sf-card-badge-warn">{{ 'Tạm giữ' if locale == 'vi' else 'Reserved' }}</span>
+      {% else %}
+      <span class="sf-card-badge">{{ 'Sẵn sàng' if locale == 'vi' else 'Available' }}</span>
+      {% endif %}
+      {% if pvis.is_illustrative %}
+      <span class="sf-card-illus">{{ 'Minh họa' if locale == 'vi' else 'Illustrative' }}</span>
+      {% endif %}
+    </div>
+    <div class="sf-card-body">
+      <div class="sf-card-meta">{{ pet.code }} · {{ pet.species }}{% if pet.breed %} · {{ pet.breed }}{% endif %}</div>
+      <h2 class="sf-card-title"><a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ pet.name }}</a></h2>
+      <div class="sf-card-meta">{{ pet.coat_color or ('Chưa ghi nhận màu lông' if locale == 'vi' else 'Coat color unlisted') }}</div>
+      <div class="sf-card-price">{{ format_money(pet.sale_price) }}</div>
+      <div class="sf-card-actions">
+        <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ 'Chi tiết' if locale == 'vi' else 'Details' }}</a>
+        <form method="post" action="{{ url_for('storefront.cart_add') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="item_type" value="pet">
+          <input type="hidden" name="item_id" value="{{ pet.id }}">
+          <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+          <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit" {% if pet.is_reserved %}disabled{% endif %}>{{ 'Đặt đón bé' if locale == 'vi' else 'Request' }}</button>
+        </form>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="sf-panel">
+  <p>{{ 'Hiện chưa có thú cưng phù hợp tiêu chí bạn chọn.' if locale == 'vi' else 'No pets match the selected filters.' }}</p>
+</div>
+{% endif %}
+
+{% if pagination and pagination.pages > 1 %}
+<nav class="sf-pagination" aria-label="{{ 'Phân trang thú cưng' if locale == 'vi' else 'Pet pagination' }}">
+  <span>{{ format_number(pagination.first) }}–{{ format_number(pagination.last) }} / {{ format_number(pagination.total) }}</span>
+  <div class="sf-pagination-links">
+    {% if pagination.has_previous %}
+    <a class="sf-btn sf-btn-sm" href="{{ page_url(pagination.page - 1) }}">← {{ 'Trước' if locale == 'vi' else 'Prev' }}</a>
+    {% endif %}
+    <span>{{ pagination.page }} / {{ pagination.pages }}</span>
+    {% if pagination.has_next %}
+    <a class="sf-btn sf-btn-sm" href="{{ page_url(pagination.page + 1) }}">{{ 'Tiếp' if locale == 'vi' else 'Next' }} →</a>
+    {% endif %}
+  </div>
+</nav>
+{% endif %}
+{% endblock %}
+

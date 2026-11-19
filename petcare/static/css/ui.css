@@ -1192,3 +1192,30 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
 @media print {
   .topbar { display: none !important; }
 }
+
+.order-payment-confirm-box {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #BFDBFE;
+  border-radius: var(--radius-md);
+  background: #F8FAFC;
+}
+.order-confirm-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+.order-confirm-check input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  flex-shrink: 0;
+}
+.order-danger-actions {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border-subtle);
+}

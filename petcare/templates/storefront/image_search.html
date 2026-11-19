@@ -1,0 +1,96 @@
+{% extends "storefront/shop_base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ 'Tìm thú cưng bằng ảnh' if locale == 'vi' else 'Find pets by photo' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Tìm thú cưng tương tự qua ảnh' if locale == 'vi' else 'Find similar pets by photo' }}</h1>
+    <p>{{ 'Tải ảnh chó hoặc mèo lên để tìm các bé đang mở bán có màu lông và dáng tương đồng tại cửa hàng.' if locale == 'vi' else 'Upload a cat or dog photograph to discover visually similar pets currently available in store.' }}</p>
+  </div>
+</div>
+
+<section class="sf-panel">
+  <form class="sf-form-stack" method="post" action="{{ url_for('storefront.image_search') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sf-dropzone">
+      {{ icon('camera') }}
+      <label for="sf-image-input"><strong>{{ 'Chọn ảnh mèo hoặc chó (JPEG, PNG, WebP · tối đa 5 MB)' if locale == 'vi' else 'Choose a pet photo (JPEG, PNG, WebP · max 5 MB)' }}</strong></label>
+      <input id="sf-image-input" type="file" name="photo" accept="image/jpeg,image/png,image/webp" required>
+      <small id="sf-image-file-note" data-too-large="{{ 'Ảnh vượt quá giới hạn 5 MB.' if locale == 'vi' else 'Image exceeds 5 MB limit.' }}">{{ 'Hệ thống xử lý ảnh cục bộ trên máy chủ cửa hàng, tự nhận diện mèo/chó.' if locale == 'vi' else 'Processed locally with automatic cat/dog verification.' }}</small>
+    </div>
+
+    <div class="sf-filter-bar">
+      <label for="sf-species-filter"><strong>{{ 'Loài ưu tiên (tùy chọn):' if locale == 'vi' else 'Optional species filter:' }}</strong></label>
+      <select id="sf-species-filter" name="species">
+        <option value="" {% if not selected_species %}selected{% endif %}>{{ 'Tự động nhận diện Mèo / Chó' if locale == 'vi' else 'Auto-detect Cat / Dog' }}</option>
+        <option value="Mèo" {% if selected_species in ('Mèo', 'cat') %}selected{% endif %}>{{ 'Mèo' if locale == 'vi' else 'Cat' }}</option>
+        <option value="Chó" {% if selected_species in ('Chó', 'dog') %}selected{% endif %}>{{ 'Chó' if locale == 'vi' else 'Dog' }}</option>
+      </select>
+      <button class="sf-btn sf-btn-primary" type="submit">{{ icon('search') }} {{ 'Tìm các bé tương tự' if locale == 'vi' else 'Search similar pets' }}</button>
+    </div>
+  </form>
+
+  <p class="sf-notice">{{ 'Kết quả đối chiếu trực quan chỉ hỗ trợ tìm cá thể tương đồng; nhân viên cửa hàng sẽ xác minh cá thể thực tế trước khi bàn giao.' if locale == 'vi' else 'Visual matching highlights similar available pets for browsing; staff will confirm the physical animal before checkout completion.' }}</p>
+</section>
+
+{% if matches is not none %}
+<section class="sf-section">
+  <div class="sf-section-head">
+    <div>
+      <h2>{{ 'Kết quả phù hợp' if locale == 'vi' else 'Matching pets' }}</h2>
+      {% if matches.verified_species %}
+      <p>{{ 'Loài xác nhận:' if locale == 'vi' else 'Detected species:' }} <strong>{{ 'Mèo' if matches.verified_species == 'cat' else ('Chó' if matches.verified_species == 'dog' else matches.verified_species) }}</strong></p>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if matches.results %}
+  <div class="sf-grid">
+    {% for r in matches.results %}
+    {% set pet = r.pet %}
+    {% set pvis = pet_visual(pet, public=True) %}
+    <article class="sf-card">
+      <div class="sf-card-media">
+        <a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">
+          <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ pet.species }} {{ pet.name }}">
+        </a>
+        <span class="sf-card-badge">{{ format_number(r.score) }}%</span>
+        {% if pvis.is_illustrative %}<span class="sf-card-illus">{{ 'Minh họa' if locale == 'vi' else 'Illustrative' }}</span>{% endif %}
+      </div>
+      <div class="sf-card-body">
+        <div class="sf-card-meta">{{ pet.code }} · {{ pet.species }}{% if pet.breed %} · {{ pet.breed }}{% endif %}</div>
+        <h3 class="sf-card-title"><a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ pet.name }}</a></h3>
+        <div class="sf-card-price">{{ format_money(pet.sale_price) }}</div>
+        <div class="sf-card-actions">
+          <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ 'Chi tiết' if locale == 'vi' else 'Details' }}</a>
+          <form method="post" action="{{ url_for('storefront.cart_add') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="item_type" value="pet">
+            <input type="hidden" name="item_id" value="{{ pet.id }}">
+            <input type="hidden" name="next" value="{{ url_for('storefront.cart') }}">
+            <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit" {% if pet.is_reserved %}disabled{% endif %}>{{ 'Đặt đón bé' if locale == 'vi' else 'Add to cart' }}</button>
+          </form>
+        </div>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="sf-panel">
+    <h3>{{ 'Không tìm thấy cá thể đủ tương đồng' if locale == 'vi' else 'No confident visual matches found' }}</h3>
+    <p>
+      {% if matches.abstention_reason == 'species_contradiction' %}
+        {{ 'Ảnh bạn tải lên không khớp với loài bạn vừa chọn ở bộ lọc. Hãy chuyển bộ lọc sang Tự động nhận diện hoặc chọn lại đúng loài.' if locale == 'vi' else 'Uploaded photo contradicts the selected species filter. Switch to Auto-detect or match the right species.' }}
+      {% elif matches.abstention_reason in ('no_reliable_animal', 'other_animal', 'multi_animal_ambiguous', 'non_photographic_or_low_texture') %}
+        {{ 'Ảnh chưa rõ một bé chó hoặc mèo để đối chiếu an toàn. Hãy thử ảnh chụp rõ ràng hơn.' if locale == 'vi' else 'Photo did not show one clear cat or dog. Please try a clearer photograph.' }}
+      {% else %}
+        {{ 'Hiện cửa hàng chưa có bé cùng loài đạt ngưỡng tương đồng ngoại hình với ảnh này. Hệ thống không chèn kết quả không liên quan.' if locale == 'vi' else 'No same-species store pets met our similarity threshold; unrelated filler pets are omitted.' }}
+      {% endif %}
+    </p>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}
+
