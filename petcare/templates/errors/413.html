@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Ảnh vượt dung lượng cho phép') }}{% endblock %}
+{% block content %}
+<div class="empty-state error-state"><span class="empty-icon">{{ icon('upload') }}</span><h1>{{ t('Tệp tải lên quá lớn') }}</h1><p>{{ t('Ảnh thú cưng cần nhỏ hơn 5 MB. Hãy chọn ảnh JPEG, PNG hoặc WebP dung lượng thấp hơn.') }}</p><a class="button button-primary" href="{{ url_for('pets.find_similar') }}">{{ t('Quay lại tìm bằng ảnh') }}</a></div>
+{% endblock %}

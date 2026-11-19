@@ -1,0 +1,76 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ 'Đặt hàng' if locale == 'vi' else 'Checkout' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Xác nhận thông tin đặt hàng' if locale == 'vi' else 'Checkout & order review' }}</h1>
+    <p>{{ 'Thanh toán trực tiếp bằng tiền mặt khi nhận hàng (COD) hoặc tại cửa hàng. Đơn hàng sẽ được nhân viên xác nhận trước khi chuẩn bị.' if locale == 'vi' else 'Pay in cash on delivery (COD) or at pickup. Store staff will confirm your order before preparation.' }}</p>
+  </div>
+</div>
+
+<div class="sf-split-layout">
+  <form class="sf-panel sf-form-stack" method="post" action="{{ url_for('storefront.checkout') }}" data-sf-submit-lock="{{ 'Đang gửi đơn hàng...' if locale == 'vi' else 'Submitting order...' }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="request_key" value="{{ form_data.get('request_key', '') }}">
+
+    <div class="sf-field">
+      <label for="checkout-name">{{ 'Họ tên người nhận' if locale == 'vi' else 'Full name' }} *</label>
+      <input id="checkout-name" name="customer_name" type="text" required maxlength="160" value="{{ form_data.get('customer_name', '') }}">
+    </div>
+
+    <div class="sf-field">
+      <label for="checkout-phone">{{ 'Số điện thoại liên hệ (8–15 số)' if locale == 'vi' else 'Contact phone (8–15 digits)' }} *</label>
+      <input id="checkout-phone" name="customer_phone" type="tel" required maxlength="32" value="{{ form_data.get('customer_phone', '') }}" placeholder="0901234567">
+    </div>
+
+    <div class="sf-field">
+      <label for="checkout-email">{{ 'Email (tùy chọn)' if locale == 'vi' else 'Email (optional)' }}</label>
+      <input id="checkout-email" name="customer_email" type="email" maxlength="254" value="{{ form_data.get('customer_email', '') }}">
+    </div>
+
+    <div class="sf-field">
+      <span><strong>{{ 'Hình thức nhận hàng' if locale == 'vi' else 'Fulfillment method' }}</strong></span>
+      <label class="sf-check-inline">
+        <input type="radio" name="fulfillment_method" value="pickup" {% if form_data.get('fulfillment_method', 'pickup') == 'pickup' %}checked{% endif %}>
+        <span>{{ 'Nhận trực tiếp tại cửa hàng (Thanh toán tại quầy)' if locale == 'vi' else 'Store pickup (Pay at store)' }}</span>
+      </label>
+      <label class="sf-check-inline">
+        <input type="radio" name="fulfillment_method" value="cod_delivery" {% if form_data.get('fulfillment_method') == 'cod_delivery' %}checked{% endif %}>
+        <span>{{ 'Giao hàng tận nơi (Thanh toán tiền mặt COD khi nhận)' if locale == 'vi' else 'Home delivery (Cash on Delivery)' }}</span>
+      </label>
+    </div>
+
+    <div class="sf-field" id="checkout-address-group" {% if form_data.get('fulfillment_method', 'pickup') != 'cod_delivery' %}hidden{% endif %}>
+      <label for="checkout-address">{{ 'Địa chỉ giao hàng (bắt buộc khi chọn Giao tận nơi)' if locale == 'vi' else 'Delivery address (required for COD delivery)' }}</label>
+      <input id="checkout-address" name="delivery_address" type="text" maxlength="255" value="{{ form_data.get('delivery_address', '') }}">
+    </div>
+
+    <div class="sf-field">
+      <label for="checkout-note">{{ 'Ghi chú đơn hàng' if locale == 'vi' else 'Order note' }}</label>
+      <textarea id="checkout-note" name="customer_note" rows="2" maxlength="500">{{ form_data.get('customer_note', '') }}</textarea>
+    </div>
+
+    <div class="sf-notice" id="checkout-payment-label" data-store-text="{{ 'Phương thức: Thanh toán tại quầy khi đến nhận. Không thu phí giao hàng.' if locale == 'vi' else 'Payment: Pay in person at store pickup. No delivery fee.' }}" data-cod-text="{{ 'Phương thức: Thanh toán tiền mặt khi nhận hàng (COD). Không thu phí giao online; nhân viên xác nhận thỏa thuận giao hàng trước khi xuất đơn.' if locale == 'vi' else 'Payment: Cash on Delivery (COD). No online shipping fee is charged; staff confirm delivery terms before dispatch.' }}">
+      {{ 'Phương thức: Thanh toán tại quầy khi đến nhận. Không thu phí giao hàng.' if locale == 'vi' else 'Payment: Pay in person at store pickup. No delivery fee.' }}
+    </div>
+
+    <button class="sf-btn sf-btn-primary" type="submit" {% if cart.has_unavailable %}disabled{% endif %}>{{ 'Xác nhận đặt hàng' if locale == 'vi' else 'Place pending order' }}</button>
+  </form>
+
+  <aside class="sf-panel">
+    <h2>{{ 'Chi tiết giỏ hàng' if locale == 'vi' else 'Review items' }}</h2>
+    {% for item in cart['items'] %}
+    <div class="sf-summary-line">
+      <span>{{ item.name }} × {{ item.quantity }}</span>
+      <strong>{{ format_money(item.line_total) }}</strong>
+    </div>
+    {% endfor %}
+    <div class="sf-summary-line sf-summary-total">
+      <span>{{ 'Tổng thanh toán dự kiến' if locale == 'vi' else 'Total' }}</span>
+      <span>{{ format_money(cart.subtotal) }}</span>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+

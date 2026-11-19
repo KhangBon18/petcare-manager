@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}{{ t('Xác minh email') }}{% endblock %}
+{% block content %}
+<section class="auth-card panel signup-complete-card">
+  <a class="brand auth-brand" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
+  <span class="eyebrow">{{ t('CỬA HÀNG ĐÃ TẠO') }}</span>
+  <h1>{{ t('Xác minh email để tiếp tục') }}</h1>
+  <p>{{ t('Bạn đã tạo') }} <strong>{{ tenant_name }}</strong>. {{ t('Dùng mã cửa hàng') }} <strong>{{ tenant_slug }}</strong> {{ t('khi đăng nhập.') }}</p>
+  <p>{{ t('Liên kết dưới đây chỉ dùng một lần và hết hạn sau 24 giờ. Mở liên kết rồi đăng nhập để kích hoạt quyền chủ cửa hàng.') }}</p>
+  <a class="button button-primary button-block" href="{{ verify_link }}">{{ t('Xác minh email') }} <span>→</span></a>
+  <p class="login-recovery"><a href="{{ url_for('auth.login') }}">{{ t('Quay lại đăng nhập') }}</a></p>
+</section>
+{% endblock %}

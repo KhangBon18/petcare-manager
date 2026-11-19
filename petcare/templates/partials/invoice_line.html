@@ -1,0 +1,44 @@
+{% from "partials/form_errors.html" import invalid, field_error with context %}
+{% macro invoice_line(line, index, empty=false) -%}
+{% set item_field = 'item_' ~ index %}
+{% set quantity_field = 'quantity_' ~ index %}
+<div class="invoice-line">
+  <div class="cart-item-info" data-cart-info hidden><span class="cart-item-image" data-cart-image></span><span><strong data-cart-name></strong><small data-cart-detail></small></span></div>
+  <div class="invoice-line-choice lookup-widget legacy-line-picker" data-lookup-widget data-lookup-kind="items"
+       data-source="{{ url_for('invoices.lookup_items') }}"
+       data-product-page="{{ 0 if empty else 1 }}" data-pet-page="{{ 0 if empty else 1 }}"
+       data-product-label="{{ t('Sản phẩm') }}" data-pet-label="{{ t('Thú cưng đang bán') }}"
+       data-product-has-more="{{ 'true' if not empty and product_pagination.has_next else 'false' }}"
+       data-pet-has-more="{{ 'true' if not empty and pet_pagination.has_next else 'false' }}">
+    <label class="lookup-search-label">{{ t('Tìm mặt hàng') }}<input type="search" data-lookup-search aria-label="{{ t('Tìm sản phẩm hoặc thú cưng') }}" placeholder="{{ t('Nhập mã hoặc tên mặt hàng') }}" autocomplete="off"></label>
+    <select name="item_selection" {% if not empty %}id="{{ item_field }}"{% endif %} class="item-select" data-lookup-select aria-label="{{ t('Chọn sản phẩm hoặc thú cưng') }}" required {{ invalid(item_field, errors) }}>
+      <option value="">{{ t('Chọn mặt hàng') }}</option>
+      {% if not empty %}
+        {% set selected = namespace(found=false) %}
+        <optgroup label="{{ t('Sản phẩm') }}">
+        {% for product in products %}
+          {% set value = 'product:' ~ product.id %}
+          {% if line.selection == value %}{% set selected.found = true %}{% endif %}
+          <option value="{{ value }}" data-kind="product" data-price="{{ product.unit_price }}" data-name="{{ product.name }}" {% if line.selection == value %}selected{% endif %}>{{ product.code }} · {{ product.name }} · {{ format_money(product.unit_price) }} ({{ t('còn') }} {{ product.stock_qty }})</option>
+        {% endfor %}
+        </optgroup>
+        <optgroup label="{{ t('Thú cưng đang bán') }}">
+        {% for pet in pets %}
+          {% set value = 'pet:' ~ pet.id %}
+          {% if line.selection == value %}{% set selected.found = true %}{% endif %}
+          <option value="{{ value }}" data-kind="pet" data-price="{{ pet.sale_price }}" data-name="{{ pet.name }}" {% if line.selection == value %}selected{% endif %}>{{ pet.code }} · {{ pet.name }} · {{ format_money(pet.sale_price) }}</option>
+        {% endfor %}
+        </optgroup>
+        {% if line.selection and not selected.found %}<option value="{{ line.selection }}" selected>{{ line.selection }} · {{ t('Chưa có sản phẩm phù hợp') }}</option>{% endif %}
+      {% endif %}
+    </select>
+    <div class="lookup-footer"><small data-lookup-status aria-live="polite">{% if empty %}{{ t('Đang tải danh mục…') }}{% else %}{{ t('Đang hiển thị') }} {{ products|length + pets|length }} / {{ product_pagination.total + pet_pagination.total }} {{ t('lựa chọn') }}.{% endif %}</small><button class="lookup-more" type="button" data-lookup-more {% if empty or not (product_pagination.has_next or pet_pagination.has_next) %}hidden{% endif %}>{{ t('Hiển thị thêm') }}</button></div>
+  </div>
+  <div class="invoice-quantity">
+    <input name="quantity" {% if not empty %}id="{{ quantity_field }}"{% endif %} type="number" min="1" step="1" value="{{ line.quantity }}" required class="quantity-input" aria-label="{{ t('Số lượng') }}" {{ invalid(quantity_field, errors) }}>
+  </div>
+  <button type="button" class="remove-line" aria-label="{{ t('Xóa dòng mặt hàng') }}">×</button>
+  {{ field_error(item_field, errors) }}
+  {{ field_error(quantity_field, errors) }}
+</div>
+{%- endmacro %}

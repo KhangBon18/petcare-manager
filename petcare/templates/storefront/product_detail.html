@@ -1,0 +1,58 @@
+{% extends "storefront/shop_base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ product.name }}{% endblock %}
+
+{% set pvis = product_visual(product, public=True) %}
+{% block content %}
+<nav class="sf-breadcrumb" aria-label="Breadcrumb">
+  <a href="{{ url_for('storefront.home') }}">{{ 'Trang chủ' if locale == 'vi' else 'Home' }}</a>
+  <span>/</span>
+  <a href="{{ url_for('storefront.products') }}">{{ 'Sản phẩm' if locale == 'vi' else 'Products' }}</a>
+  <span>/</span>
+  <span>{{ product.name }}</span>
+</nav>
+
+<section class="sf-detail-panel">
+  <div>
+    <div class="sf-detail-media">
+      <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ product.name }}">
+      {% if pvis.is_illustrative %}
+      <span class="sf-card-illus">{{ 'Ảnh minh họa sản phẩm' if locale == 'vi' else 'Illustrative product image' }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div>
+    <div class="sf-chip-row">
+      <span class="sf-chip">{{ product.category }}</span>
+      {% if product.available_online_qty > 0 %}
+      <span class="sf-status-pill sf-status-ready_completed">{{ 'Còn hàng' if locale == 'vi' else 'Available' }} ({{ format_number(product.available_online_qty) }})</span>
+      {% else %}
+      <span class="sf-status-pill sf-status-rejected">{{ 'Tạm hết hàng' if locale == 'vi' else 'Out of stock' }}</span>
+      {% endif %}
+    </div>
+
+    <h1>{{ product.name }}</h1>
+    <div class="sf-detail-price">{{ format_money(product.unit_price) }}</div>
+    <p>{{ product.description or ('Sản phẩm chăm sóc thú cưng chính hãng tại cửa hàng.' if locale == 'vi' else 'Quality pet care product available at our store.') }}</p>
+
+    <dl class="sf-specs">
+      <div><dt>{{ 'Mã sản phẩm' if locale == 'vi' else 'SKU' }}</dt><dd>{{ product.code }}</dd></div>
+      <div><dt>{{ 'Danh mục' if locale == 'vi' else 'Category' }}</dt><dd>{{ product.category }}</dd></div>
+      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ 'Tại cửa hàng hoặc COD khi nhận hàng' if locale == 'vi' else 'Pay at store or Cash on Delivery' }}</dd></div>
+    </dl>
+
+    <form class="sf-qty-form" method="post" action="{{ url_for('storefront.cart_add') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="item_type" value="product">
+      <input type="hidden" name="item_id" value="{{ product.id }}">
+      <input type="hidden" name="next" value="{{ url_for('storefront.product_detail', product_id=product.id) }}">
+      <label for="sf-prod-qty" class="visually-hidden">{{ 'Số lượng' if locale == 'vi' else 'Quantity' }}</label>
+      <input id="sf-prod-qty" type="number" name="quantity" value="1" min="1" max="{{ [product.available_online_qty, 99]|min if product.available_online_qty > 0 else 1 }}" {% if product.available_online_qty <= 0 %}disabled{% endif %}>
+      <button class="sf-btn sf-btn-primary" type="submit" {% if product.available_online_qty <= 0 %}disabled{% endif %}>{{ icon('bag') }} {{ 'Thêm vào giỏ hàng' if locale == 'vi' else 'Add to cart' }}</button>
+      <a class="sf-btn" href="{{ url_for('storefront.ai_assistant', q=('Tư vấn chi tiết về ' ~ product.code ~ ' ' ~ product.name)) }}">{{ icon('sparkle') }} {{ 'Hỏi AI về sản phẩm' if locale == 'vi' else 'Ask AI' }}</a>
+    </form>
+  </div>
+</section>
+{% endblock %}
+

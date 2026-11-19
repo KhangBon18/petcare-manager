@@ -1,7 +1,7 @@
-"""Điểm chạy ứng dụng: python main.py."""
+"""Compatibility entry point; use run.py for the Flask application."""
 
-from petcare.app import run
+from run import app
 
 
 if __name__ == "__main__":
-    run()
+    app.run(host="127.0.0.1", port=5000, debug=app.config.get("DEBUG", False))

@@ -1,5 +1,8 @@
 # Nội dung Slide Báo cáo — Quân (docs/slides/quan.md)
 
+> **Lưu ý về phiên bản:** Nội dung dưới đây ghi nhận đóng góp cho bản desktop phòng khám trước khi đổi yêu cầu. Cần tác giả rà soát và viết lại theo web MySQL/cửa hàng trước khi nộp; xem [báo cáo tổng kết hiện hành](../report/final_report.md) và [dàn ý slide hiện hành](final_slides.md).
+
+
 ## Slide 1: Thú cưng & Tiêm chủng
 - Họ tên: Quân
 - Nhiệm vụ: Kỹ sư Quản lý Thú cưng, Tiêm phòng & Mô hình Dữ liệu ERD

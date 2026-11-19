@@ -1,0 +1,36 @@
+{
+  "evaluation_kind": "synthetic_demo_near_duplicate_retrieval",
+  "dataset": {
+    "source": "assets/demo/pets/README.md",
+    "images": 68,
+    "cats": 32,
+    "dogs": 32,
+    "query_variants_per_image": [
+      "jpeg_resize",
+      "mild_brightness",
+      "center_crop"
+    ],
+    "queries_scored": 204,
+    "relevance_rule": "Exact source image file is relevant by construction."
+  },
+  "metrics": {
+    "precision_at_1": 0.995098,
+    "precision_at_5": 0.2,
+    "recall_at_5": 1.0,
+    "mrr": 0.997549
+  },
+  "latency_ms": {
+    "candidate_count": 68,
+    "ranking_p50": 1.159,
+    "ranking_p95": 1.297,
+    "query_preprocess_p50": 10.466,
+    "error_rate": 0.0
+  },
+  "errors": [],
+  "limitations": [
+    "Synthetic, repository-provided images only; no real customer photos were used.",
+    "Near-duplicate source retrieval only; not pet identity, breed, species, or recognition accuracy.",
+    "Ranking latency measures in-process descriptor comparison across this fixed local catalog; it excludes HTTP, database, storage, and concurrency costs.",
+    "This script evaluates exhaustive descriptor ranking and does not measure approximate LSH candidate recall."
+  ]
+}

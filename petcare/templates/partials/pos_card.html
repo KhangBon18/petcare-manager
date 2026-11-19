@@ -1,0 +1,26 @@
+{% from "partials/icons.html" import icon %}
+{% macro pos_card(item, kind) -%}
+{% set price = item.unit_price if kind == 'product' else item.sale_price %}
+{% set vis = product_visual(item) if kind == 'product' else pet_visual(item) %}
+<button type="button" class="pos-card {% if kind == 'pet' %}pos-card--photo{% else %}pos-card--compact{% endif %}" data-pos-item data-selection="{{ kind }}:{{ item.id }}"
+        data-name="{{ item.name }}" data-code="{{ item.code }}" data-kind="{{ kind }}" data-price="{{ price }}"
+        data-stock="{{ item.stock_qty if kind == 'product' else 1 }}"
+        data-photo="{{ vis.url }}"
+        data-fallback="{{ vis.fallback_url }}"
+        {% if kind == 'product' and item.stock_qty == 0 %}disabled{% endif %}>
+  {% if kind == 'pet' %}
+  <span class="pos-card-image has-photo">
+    <img src="{{ vis.url }}" data-fallback-src="{{ vis.fallback_url }}" alt="{{ item.name }}" width="640" height="352" loading="lazy" decoding="async">
+    <span class="pos-kind">{{ t('Thú cưng') }}</span>
+  </span>
+  {% else %}
+  <span class="pos-card-head-compact">
+    <img class="pos-thumb-mini" src="{{ vis.url }}" data-fallback-src="{{ vis.fallback_url }}" alt="{{ item.name }}" width="44" height="44" decoding="async">
+    <span class="pos-kind-inline">{{ t('Sản phẩm') }}</span>
+  </span>
+  {% endif %}
+  <span class="pos-card-copy"><small>{{ item.code }}</small><strong>{{ item.name }}</strong><b>{{ format_money(price) }}</b>
+    <span class="pos-card-stock">{{ t('còn') }} {{ item.stock_qty if kind == 'product' else 1 }} <span aria-hidden="true">·</span> <span data-pos-action>{{ t('Thêm') if locale == 'vi' else 'Add' }}</span></span>
+  </span>
+</button>
+{%- endmacro %}

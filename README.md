@@ -1,150 +1,179 @@
-# PetCare Manager — Quản lý Phòng khám Thú cưng
+# PetCare Manager
 
-Ứng dụng desktop hoàn chỉnh quản lý phòng khám và dịch vụ chăm sóc thú cưng được xây dựng bằng **Python + Tkinter/ttk + SQLite** theo thiết kế kiến trúc 3 lớp phân tầng nghiêm ngặt ([REPO_GUIDE.md](REPO_GUIDE.md)).
+**Multi-Tenant Pet Store Operations, POS Billing, Customer Storefront (`/shop`), Conversational Assistant & Local ONNX AI Vision 4.0** built with **Python + Flask + Jinja2 + Vanilla CSS/JS + MySQL 8.4**.
 
-Dự án phát triển bởi nhóm: **Khang, Quân, Quý, Nhàn**.
-
----
-
-## Tính năng Chính
-
-- **Xác thực & Phân quyền**: Đăng nhập Admin và Nhân viên. Mật khẩu được mã hóa an toàn bằng PBKDF2-HMAC-SHA256 kèm salt ngẫu nhiên.
-- **Quản lý Chủ nuôi & Thú cưng**: Hồ sơ thông tin cá nhân, thể trạng, giống loài. Bảo vệ lịch sử: Ngừng theo dõi (`active=0`) thay vì xóa khi đã có dữ liệu liên kết.
-- **Hồ sơ Khám bệnh**: Ghi nhận triệu chứng, chẩn đoán, kê đơn thuốc và tự động liên kết lượt tính phí dịch vụ trong cùng một giao dịch (transaction).
-- **Tiêm phòng & Lịch nhắc**: Ghi nhận mũi tiêm vaccine, ngày hẹn tiêm nhắc lại, bảng theo dõi nhắc nhở đến hạn trong vòng 30 ngày.
-- **Lịch hẹn**: Đặt lịch tiếp đón khám/chăm sóc spa; đảm bảo lịch hẹn không tự động sinh phí trước.
-- **Lượt Dịch vụ & Hóa đơn**:
-  - Ghi nhận các lượt dịch vụ chăm sóc, tắm spa, xét nghiệm.
-  - Gom các lượt chưa tính tiền của cùng một chủ nuôi để lập hóa đơn.
-  - Đảm bảo mỗi lượt dịch vụ chỉ được tính tiền một lần duy nhất (`visit_id UNIQUE`).
-  - Hóa đơn chưa thanh toán (`unpaid`) có thể hủy để giải phóng lượt dịch vụ.
-  - Thanh toán trực tiếp tại quầy; hóa đơn đã thanh toán (`paid`) là bất biến.
-- **Báo cáo & Thống kê**: Bảng điều khiển phân tích tổng doanh thu thực thu theo kỳ, số ca khám, số thú cưng tiêm phòng, cơ cấu loài và danh sách dịch vụ phổ biến nhất.
+> **Environment Status**: Verified across local QA and GitHub Actions CI (`6/6` checks) for reproducible demo and controlled staging deployments. Not deployed to public production automatically.
 
 ---
 
-## Yêu cầu Hệ thống
+## 1. Main Features
 
-- **Phiên bản Python**: Đã kiểm tra và tương thích từ Python **3.10** đến **3.13** (Kiểm tra chính thức trên macOS với Python 3.13.3 và Tkinter Tcl/Tk 8.6).
-- **Thư viện**: Hoàn toàn sử dụng thư viện chuẩn của Python (`tkinter`, `sqlite3`, `unittest`, `hashlib`, `dataclasses`).
+- **Store Workspace & POS (`/dashboard`, `/invoices/`, `/customers/`)**: Net paid dashboard KPIs & 8-week demand restock forecast, POS checkout with InnoDB row locking and immutable paid-invoice snapshots, multi-batch purchasing & suppliers (`/purchasing/`), separate refund ledger with restock disposition, multi-store tenant switcher, and read-only audit log (`/activity/`).
+- **Customer Storefront (`/shop`)**: Public mobile-first storefront with catalog & pet browsing, real-time stock/reservation awareness (`customer_order_pet_locks`), cart, Store Pickup vs COD checkout, order tracking (`/shop/order-lookup`), customer portal (`/shop/account`), public Shopping AI Assistant (`/shop/ai-assistant`), and public Visual Pet Search (`/shop/image-search`).
+- **Online Order Fulfillment (`/orders/`)**: Dedicated staff/admin queue (`pending -> confirmed -> preparing -> ready_completed -> paid/fulfilled` or `rejected/cancelled`).
+- **AI Assistant (`/assistant/chat` & Topbar Drawer)**: Deterministic offline Python + MySQL operational/catalog engine with optional opt-in OpenAI/Gemini provider fallback and veterinary safety referrals.
+- **Local AI Vision 4.0 ONNX (`/pets/find-similar`, `/shop/image-search`)**: Offline `onnxruntime` species gate + `1280`-D embedding & CIE-Lab similarity retrieval across up to 5 reference photos per pet.
+- **Encrypted Backup & Export**: AES-256-GCM `.pcarebackup` backups (`scripts/petcare_backup.py`) and tenant `.pcarexport` bundles (`email-worker` + `export-worker`).
 
 ---
 
-## Hướng dẫn Cài đặt và Khởi chạy
+## 2. Architecture & Tech Stack
 
-Mở cửa sổ dòng lệnh tại thư mục gốc của dự án (`petcare-manager`). Không cần activate môi trường ảo vì các lệnh bên dưới gọi trực tiếp Python trong thư mục `.venv`.
+- **Pattern**: Layered Flask monolith with strict route -> service -> repository boundaries (`petcare/app_factory.py` registers **17 Flask Blueprints**; **31 InnoDB tables** across 4 SQL modules with zero ORM).
+- **Backend**: Python **3.11 – 3.13** (`Flask 3.1`, `Flask-WTF`, `mysql-connector-python`, `Babel`, `Pillow`, `cryptography`, `XlsxWriter`, `boto3`, `gunicorn`).
+- **Database**: **MySQL 8.0.16+** (`InnoDB`, `utf8mb4_unicode_ci`). SQLite is unsupported at runtime.
+- **Local Vision Runtime**: `numpy` + `onnxruntime` CPU inference (no PyTorch or outbound network required).
+- **Frontend**: Option A Light UI (`petcare/static/css/tokens.css`, `ui.css`, `app.css`, `storefront.css`), vanilla JS, local GSAP `3.15.0` (Node.js `18+` only used for unit/axe test runners; no frontend build step).
 
-### 1. Dành cho Windows (PowerShell)
+See [docs/architecture.md](docs/architecture.md) and [docs/DATABASE_MIGRATIONS.md](docs/DATABASE_MIGRATIONS.md).
 
-```powershell
-# Bước 1: Tạo môi trường ảo
-py -m venv .venv
+---
 
-# Bước 2: Cài đặt phụ thuộc (nếu có)
-.venv\Scripts\python.exe -m pip install -r requirements.txt
+## 3. Quick Start (Fresh Local Setup & Isolated Demo)
 
-# Bước 3: Khởi tạo cấu trúc cơ sở dữ liệu SQLite (an toàn, không xóa DB cũ)
-.venv\Scripts\python.exe -m petcare.database.initialize
+### 3.1 Prerequisites
+- Python **3.11+** (`3.11`, `3.12`, `3.13` verified in CI)
+- MySQL **8.0.16+** (`InnoDB`, `utf8mb4`)
+- Verified ONNX models committed under `petcare/vision/models/`: `yolox_nano.onnx`, `mobilenetv2-12.onnx`, `mobilenetv2-12-features.onnx`
 
-# Bước 4: Nạp dữ liệu tài khoản và dịch vụ mẫu (chạy lặp an toàn, không nhân đôi dữ liệu)
-.venv\Scripts\python.exe -m petcare.database.seed
-
-# Bước 5: Chạy toàn bộ 34 ca kiểm thử tự động
-.venv\Scripts\python.exe -m unittest discover -s tests -v
-
-# Bước 6: Khởi chạy giao diện ứng dụng
-.venv\Scripts\python.exe main.py
-```
-
-### 2. Dành cho macOS / Linux (Terminal)
-
-```bash
-# Bước 1: Tạo môi trường ảo
+### 3.2 Installation & Environment Configuration
+```sh
+git clone https://github.com/KhangBon18/petcare-manager.git
+cd petcare-manager
 python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt -c requirements.lock
 
-# Bước 2: Cài đặt phụ thuộc (nếu có)
-.venv/bin/python -m pip install -r requirements.txt
-
-# Bước 3: Khởi tạo cấu trúc cơ sở dữ liệu SQLite (an toàn, không xóa DB cũ)
-.venv/bin/python -m petcare.database.initialize
-
-# Bước 4: Nạp dữ liệu tài khoản và dịch vụ mẫu (chạy lặp an toàn, không nhân đôi dữ liệu)
-.venv/bin/python -m petcare.database.seed
-
-# Bước 5: Chạy toàn bộ 34 ca kiểm thử tự động
-.venv/bin/python -m unittest discover -s tests -v
-
-# Bước 6: Khởi chạy giao diện ứng dụng
-.venv/bin/python main.py
+cp .env.example .env
+# Edit .env: set DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, SECRET_KEY
 ```
 
----
-
-## Tài khoản Dùng thử (Demo)
-
-Dữ liệu mẫu sau khi chạy `seed.py` cung cấp sẵn các tài khoản sau:
-
-| Tên đăng nhập | Mật khẩu | Vai trò | Quyền hạn |
-|---|---|---|---|
-| `admin` | `Admin@123` | Quản trị viên (Admin) | Toàn quyền hệ thống, quản lý tài khoản nhân viên, đổi giá và thêm dịch vụ |
-| `staff1` | `Staff@123` | Nhân viên (Staff) | Quản lý chủ nuôi, thú cưng, khám bệnh, tiêm phòng, lịch hẹn, lập hóa đơn, thanh toán và xem báo cáo |
-| `staff2` | `Staff@123` | Nhân viên (Staff) | Tương tự `staff1` |
-
----
-
-## Kịch bản Dùng thử Nhanh (Lan & Miu)
-
-Sau khi mở ứng dụng:
-1. Đăng nhập bằng `staff1` / `Staff@123`.
-2. Vào **Chủ nuôi**: Thêm chị *Nguyễn Thị Lan*, SĐT: *0901234567*.
-3. Vào **Thú cưng**: Thêm mèo *Miu* (Loài: Mèo, Cân nặng: 3.5 kg, Giới tính: Cái) cho chị Lan. Nhấp đúp vào Miu để xem Hồ sơ tổng hợp.
-4. Vào **Lịch hẹn**: Đặt lịch hẹn khám định kỳ cho Miu.
-5. Vào **Khám bệnh**: Ghi nhận ca khám cho Miu (Khám bệnh tổng quát - 150.000 đ, Triệu chứng: Hắt hơi, Chẩn đoán: Viêm mũi).
-6. Vào **Tiêm phòng**: Ghi nhận tiêm vaccine Dại cho Miu (Tiêm vaccine Dại - 180.000 đ, hẹn tiêm nhắc sau 1 năm).
-7. Vào **Lượt dịch vụ**: Ghi nhận thêm dịch vụ chăm sóc *Tắm vệ sinh & Cắt tỉa lông* (200.000 đ).
-8. Vào **Hóa đơn**: Bấm *+ Lập hóa đơn mới*, chọn chị Lan. Hệ thống tự gom 3 lượt trên (Tổng tiền: 530.000 đ). Bấm *Tạo hóa đơn*.
-9. Bấm *Thanh toán trực tiếp*: Xác nhận thu tiền tại quầy. Hóa đơn chuyển sang trạng thái *Đã thanh toán*.
-10. Vào **Thống kê**: Chọn ngày hôm nay để xem doanh thu thực thu cập nhật 530.000 đ cùng top dịch vụ tương ứng.
-
----
-
-## Cấu trúc Thư mục Dự án
-
+### 3.3 Database Initialization (Production/Dev Schema)
+Create an empty UTF8MB4 database and least-privilege user, then initialize idempotently:
+```sql
+CREATE DATABASE petcare_shop_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'petcare_app'@'127.0.0.1' IDENTIFIED BY '<strong-local-password>';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, DROP ON petcare_shop_dev.* TO 'petcare_app'@'127.0.0.1';
+FLUSH PRIVILEGES;
 ```
-petcare-manager/
-├── main.py                     # Điểm chạy duy nhất của ứng dụng
-├── requirements.txt            # Thư viện ngoài (dự án dùng thư viện chuẩn)
-├── REPO_GUIDE.md               # Quy định thiết kế và hợp đồng ban đầu
-├── AGENTS.md                   # Quy ước kỹ thuật và hướng dẫn phát triển
-├── data/
-│   └── petcare.db              # SQLite database cục bộ (được gitignore an toàn)
-├── docs/                       # Tài liệu thiết kế, kiến trúc và kiểm thử
-│   ├── architecture.md         # Kiến trúc 3 lớp, transaction và bảo mật
-│   ├── erd.md                  # Sơ đồ thực thể quan hệ 10 bảng dữ liệu
-│   ├── billing_rules.md        # Toàn bộ quy tắc tính phí và bảo toàn doanh thu
-│   ├── acceptance_tests.md     # 10 kịch bản nghiệm thu chi tiết
-│   ├── demo_scenarios.md       # Kịch bản demo từng bước bảo vệ đồ án
-│   ├── backup_restore.md       # Hướng dẫn sao lưu và phục hồi dữ liệu
-│   ├── test_results.md         # Báo cáo kết quả kiểm thử toàn diện
-│   └── project_status.md       # Nhật ký trạng thái hoàn thiện dự án
-├── petcare/                    # Package mã nguồn chính
-│   ├── app.py                  # Controller Tkinter, phiên và điều hướng
-│   ├── config.py               # Đường dẫn tuyệt đối chuẩn hóa theo dự án
-│   ├── security.py             # Băm mật khẩu PBKDF2-HMAC-SHA256
-│   ├── database/               # Quản lý kết nối, schema và dữ liệu mẫu
-│   │   ├── connection.py       # Kết nối SQLite, bật PRAGMA foreign_keys
-│   │   ├── schema.sql          # Định nghĩa 10 bảng dữ liệu chuẩn
-│   │   ├── initialize.py       # Tạo bảng an toàn (CREATE TABLE IF NOT EXISTS)
-│   │   └── seed.py             # Nạp dữ liệu demo an toàn (idempotent)
-│   ├── repositories/           # Tầng thực thi SQL có tham số
-│   ├── services/               # Tầng nghiệp vụ, phân quyền và transaction
-│   └── ui/                     # Tầng giao diện Tkinter/ttk thuần tiếng Việt
-└── tests/                      # Bộ kiểm thử tự động toàn diện (34 unit & integration tests)
+```sh
+python -m petcare.database.initialize
 ```
 
+### 3.4 Isolated Demo Setup & Starting Flask
+Never seed demo data into real/development databases. Seed only against an isolated `*_test` database:
+```sh
+D_TMP=$(python -c "import tempfile; print(tempfile.gettempdir())")
+mkdir -p "$D_TMP/petcare-demo/pets" "$D_TMP/petcare-demo/prods" "$D_TMP/petcare-demo/exports"
+
+PETCARE_DEMO_MODE=1 APP_ENV=test COOKIE_SECURE=0 \
+DB_NAME=petcare_demo_stage_test \
+PET_IMAGE_DIR="$D_TMP/petcare-demo/pets" \
+PRODUCT_IMAGE_DIR="$D_TMP/petcare-demo/prods" \
+TENANT_EXPORT_DIR="$D_TMP/petcare-demo/exports" \
+PETCARE_DEMO_ADMIN_PASSWORD='<16+-char-admin-password>' \
+PETCARE_DEMO_STAFF_PASSWORD='<16+-char-staff-password>' \
+PETCARE_DEMO_CUSTOMER_PASSWORD='<16+-char-customer-password>' \
+python scripts/demo_staging_setup.py --reset-disposable --json
+
+PETCARE_DEMO_MODE=1 APP_ENV=test COOKIE_SECURE=0 \
+DB_NAME=petcare_demo_stage_test \
+PET_IMAGE_DIR="$D_TMP/petcare-demo/pets" \
+PRODUCT_IMAGE_DIR="$D_TMP/petcare-demo/prods" \
+TENANT_EXPORT_DIR="$D_TMP/petcare-demo/exports" \
+python run.py
+```
+- Internal Workspace (`/login`): `http://127.0.0.1:5055/login` (demo users: `admin`, `staff1`, store slug `main`)
+- Customer Storefront (`/shop`): `http://127.0.0.1:5055/shop` (demo customer: `demo.customer@example.invalid`)
+- Optional background workers: `python -m petcare.services.tenant_export_worker_cli` and `python -m petcare.services.mail_worker`
+
+### 3.5 Starting with Docker Compose
+```sh
+docker compose config --quiet
+docker compose build
+docker compose up -d mysql
+docker compose run --rm web python -m petcare.database.initialize
+docker compose up -d web email-worker export-worker
+```
+Health endpoints: `/healthz`, `/readyz`, `/workersz`. Full instructions: [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) and [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md).
+
 ---
 
-## Lưu ý Kỹ thuật
+## 4. Roles, Storefront COD Semantics & AI Modules
 
-- **Bảo toàn dữ liệu**: Database được lưu độc lập trên máy của mỗi thành viên tại `data/petcare.db`. Không commit file database, thư mục `.venv` hay file cache lên Git.
-- **Độc lập nền tảng**: Mã nguồn sử dụng `Path` chuẩn hóa trong `petcare/config.py`, chạy mượt mà trên cả Windows và macOS mà không bị lỗi đường dẫn cứng.
+- **Admin & Staff Isolation**: Role and tenant membership reload from MySQL per request (`session_version` revokes stale sessions). Staff cannot access `/store/settings`, `/users/`, `/purchasing/`, `/activity/`, or refund creation. See [docs/ADMIN_STAFF_GUIDE.md](docs/ADMIN_STAFF_GUIDE.md).
+- **Customer Storefront & COD Payments**: Customer orders start `pending` / `unpaid` with zero online gateway charge. Confirming an order reserves product quantities and acquires `customer_order_pet_locks`. **Cash on Delivery (COD)** / pay-at-store orders remain `unpaid` until staff explicitly confirm payment collection in `/orders/<id>`, which atomically issues a paid invoice and deducts inventory. See [docs/CUSTOMER_STOREFRONT_GUIDE.md](docs/CUSTOMER_STOREFRONT_GUIDE.md).
+- **AI Assistant & External Fallback**: Works offline by default (`AI_PROVIDER_APPROVED=0`) via deterministic Python + MySQL queries. Optional external OpenAI/Gemini endpoints (`AI_API_BASE_URL` / `GEMINI_API_KEY`) fall back automatically to local Python on errors/timeouts and visibly label response provenance. See [docs/AI_FEATURES.md](docs/AI_FEATURES.md).
+- **AI Vision 4.0 & Honest Identity Boundary**:
+  - `yolox_nano.onnx` + `mobilenetv2-12.onnx` + `mobilenetv2-12-features.onnx` verify domestic Cat/Dog uploads locally.
+  - Visual similarity scores (`.../100`) assist browsing by appearance and **do NOT verify individual animal biometric identity** (`same_pet_multi_view_reidentification = NOT EVALUATED`). Exact SHA-256 matches only identify identical stored files.
+  - **Verified vs Illustrative Photos**: Seeded pet portraits (`assets/demo/pets/`: 68 synthetic portraits) are stored privately and served behind authenticated/public pet photo routes; items without photos render fallback vectors (`petcare/static/img/catalog/fallbacks/*.svg`) visibly badged **"Minh họa" / "Illustrative"**.
+
+---
+
+## 5. Screenshots
+
+| Storefront Desktop (`/shop`) | Customer Visual Search (`/shop/image-search`) |
+|---|---|
+| ![Storefront Desktop](docs/assets/demo-readiness/08-shop-home-1440.png) | ![Visual Search](docs/assets/acceptance-1.0/after-shop-image-search-1440.png) |
+
+| Admin Customers & Topbar AI (`1440px`) | Mobile Account Order Cards (`320px`) |
+|---|---|
+| ![Customers Topbar](docs/assets/acceptance-1.0/after-customers-topbar-1440.png) | ![Mobile Account](docs/assets/acceptance-1.0/after-shop-account-320.png) |
+
+---
+
+## 6. Testing & Security Configuration
+
+```sh
+# Syntax + Python unit/web + MySQL integration (on isolated *_test schema)
+python -m compileall -q run.py main.py petcare tests
+APP_ENV=test DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=petcare_app DB_PASSWORD="<pw>" \
+DB_NAME=petcare_ci_test PETCARE_TEST_DB_NAME=petcare_ci_test \
+python -m unittest discover -s tests -q
+
+# JavaScript module tests + Playwright E2E / Axe accessibility
+node --test tests/js/*.test.cjs
+python scripts/browser_smoke/run_smoke.py
+
+# Security & Dependency checks
+bandit -q -r petcare scripts main.py run.py wsgi.py -x petcare/templates,petcare/static -b .security/bandit-baseline.json
+pip-audit -r requirements.lock && pip-audit -r requirements-browser.lock
+```
+
+Key security defaults: CSRF protection on mutating routes, PBKDF2-HMAC-SHA256 passwords, strict CSP without inline scripts, EXIF-stripped private media (`<= 5 MB`), `COOKIE_SECURE=1` + `DB_SSL_CA` + DML-only runtime MySQL user in production. Never commit `.env` or real credentials. See [SECURITY.md](SECURITY.md) & [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
+
+---
+
+## 7. Complete Documentation Index
+
+| Area | Document |
+|---|---|
+| Setup & Install | [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) |
+| Architecture & Data Model | [docs/architecture.md](docs/architecture.md), [docs/DATABASE_MIGRATIONS.md](docs/DATABASE_MIGRATIONS.md) |
+| User Guides | [docs/user_guide.md](docs/user_guide.md), [docs/ADMIN_STAFF_GUIDE.md](docs/ADMIN_STAFF_GUIDE.md), [docs/CUSTOMER_STOREFRONT_GUIDE.md](docs/CUSTOMER_STOREFRONT_GUIDE.md) |
+| AI & Vision 4.0 | [docs/AI_FEATURES.md](docs/AI_FEATURES.md), [docs/AI4_0E_FINAL_VISION_QA.md](docs/AI4_0E_FINAL_VISION_QA.md) |
+| Demo & Operations | [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md), [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
+| QA & Security | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md), [SECURITY.md](SECURITY.md), [docs/SECURITY.md](docs/SECURITY.md), [docs/FINAL_UI_MODULE_ACCEPTANCE.md](docs/FINAL_UI_MODULE_ACCEPTANCE.md) |
+| Audit & Releases | [docs/REPOSITORY_CLEANUP_AUDIT.md](docs/REPOSITORY_CLEANUP_AUDIT.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md), [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+---
+
+## 8. Known Limitations
+
+1. **Visual Search Is Appearance Similarity Only**: Does not verify cross-view individual animal identity.
+2. **Offline COD / Counter Payment Only**: No online card/e-wallet gateway; financial confirmation happens manually in `/orders/<id>`.
+3. **Self-Service Tenant Signup Off by Default**: `PUBLIC_SIGNUP_ENABLED=0` pending commercial billing and abuse-control policies.
+4. **Tablet `834px` Storefront Hero**: Stacks vertically with 2×2 portrait tiles (`1114px` height, `0` overflow).
+
+---
+
+## 9. Clean Release Packaging (`git archive`)
+
+Build reproducible release ZIPs directly from the verified `main` commit (never from a dirty local working tree):
+```sh
+git archive --format=zip --prefix=petcare-manager/ -o ../PetCare-Manager-<version>.zip main
+(cd .. && shasum -a 256 PetCare-Manager-<version>.zip > PetCare-Manager-<version>.sha256)
+(cd .. && shasum -a 256 -c PetCare-Manager-<version>.sha256)
+```

@@ -1,0 +1,42 @@
+{% extends "storefront/shop_base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ 'Trợ lý mua sắm AI' if locale == 'vi' else 'AI Shopping Assistant' }}{% endblock %}
+
+{% block content %}
+<div class="sf-page-head">
+  <div>
+    <h1>{{ 'Trợ lý tư vấn mua sắm AI' if locale == 'vi' else 'AI Shopping Assistant' }}</h1>
+    <p>{{ 'Hỏi đáp chọn thú cưng phù hợp, so sánh sản phẩm và kiến thức chăm sóc an toàn từ cửa hàng.' if locale == 'vi' else 'Ask for pet matching advice, product comparisons, and reviewed pet care guidance.' }}</p>
+  </div>
+</div>
+
+<section
+  class="sf-panel"
+  id="sf-ai-root"
+  data-chat-url="{{ url_for('storefront.ai_assistant_chat') }}"
+  data-add-cart-url="{{ url_for('storefront.cart_add') }}"
+  data-csrf-token="{{ csrf_token() }}"
+  data-locale="{{ locale }}"
+  data-initial-prompt="{{ initial_prompt }}"
+>
+  <div class="sf-chip-row">
+    {% for prompt in prompts %}
+    <button type="button" class="sf-chip" data-sf-prompt="{{ prompt }}">{{ prompt }}</button>
+    {% endfor %}
+  </div>
+
+  <div class="sf-ai-stream" id="sf-ai-stream" aria-live="polite">
+    <div class="sf-msg sf-msg-bot">
+      {{ 'Xin chào! Mình là trợ lý mua sắm của ' ~ store.name ~ '. Bạn đang tìm bé mèo, bé cún, thức ăn hay cần hỏi cách chăm sóc nào?' if locale == 'vi' else 'Hello! I am your ' ~ store.name ~ ' shopping assistant. Looking for a pet, nutrition, product comparison, or care guidance?' }}
+    </div>
+  </div>
+
+  <form class="sf-hero-search" id="sf-ai-form">
+    <label for="sf-ai-question" class="visually-hidden">{{ 'Câu hỏi cho trợ lý' if locale == 'vi' else 'Ask a question' }}</label>
+    <input id="sf-ai-question" type="text" maxlength="1000" required placeholder="{{ 'Ví dụ: Mèo trưởng thành ăn hạt nào tốt? Hoặc so sánh FOOD-001 và FOOD-002...' if locale == 'vi' else 'Ask for pet or product recommendations, comparisons, or care advice...' }}">
+    <button class="sf-btn sf-btn-primary" id="sf-ai-send" type="submit">{{ icon('send') }} {{ 'Gửi' if locale == 'vi' else 'Send' }}</button>
+  </form>
+  <p class="sf-notice">{{ 'Chỉ dùng dữ liệu danh mục công khai và kiến thức chăm sóc đã duyệt; không thay thế khám thú y.' if locale == 'vi' else 'Uses only public catalog data and reviewed care guides; never replaces veterinary care.' }}</p>
+</section>
+{% endblock %}
+

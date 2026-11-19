@@ -1,0 +1,26 @@
+vulnerabilities:
+  - id: GHSA-6v7p-g79w-8964
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    expired_at: 2026-12-16
+    statement: Reverified 2026-11-18 image inventory; Trivy 0.76.0 attributes this package to a third-party wheel SBOM and msgpack is not installed in the final image. Recheck before expiry.
+  - id: CVE-2025-47273
+    purls:
+      - pkg:pypi/setuptools@70.3.0
+    expired_at: 2026-12-16
+    statement: Reverified 2026-11-18 image inventory; Trivy 0.76.0 attributes this package to cryptography's build-time wheel SBOM and setuptools is not installed in the final image. Recheck before expiry.
+  - id: CVE-2026-97687
+    purls:
+      - pkg:pypi/urllib3@2.7.0
+    expired_at: 2026-12-16
+    statement: Reverified 2026-11-18 image inventory; Trivy 0.76.0 attributes this package to a third-party wheel SBOM while the final image installs urllib3 2.8.0. Recheck before expiry.
+  - id: CVE-2026-97689
+    purls:
+      - pkg:pypi/urllib3@2.7.0
+    expired_at: 2026-12-16
+    statement: Reverified 2026-11-18 image inventory; Trivy 0.76.0 attributes this package to a third-party wheel SBOM while the final image installs urllib3 2.8.0. Recheck before expiry.
+  - id: CVE-2026-114613
+    purls:
+      - pkg:pypi/msgpack@1.1.2
+    expired_at: 2026-12-16
+    statement: Reverified 2026-11-18 image inventory; Trivy 0.76.0 attributes this package to a third-party wheel SBOM and msgpack is not installed in the final image. Recheck before expiry.

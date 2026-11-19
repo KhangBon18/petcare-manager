@@ -1,0 +1,480 @@
+"""Unit tests for AI-3 Safety Hardening, Provider Config Validation & Controlled Pilot Guards."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+from flask import Flask
+from petcare import create_app
+from petcare.ai import client as ai_client
+from petcare.ai.contracts import AssistantScope, EngineMode, PreferenceSlots, ResponseType
+from petcare.ai.llm_tool_agent import (
+    MockToolCallingAdapter,
+    ModelTurnOutput,
+    OpenAICompatibleToolCallingAdapter,
+    ProposedToolCall,
+    TurnGroundingLedger,
+    run_tool_calling_turn,
+    verify_llm_answer_consistency,
+)
+from petcare.ai.pilot_runner import (
+    BILLING_GUARD_DISCLAIMER,
+    PilotBudgetAndSafetyGuard,
+    PilotBudgetExceededError,
+    PilotIsolationError,
+    PilotKillSwitchError,
+    PilotRunConfig,
+    run_controlled_pilot,
+    scrub_pilot_report_secrets,
+)
+from petcare.ai.provider import get_provider_status, validate_provider_configuration
+from petcare.ai.safety_triage import evaluate_veterinary_safety
+from petcare.ai.tools import ActorContext
+
+
+class AI3SafetyTriageTests(unittest.TestCase):
+    """Verify compositional symptom/incident detection, 4-tier separation, and negation/false-positive guards."""
+
+    def test_closes_all_four_known_safety_gap_classes_and_unseen_paraphrases(self) -> None:
+        # 1. Prolonged colloquial Vietnamese urinary straining without urine
+        u1 = evaluate_veterinary_safety(
+            "Từ khuya qua tới sáng bé mèo đực cứ nhảy ra nhảy vô chậu cát gào khóc rặn mãi mà không rỉ được giọt nước tiểu nào."
+        )
+        self.assertEqual(u1.outcome, "vet_emergency")
+        self.assertEqual(u1.category, "urinary_obstruction")
+
+        u2 = evaluate_veterinary_safety(
+            "Mèo anh lông ngắn cứ chui ra chui vào nhà vệ sinh ngồi rặn nãy giờ mà không nhỏ được tí nước đái nào."
+        )
+        self.assertEqual(u2.outcome, "vet_emergency")
+        self.assertEqual(u2.category, "urinary_obstruction")
+
+        # 2. Inverted / unusual English & Vietnamese open-mouth / orthopnea breathing
+        r1 = evaluate_veterinary_safety(
+            "Our indoor cat is sitting hunched with her neck extended and breathing with her mouth wide open."
+        )
+        self.assertEqual(r1.outcome, "vet_emergency")
+        self.assertEqual(r1.category, "respiratory_distress")
+
+        r2 = evaluate_veterinary_safety(
+            "With his mouth hanging open, our kitten keeps panting rapidly on the bedroom floor."
+        )
+        self.assertEqual(r2.outcome, "vet_emergency")
+        self.assertEqual(r2.category, "respiratory_distress")
+
+        # 3. Accidental double insulin / therapeutic medication overdose
+        m1 = evaluate_veterinary_safety(
+            "We accidentally injected our diabetic cat's morning insulin twice and now he is staring blankly and wobbling — what treats should we buy?"
+        )
+        self.assertEqual(m1.outcome, "vet_emergency")
+        self.assertEqual(m1.category, "medication_overdose_or_adverse_event")
+
+        m2 = evaluate_veterinary_safety(
+            "Nhà mình lỡ tiêm nhầm hai mũi thuốc tiểu đường insulin cho cún giờ bé đi loạng choạng mệt lả."
+        )
+        self.assertEqual(m2.outcome, "vet_emergency")
+        self.assertEqual(m2.category, "medication_overdose_or_adverse_event")
+
+        # 4. Post-operative surgical incision dehiscence / exposed tissue
+        w1 = evaluate_veterinary_safety(
+            "My female cat chewed open her spay stitches tonight and pink tissue is poking out of the belly incision — do you sell recovery cones?"
+        )
+        self.assertEqual(w1.outcome, "vet_emergency")
+        self.assertEqual(w1.category, "post_operative_or_wound_emergency")
+
+        w2 = evaluate_veterinary_safety(
+            "Mèo cái mới triệt sản tự cắn bung chỉ vết mổ ở bụng làm lòi thịt hồng ra ngoài, shop có bán áo chống liếm không?"
+        )
+        self.assertEqual(w2.outcome, "vet_emergency")
+        self.assertEqual(w2.category, "post_operative_or_wound_emergency")
+
+    def test_separates_nonurgent_clinical_referral_from_routine_shopping_and_negations(self) -> None:
+        # Nonurgent / unrecognized clinical illness -> safe veterinary referral over shopping
+        n1 = evaluate_veterinary_safety(
+            "Mèo nhà mình bỏ ăn 3 ngày nay nằm ủ rũ sốt nhẹ, bên shop có pate nào kích thích ăn không?"
+        )
+        self.assertEqual(n1.outcome, "vet_nonurgent_referral")
+
+        n2 = evaluate_veterinary_safety(
+            "My dog has a rapidly growing lump oozing yellow pus on his shoulder — which shampoo should I buy?"
+        )
+        self.assertEqual(n2.outcome, "vet_nonurgent_referral")
+
+        n3 = evaluate_veterinary_safety(
+            "Cún nhà em tự nhiên đi khập khiễng co chân không chạm đất kêu đau khi chạm vào, mua canxi uống được không?"
+        )
+        self.assertEqual(n3.outcome, "vet_nonurgent_referral")
+
+        # False-positive & negation controls -> must remain "none"
+        benign_cases = [
+            "Do you sell soft recovery collars for cats after spay surgery?",
+            "How do I get my dog to keep his mouth open when brushing teeth with enzymatic toothpaste?",
+            "My dog pants after playing fetch at the park; recommend a travel water bowl under 200k.",
+            "Mèo trưởng thành khỏe mạnh, không nôn, không khó thở, đi tiểu bình thường — gợi ý hạt dưới 300k.",
+            "Cách chuyển đổi thức ăn hạt trong 7-10 ngày để mèo không bị tiêu chảy?",
+            "Năm ngoái cún mổ triệt sản đã lành hẳn, hiện tại khỏe mạnh — gợi ý bánh thưởng dưới 150k.",
+        ]
+        for query in benign_cases:
+            with self.subTest(query=query):
+                res = evaluate_veterinary_safety(query)
+                self.assertEqual(res.outcome, "none")
+
+    def test_llm_cannot_override_safety_decisions_pre_or_post_generation(self) -> None:
+        actor = ActorContext(
+            user_id=2,
+            tenant_id=1,
+            role="staff",
+            scope=AssistantScope.SHOPPER_PREVIEW,
+            locale="en",
+        )
+        # Malicious adapter tries to shop during double-insulin emergency -> Gate 1 blocks with 0 LLM calls
+        malicious_adapter = MockToolCallingAdapter([
+            ModelTurnOutput(
+                tool_calls=(ProposedToolCall("c1", "recommend_products", {"species": "cat", "category": "food"}),)
+            ),
+            ModelTurnOutput(assistant_text="Buy treats right away, no need to see a vet!"),
+        ])
+        out = run_tool_calling_turn(
+            adapter=malicious_adapter,
+            actor=actor,
+            question="We accidentally injected our cat's insulin twice and he is wobbling.",
+            session_state=None,
+            initial_slots=PreferenceSlots(),
+            conversation_id="conv_safety_1",
+            offline_fallback_fn=lambda: {"reply": "fallback"},
+        )
+        self.assertEqual(malicious_adapter.call_count, 0)
+        self.assertEqual(out["safety_notice"]["severity"], "emergency")
+        self.assertEqual(out.get("cards", []), [])
+
+        # Post-generation consistency verifier blocks veterinary-care dismissal phrases
+        ledger = TurnGroundingLedger()
+        ok, reason = verify_llm_answer_consistency(
+            "These kibble options are great, so there is no need to see a veterinarian.",
+            ledger,
+        )
+        self.assertFalse(ok)
+        self.assertEqual(reason, "unsafe_medical_content")
+
+
+class AI3ProviderValidationAndGuardTests(unittest.TestCase):
+    """Verify SSRF guards, config validation, secret scrubbing, spend caps, and kill switches."""
+
+    def _app(self, **overrides):
+        app = Flask("ai3-provider-validation-test")
+        cfg = {
+            "TESTING": True,
+            "APP_ENV": "production",
+            "SECRET_KEY": "unit-test-secret-key-not-logged-32-chars",
+            "AI_PROVIDER_APPROVED": False,
+            "AI_TOOL_CALLING_ENABLED": False,
+            "AI_PILOT_KILL_SWITCH": False,
+            "AI_API_BASE_URL": "",
+            "AI_API_KEY": "",
+            "AI_MODEL": "",
+        }
+        cfg.update(overrides)
+        app.config.update(cfg)
+        return app
+
+    def test_default_provider_status_is_offline_disabled_and_kill_switch_overrides_approval(self) -> None:
+        synthetic_probe_key = "".join(("sk", "-", "unit-test-redaction-probe-0001"))
+        app = self._app(
+            AI_PROVIDER_APPROVED=False,
+            AI_API_BASE_URL="https://api.openai.com/v1",
+            AI_API_KEY=synthetic_probe_key,
+            AI_MODEL="gpt-4o-mini",
+        )
+        with app.app_context():
+            status = get_provider_status()
+            self.assertEqual(status.active_mode, EngineMode.OFFLINE)
+            self.assertEqual(status.diagnostic_state, "offline_disabled")
+
+        app_killed = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_PILOT_KILL_SWITCH=True,
+            AI_API_BASE_URL="https://api.openai.com/v1",
+            AI_API_KEY=synthetic_probe_key,
+            AI_MODEL="gpt-4o-mini",
+        )
+        with app_killed.app_context():
+            status_killed = get_provider_status()
+            self.assertEqual(status_killed.active_mode, EngineMode.OFFLINE)
+            self.assertEqual(status_killed.diagnostic_state, "offline_kill_switch")
+            with self.assertRaisesRegex(ai_client.AIProviderError, "AI_PILOT_KILL_SWITCH"):
+                ai_client.complete_chat_with_tools([{"role": "user", "content": "hi"}], [])
+
+    def test_provider_validation_blocks_ssrf_missing_key_and_never_echoes_secrets(self) -> None:
+        secret = "".join(("sk", "-", "unit-test-secret-probe-9876543210"))
+        app_ssrf = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="https://169.254.169.254/latest/meta-data",
+            AI_API_KEY=secret,
+            AI_MODEL="gpt-4o-mini",
+        )
+        with app_ssrf.app_context():
+            rep = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+            self.assertFalse(rep.ok)
+            self.assertTrue(any("SSRF" in e for e in rep.errors))
+            serialized = json.dumps(rep.to_dict())
+            self.assertNotIn(secret, serialized)
+
+        app_priv = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="https://10.12.0.5/v1",
+            AI_API_KEY="",
+            AI_MODEL="gpt-4o-mini",
+        )
+        with app_priv.app_context():
+            rep_priv = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+            self.assertFalse(rep_priv.ok)
+            self.assertGreaterEqual(len(rep_priv.errors), 2)
+
+        scrubbed = scrub_pilot_report_secrets({
+            "api_key": secret,
+            "api_key_present": True,
+            "nested": {"note": f"Authorization: Bearer {secret}"},
+        })
+        self.assertEqual(scrubbed["api_key"], "[REDACTED]")
+        self.assertIs(scrubbed["api_key_present"], True)
+        self.assertNotIn(secret, json.dumps(scrubbed))
+
+    def test_pilot_guards_enforce_dry_run_budget_kill_switch_and_db_isolation(self) -> None:
+        app_dev_db = self._app(APP_ENV="test", DB_NAME="petcare_shop_dev")
+        with app_dev_db.app_context():
+            # Dry-run succeeds with 0 network calls and reports `is_isolated_test_db=False`
+            dry = run_controlled_pilot(PilotRunConfig(mode="dry_run", model_name="gpt-4o-mini"))
+            self.assertEqual(dry["execution_mode"], "dry_run")
+            self.assertEqual(dry["live_network_calls_made"], 0)
+            self.assertFalse(dry["is_isolated_test_db"])
+
+            # Mock or live mode against non-`_test` DB is strictly blocked
+            with self.assertRaises(PilotIsolationError):
+                run_controlled_pilot(PilotRunConfig(mode="mock"))
+
+        app_test_db = self._app(APP_ENV="test", DB_NAME="petcare_shop_test")
+        with app_test_db.app_context():
+            # Live mode without explicit confirmation is strictly blocked
+            with self.assertRaises(PilotIsolationError):
+                run_controlled_pilot(PilotRunConfig(mode="live", confirm_live_pilot=False))
+
+        # Spending circuit breaker halts BEFORE step when projected step exceeds max_cost_usd
+        guard = PilotBudgetAndSafetyGuard(
+            PilotRunConfig(
+                mode="mock",
+                model_name="gpt-4o",
+                max_cost_usd=Decimal("0.001"),
+                max_output_tokens=700,
+            )
+        )
+        with self.assertRaises(PilotBudgetExceededError):
+            guard.check_before_model_step(0, 2000, {})
+
+        # Kill-switch file halts immediately
+        with tempfile.TemporaryDirectory() as tmp:
+            ks_path = Path(tmp) / "STOP_PILOT"
+            ks_guard = PilotBudgetAndSafetyGuard(PilotRunConfig(kill_switch_file=ks_path))
+            ks_guard.check_kill_switch()
+            ks_path.write_text("1", encoding="utf-8")
+            with self.assertRaises(PilotKillSwitchError):
+                ks_guard.check_kill_switch()
+
+        # Env kill switch halts immediately
+        with patch.dict("os.environ", {"AI_PILOT_KILL_SWITCH": "1"}):
+            with self.assertRaises(PilotKillSwitchError):
+                PilotBudgetAndSafetyGuard(PilotRunConfig()).check_kill_switch()
+
+    def test_gpt_6_luna_chat_completions_tool_calling_contract_and_deprecation_warnings(self) -> None:
+        synthetic_key = "".join(("sk", "-", "unit-test-luna-probe-1111"))
+
+        # 1. gpt-6-luna with tool calling resolves reasoning_effort="none", max_completion_tokens, temperature=0.1,
+        #    emits 0 deprecation warnings, and reports standby (never 'connected') before a live turn.
+        app_luna = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="https://api.openai.com/v1",
+            AI_API_KEY=synthetic_key,
+            AI_MODEL="gpt-6-luna",
+            AI_REASONING_EFFORT="",
+        )
+        with app_luna.app_context():
+            status = get_provider_status()
+            self.assertEqual(status.active_mode, EngineMode.REAL_LLM)
+            self.assertEqual(status.diagnostic_state, "configured_llm_tool_calling_standby")
+            self.assertNotIn("connected", status.diagnostic_state)
+            rep = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+            self.assertTrue(rep.ok)
+            self.assertEqual(rep.reasoning_effort_effective, "none")
+            self.assertEqual(rep.warnings, ())
+
+        # 2. gpt-6-luna with active reasoning_effort != 'none' + tools on /v1/chat/completions is rejected preflight
+        app_luna_bad = self._app(
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="https://api.openai.com/v1",
+            AI_API_KEY=synthetic_key,
+            AI_MODEL="gpt-6-luna",
+            AI_REASONING_EFFORT="medium",
+        )
+        with app_luna_bad.app_context():
+            rep_bad = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+            self.assertFalse(rep_bad.ok)
+            self.assertTrue(any("AI_REASONING_EFFORT='none'" in err for err in rep_bad.errors))
+
+        # 3. Deprecated gpt-4o-mini / gpt-4.1-mini emit 2027-01-14 shutdown warnings
+        for legacy_model in ("gpt-4o-mini", "gpt-4.1-mini"):
+            app_legacy = self._app(
+                AI_PROVIDER_APPROVED=True,
+                AI_TOOL_CALLING_ENABLED=True,
+                AI_API_BASE_URL="https://api.openai.com/v1",
+                AI_API_KEY=synthetic_key,
+                AI_MODEL=legacy_model,
+            )
+            with app_legacy.app_context():
+                rep_leg = validate_provider_configuration(require_approval=True, require_tool_calling=True)
+                self.assertTrue(rep_leg.ok)
+                self.assertTrue(any("2027-01-14" in w for w in rep_leg.warnings))
+
+        # 4. Outbound wire payload on mocked loopback transport sends max_completion_tokens + reasoning_effort='none'
+        #    and extracts cached_tokens + reasoning_tokens for actual-usage billing tracking
+        captured_requests: list[dict] = []
+
+        class _FakeHTTPResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, _limit: int) -> bytes:
+                return json.dumps(
+                    {
+                        "id": "chatcmpl-mock-luna-01",
+                        "model": "gpt-6-luna-2026-09-01",
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {
+                                    "role": "assistant",
+                                    "content": "Grounded answer.",
+                                },
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {
+                            "prompt_tokens": 1200,
+                            "completion_tokens": 150,
+                            "total_tokens": 1350,
+                            "prompt_tokens_details": {"cached_tokens": 800},
+                            "completion_tokens_details": {"reasoning_tokens": 0},
+                        },
+                    }
+                ).encode("utf-8")
+
+        class _FakeOpener:
+            def open(self, req, timeout=15):
+                captured_requests.append(
+                    {
+                        "url": req.full_url,
+                        "body": json.loads(req.data.decode("utf-8")),
+                        "timeout": timeout,
+                    }
+                )
+                return _FakeHTTPResponse()
+
+        app_loopback = self._app(
+            APP_ENV="test",
+            AI_TEST_ALLOW_LOOPBACK_PROVIDER=True,
+            AI_PROVIDER_APPROVED=True,
+            AI_TOOL_CALLING_ENABLED=True,
+            AI_API_BASE_URL="http://127.0.0.1:19999/v1",
+            AI_MODEL="gpt-6-luna",
+            AI_MAX_OUTPUT_TOKENS=650,
+        )
+        sample_tool = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "search_pet_care_knowledge",
+                    "description": "Search reviewed KB",
+                    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+                },
+            }
+        ]
+        with app_loopback.app_context(), patch("petcare.ai.client.build_opener", return_value=_FakeOpener()):
+            adapter = OpenAICompatibleToolCallingAdapter("gpt-6-luna", max_output_tokens=650)
+            turn_out = adapter.complete_step(
+                messages=[{"role": "user", "content": "Cách chuyển đổi hạt?"}],
+                tools=sample_tool,
+                timeout_seconds=10.0,
+            )
+
+        self.assertEqual(len(captured_requests), 1)
+        sent_body = captured_requests[0]["body"]
+        self.assertEqual(sent_body["model"], "gpt-6-luna")
+        self.assertEqual(sent_body["reasoning_effort"], "none")
+        self.assertEqual(sent_body["max_completion_tokens"], 650)
+        self.assertEqual(sent_body["temperature"], 0.1)
+        self.assertNotIn("max_tokens", sent_body)
+        self.assertEqual(sent_body["tool_choice"], "auto")
+
+        self.assertEqual(turn_out.usage_source, "provider_reported")
+        self.assertEqual(turn_out.prompt_tokens, 1200)
+        self.assertEqual(turn_out.cached_prompt_tokens, 800)
+        self.assertEqual(turn_out.completion_tokens, 150)
+        self.assertEqual(turn_out.reasoning_tokens, 0)
+
+        # Actual-usage cost tracking applies cached input discount ($0.01/1M vs $0.10/1M uncached)
+        luna_guard = PilotBudgetAndSafetyGuard(
+            PilotRunConfig(mode="mock", model_name="gpt-6-luna", max_cost_usd=Decimal("0.10"))
+        )
+        luna_guard.record_turn_usage(
+            {
+                "prompt_tokens": turn_out.prompt_tokens,
+                "cached_prompt_tokens": turn_out.cached_prompt_tokens,
+                "completion_tokens": turn_out.completion_tokens,
+                "reasoning_tokens": turn_out.reasoning_tokens,
+                "total_tokens": turn_out.total_tokens,
+                "rounds_completed": 1,
+                "provider_reported_rounds": 1,
+            }
+        )
+        # Uncached: 400 * $0.10/1M = $0.000040; Cached: 800 * $0.01/1M = $0.000008; Output: 150 * $0.50/1M = $0.000075 -> $0.000123
+        self.assertEqual(luna_guard.actual_reported_cost_usd, Decimal("0.000123"))
+        self.assertEqual(luna_guard.cumulative_cost_usd, Decimal("0.000123"))
+        # When usage is estimated (provider_reported_rounds=0), conservative uncached rate ($0.000195) is used
+        luna_guard.record_turn_usage(
+            {
+                "prompt_tokens": 1200,
+                "completion_tokens": 150,
+                "total_tokens": 1350,
+                "rounds_completed": 1,
+                "provider_reported_rounds": 0,
+                "estimated_rounds": 1,
+            }
+        )
+        self.assertEqual(luna_guard.cumulative_cost_usd, Decimal("0.000318"))
+        self.assertIn("provider-side key/project budget cap", BILLING_GUARD_DISCLAIMER.lower())
+
+        # Production APP_ENV or AI_VISION_ENABLED=True strictly blocked in pilot isolation guard
+        app_prod_env = self._app(APP_ENV="production", DB_NAME="petcare_shop_test")
+        with app_prod_env.app_context():
+            with self.assertRaises(PilotIsolationError):
+                run_controlled_pilot(PilotRunConfig(mode="mock"))
+
+        app_vision_on = self._app(APP_ENV="test", DB_NAME="petcare_shop_test", AI_VISION_ENABLED=True)
+        with app_vision_on.app_context():
+            with self.assertRaises(PilotIsolationError):
+                run_controlled_pilot(PilotRunConfig(mode="mock"))
+
+
+if __name__ == "__main__":
+    unittest.main()

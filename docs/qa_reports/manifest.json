@@ -1,0 +1,141 @@
+{
+  "archived_on": "2026-10-25",
+  "purpose": "Historical QA artifacts from Phases 1–4; not current live business data",
+  "files": [
+    {
+      "file": "phase1-customer-validation.png",
+      "bytes": 52189,
+      "sha256": "3317ec8296d59fbc80e443ea839e075b9542e7bb2943c4cf6167697445f75065"
+    },
+    {
+      "file": "phase1-invoice-validation.png",
+      "bytes": 65448,
+      "sha256": "8f34389343adef321910d4c6be036d414dbc720c2137db4c4157e90e3282756d"
+    },
+    {
+      "file": "phase1-report.md",
+      "bytes": 5042,
+      "sha256": "47bb3e399c5d0f416eb04044081ab01bd52b364fcc427099c63e323d1dd3b890"
+    },
+    {
+      "file": "phase2-dashboard.png",
+      "bytes": 69728,
+      "sha256": "c87ebf2269a454d6ae73ef312aee4bcb018d3e5388eed238c12ab1aa9afdc089"
+    },
+    {
+      "file": "phase2-pos-desktop.png",
+      "bytes": 97343,
+      "sha256": "c72e8a96cfc188f12d96bbf806839b31d4045959804014abef5c83eda6b4d44a"
+    },
+    {
+      "file": "phase2-pos-mobile-order.png",
+      "bytes": 38442,
+      "sha256": "87080011af9e62b4e830706d3e3cb3dca2bad99eddac6ded21621e1d4567ca85"
+    },
+    {
+      "file": "phase2-pos-mobile.png",
+      "bytes": 42959,
+      "sha256": "96515bcf22a2027361ac36831927b686017c3242e817dc2da20529d008ab6ff1"
+    },
+    {
+      "file": "phase2-pos-tablet.png",
+      "bytes": 86767,
+      "sha256": "fb1ca81409ff325ff2c1e23d24e6c0efd30a7200f99a222524056bf1331eceb9"
+    },
+    {
+      "file": "phase2-report.md",
+      "bytes": 5191,
+      "sha256": "a02925c26dc318e156675148661dadfa517b133537a32856273252d70d7496b5"
+    },
+    {
+      "file": "phase3-assistant-cards.png",
+      "bytes": 79504,
+      "sha256": "472331daca6cdcf205c5fa15b817089d9dcfa82b1ce370d11eacb807bd24089d"
+    },
+    {
+      "file": "phase3-attribute-suggestions.png",
+      "bytes": 66045,
+      "sha256": "914045552ea23f47d7dbb2f3d42869b38418fb3a3ed15929c639a56f29371508"
+    },
+    {
+      "file": "phase3-demo-report.pdf",
+      "bytes": 394474,
+      "sha256": "16f182be6db8052cd82d10f04ea9112ca07f9038c0c0ef2bc69ba6da1fcb889b"
+    },
+    {
+      "file": "phase3-demo-report.xlsx",
+      "bytes": 10381,
+      "sha256": "b426ea67a11d710dae2e2c5c48748daa3cfde633c32d8fe4db47219145cf946a"
+    },
+    {
+      "file": "phase3-report-mobile.png",
+      "bytes": 41312,
+      "sha256": "77ef1ff1e90a2120baed7fa7a8d6a4ff8d84889c049ac00c711d3a8c4b37b3b4"
+    },
+    {
+      "file": "phase3-report.md",
+      "bytes": 5376,
+      "sha256": "710a4736fa8e3acd6db77f5869757c632317580b85e01673e3fa34c2847c1e8e"
+    },
+    {
+      "file": "phase3-reports.png",
+      "bytes": 143298,
+      "sha256": "61c63d70d08e0da5a76a299d276f1607430313d8cdbad19cad1860c314526fa2"
+    },
+    {
+      "file": "phase4-acceptance.md",
+      "bytes": 8284,
+      "sha256": "141df34a0de79bbfca1f0808c99031c8a3977ea504dddde1144cb3052f848530"
+    },
+    {
+      "file": "phase4-dashboard.png",
+      "bytes": 197896,
+      "sha256": "24eb5f5140be52a5bd5d8e76e7167c27eefce44b25abbb3b4d3ea975d4901a3d"
+    },
+    {
+      "file": "phase4-image-search.png",
+      "bytes": 81226,
+      "sha256": "e1c5e3450bc89389197bb137c0b10466e6715c778e0a661d5fce21cba2173295"
+    },
+    {
+      "file": "phase4-invoice-validation.png",
+      "bytes": 104770,
+      "sha256": "9375af776355886ef2617b2ee2c88234fcc92d4c74f438a391eb5f05158594fd"
+    },
+    {
+      "file": "phase4-js-final.log",
+      "bytes": 4079,
+      "sha256": "cba831e3b562964d273942832784bfc3721aa1bb7703bd36f79842d9c8287757"
+    },
+    {
+      "file": "phase4-preflight-dev.json",
+      "bytes": 1573,
+      "sha256": "fa1c197b09890912f2e6224b2e94ff703d799e0075305420ef0308b84886e7fd"
+    },
+    {
+      "file": "phase4-python-final.log",
+      "bytes": 48602,
+      "sha256": "9d940a54f52efe0f8f530ad191f32b06f2d4336914be862a175f3328169d432c"
+    },
+    {
+      "file": "phase4-report-screen.png",
+      "bytes": 156624,
+      "sha256": "cb9ec30377bfed152ab9d8186fb7c96615eee3752b9ea53924c683fe79a7f0ce"
+    },
+    {
+      "file": "phase4-report.md",
+      "bytes": 2982,
+      "sha256": "e48cdc15083fd6519cdd84a0bbee518346c5b9c982764906e7999704cbf8941e"
+    },
+    {
+      "file": "phase4-sale-paid.png",
+      "bytes": 78665,
+      "sha256": "4534c2dec89db0196b35c33e123b14430a2f9e6955fe2f6341dc942e35773afb"
+    },
+    {
+      "file": "phase4-validation.png",
+      "bytes": 59166,
+      "sha256": "830d2721d0045397d7fcd5ece1d951850aeab657be6862fb8eb32dad20838560"
+    }
+  ]
+}

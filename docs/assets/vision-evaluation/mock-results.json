@@ -1,0 +1,66 @@
+{
+  "dataset": {
+    "dataset_id": "petcare-vision-synthetic-mechanics",
+    "version": "1.0.0",
+    "evaluation_category": "mock_integration_mechanics_only",
+    "eligible_samples": 2,
+    "annotated_field_values": 4
+  },
+  "real_model_accuracy": "NOT_MEASURED",
+  "per_field": {
+    "coat_color": {
+      "annotated": 2,
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "exact_match_accuracy": 1.0,
+      "abstention_rate": 0.0,
+      "field_coverage": 1.0,
+      "incorrect_suggestion_rate": 0.0,
+      "expected_unknown_false_suggestions": 0
+    },
+    "species": {
+      "annotated": 2,
+      "tp": 2,
+      "fp": 0,
+      "fn": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1": 1.0,
+      "exact_match_accuracy": 1.0,
+      "abstention_rate": 0.0,
+      "field_coverage": 1.0,
+      "incorrect_suggestion_rate": 0.0,
+      "expected_unknown_false_suggestions": 0
+    }
+  },
+  "output_quality": {
+    "records": 2,
+    "valid_structured_outputs": 2,
+    "invalid_structured_output_rate": 0.0
+  },
+  "recovery": {
+    "initial_failures": 0,
+    "recovered_failures": 0,
+    "error_recovery_rate": null,
+    "attempt_count_max": 1
+  },
+  "latency_ms": {
+    "sample_count": 0,
+    "p50_nearest_rank": null,
+    "p95_nearest_rank": null,
+    "median": null
+  },
+  "usage": {
+    "input_tokens": null,
+    "input_token_records": 0,
+    "output_tokens": null,
+    "output_token_records": 0,
+    "estimated_cost_usd": null,
+    "cost_records": 0,
+    "cost_complete": false
+  }
+}

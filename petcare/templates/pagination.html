@@ -1,0 +1,12 @@
+{% if pagination and pagination.total %}
+<nav class="pagination" aria-label="{{ t('Điều hướng danh sách') }}">
+  <span>{{ t('Hiển thị') }} {{ pagination.first }}–{{ pagination.last }} {{ t('trong tổng số') }} {{ pagination.total }}</span>
+  {% if pagination.pages > 1 %}
+  <div class="pagination-actions">
+    {% if pagination.has_previous %}<a rel="prev" href="{{ page_url(pagination.page - 1) }}" aria-label="{{ t('Trang trước') }}">← {{ t('Trước') }}</a>{% else %}<span class="pagination-disabled">← {{ t('Trước') }}</span>{% endif %}
+    <span class="pagination-current">{{ t('Trang') }} {{ pagination.page }} / {{ pagination.pages }}</span>
+    {% if pagination.has_next %}<a rel="next" href="{{ page_url(pagination.page + 1) }}" aria-label="{{ t('Trang tiếp theo') }}">{{ t('Tiếp') }} →</a>{% else %}<span class="pagination-disabled">{{ t('Tiếp') }} →</span>{% endif %}
+  </div>
+  {% endif %}
+</nav>
+{% endif %}

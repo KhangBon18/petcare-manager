@@ -1,0 +1,146 @@
+[
+  {
+    "screen": "purchasing-list",
+    "width": 320,
+    "status": 200,
+    "overflow": true
+  },
+  {
+    "screen": "purchasing-list",
+    "width": 390,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-list",
+    "width": 768,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-list",
+    "width": 820,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-list",
+    "width": 1024,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-list",
+    "width": 1440,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "reports",
+    "width": 320,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "reports",
+    "width": 390,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "reports",
+    "width": 768,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "reports",
+    "width": 820,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "reports",
+    "width": 1024,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "reports",
+    "width": 1440,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-detail",
+    "width": 320,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-detail",
+    "width": 390,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-detail",
+    "width": 768,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-detail",
+    "width": 820,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-detail",
+    "width": 1024,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "purchasing-detail",
+    "width": 1440,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "stock-adjustment",
+    "width": 320,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "stock-adjustment",
+    "width": 390,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "stock-adjustment",
+    "width": 768,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "stock-adjustment",
+    "width": 820,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "stock-adjustment",
+    "width": 1024,
+    "status": 200,
+    "overflow": false
+  },
+  {
+    "screen": "stock-adjustment",
+    "width": 1440,
+    "status": 200,
+    "overflow": false
+  }
+]

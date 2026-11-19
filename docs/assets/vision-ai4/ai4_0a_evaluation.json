@@ -1,0 +1,192 @@
+{
+  "benchmark_id": "petcare-ai4-0a-matching-benchmark",
+  "version": "1.0.0",
+  "dataset_counts": {
+    "total_pet_images": 68,
+    "cats_total": 35,
+    "dogs_total": 33,
+    "orange_cats_total": 11,
+    "warm_dogs_total": 13,
+    "enrolled_catalog_pets": 56,
+    "absent_from_db_pets": 12,
+    "calibration_pets": 34,
+    "acceptance_holdout_pets": 34,
+    "non_animal_negatives_total": 16,
+    "non_animal_calibration": 8,
+    "non_animal_acceptance_holdout": 8
+  },
+  "splits": {
+    "calibration": {
+      "split": "calibration",
+      "query_counts": {
+        "full_seeded_queries": 34,
+        "enrolled_queries": 28,
+        "near_duplicate_queries": 56,
+        "absent_from_db_queries": 6,
+        "non_animal_negative_queries": 8,
+        "orange_cat_queries": 5
+      },
+      "baseline_ai3_4": {
+        "exact_image_rank1_accuracy": 0.8529,
+        "exact_image_rank1_hits": "29/34",
+        "reencoded_jpeg_rank1_accuracy": 0.8571,
+        "unfiltered_cross_species_error_rate": 1.0,
+        "unfiltered_cross_species_errors": "34/34",
+        "non_animal_fpr_unfiltered": 1.0,
+        "non_animal_fpr_with_species_filter": 1.0,
+        "non_animal_rejection_rate_unfiltered": 0.0,
+        "absent_pet_unfiltered_return_rate": 1.0,
+        "orange_cat_similar_precision_mean": 0.32,
+        "orange_cat_queries_with_dog_intrusion": "4/5"
+      },
+      "ai4_0a": {
+        "exact_image_rank1_accuracy": 1.0,
+        "exact_image_rank1_hits": "34/34",
+        "reencoded_jpeg_rank1_accuracy": 1.0,
+        "near_duplicate_precision": 1.0,
+        "near_duplicate_recall_all_variants": 0.5,
+        "near_duplicate_resize_q70_recall": 1.0,
+        "near_duplicate_crop4_recall": 0.0,
+        "near_duplicate_false_positives": 0,
+        "unfiltered_cross_species_error_rate": 0.0,
+        "unfiltered_cross_species_errors": "0/34",
+        "species_filtered_cross_species_errors": 0,
+        "non_animal_fpr_unfiltered": 0.0,
+        "non_animal_fpr_with_species_filter": 0.0,
+        "non_animal_rejection_rate_unfiltered": 1.0,
+        "non_animal_rejection_rate_with_species_filter": 1.0,
+        "absent_pet_unfiltered_abstention_rate": 1.0,
+        "absent_pet_false_exact_or_neardup_claims": 0,
+        "orange_cat_similar_precision_mean": 1.0,
+        "orange_cat_queries_with_dog_intrusion": "0/5",
+        "latency_ms": {
+          "samples": 98,
+          "p50": 21.15,
+          "p95": 47.543
+        }
+      }
+    },
+    "acceptance_holdout": {
+      "split": "acceptance_holdout",
+      "query_counts": {
+        "full_seeded_queries": 34,
+        "enrolled_queries": 28,
+        "near_duplicate_queries": 56,
+        "absent_from_db_queries": 6,
+        "non_animal_negative_queries": 8,
+        "orange_cat_queries": 6
+      },
+      "baseline_ai3_4": {
+        "exact_image_rank1_accuracy": 0.8824,
+        "exact_image_rank1_hits": "30/34",
+        "reencoded_jpeg_rank1_accuracy": 0.8571,
+        "unfiltered_cross_species_error_rate": 1.0,
+        "unfiltered_cross_species_errors": "34/34",
+        "non_animal_fpr_unfiltered": 1.0,
+        "non_animal_fpr_with_species_filter": 1.0,
+        "non_animal_rejection_rate_unfiltered": 0.0,
+        "absent_pet_unfiltered_return_rate": 1.0,
+        "orange_cat_similar_precision_mean": 0.3667,
+        "orange_cat_queries_with_dog_intrusion": "6/6"
+      },
+      "ai4_0a": {
+        "exact_image_rank1_accuracy": 1.0,
+        "exact_image_rank1_hits": "34/34",
+        "reencoded_jpeg_rank1_accuracy": 1.0,
+        "near_duplicate_precision": 1.0,
+        "near_duplicate_recall_all_variants": 0.5,
+        "near_duplicate_resize_q70_recall": 1.0,
+        "near_duplicate_crop4_recall": 0.0,
+        "near_duplicate_false_positives": 0,
+        "unfiltered_cross_species_error_rate": 0.0,
+        "unfiltered_cross_species_errors": "0/34",
+        "species_filtered_cross_species_errors": 0,
+        "non_animal_fpr_unfiltered": 0.0,
+        "non_animal_fpr_with_species_filter": 0.0,
+        "non_animal_rejection_rate_unfiltered": 1.0,
+        "non_animal_rejection_rate_with_species_filter": 1.0,
+        "absent_pet_unfiltered_abstention_rate": 1.0,
+        "absent_pet_false_exact_or_neardup_claims": 0,
+        "orange_cat_similar_precision_mean": 1.0,
+        "orange_cat_queries_with_dog_intrusion": "0/6",
+        "latency_ms": {
+          "samples": 98,
+          "p50": 21.386,
+          "p95": 27.298
+        }
+      }
+    },
+    "combined_all": {
+      "split": "all",
+      "query_counts": {
+        "full_seeded_queries": 68,
+        "enrolled_queries": 56,
+        "near_duplicate_queries": 112,
+        "absent_from_db_queries": 12,
+        "non_animal_negative_queries": 16,
+        "orange_cat_queries": 11
+      },
+      "baseline_ai3_4": {
+        "exact_image_rank1_accuracy": 0.8676,
+        "exact_image_rank1_hits": "59/68",
+        "reencoded_jpeg_rank1_accuracy": 0.8571,
+        "unfiltered_cross_species_error_rate": 1.0,
+        "unfiltered_cross_species_errors": "68/68",
+        "non_animal_fpr_unfiltered": 1.0,
+        "non_animal_fpr_with_species_filter": 1.0,
+        "non_animal_rejection_rate_unfiltered": 0.0,
+        "absent_pet_unfiltered_return_rate": 1.0,
+        "orange_cat_similar_precision_mean": 0.3455,
+        "orange_cat_queries_with_dog_intrusion": "10/11"
+      },
+      "ai4_0a": {
+        "exact_image_rank1_accuracy": 1.0,
+        "exact_image_rank1_hits": "68/68",
+        "reencoded_jpeg_rank1_accuracy": 1.0,
+        "near_duplicate_precision": 1.0,
+        "near_duplicate_recall_all_variants": 0.5,
+        "near_duplicate_resize_q70_recall": 1.0,
+        "near_duplicate_crop4_recall": 0.0,
+        "near_duplicate_false_positives": 0,
+        "unfiltered_cross_species_error_rate": 0.0,
+        "unfiltered_cross_species_errors": "0/68",
+        "species_filtered_cross_species_errors": 0,
+        "non_animal_fpr_unfiltered": 0.0,
+        "non_animal_fpr_with_species_filter": 0.0,
+        "non_animal_rejection_rate_unfiltered": 1.0,
+        "non_animal_rejection_rate_with_species_filter": 1.0,
+        "absent_pet_unfiltered_abstention_rate": 1.0,
+        "absent_pet_false_exact_or_neardup_claims": 0,
+        "orange_cat_similar_precision_mean": 1.0,
+        "orange_cat_queries_with_dog_intrusion": "0/11",
+        "latency_ms": {
+          "samples": 196,
+          "p50": 21.373,
+          "p95": 46.405
+        }
+      }
+    }
+  },
+  "unevaluated_capabilities": [
+    {
+      "capability": "same_pet_multi_view_reidentification",
+      "status": "NOT_EVALUATED",
+      "reason": "Repository contains at most 1 synthetic image per pet record; resized/cropped variants only measure near-duplicate image invariance, never cross-pose individual recognition."
+    },
+    {
+      "capability": "automatic_unfiltered_species_classification_on_novel_photos",
+      "status": "NOT_SUPPORTED_IN_AI4_0A",
+      "reason": "No trained cat/dog classifier is bundled in AI-4.0a; novel photos without an exact/near-duplicate store photo match safely abstain unless the user selects an explicit species filter."
+    },
+    {
+      "capability": "natural_textured_non_animal_scenes_and_multi_pet_frames",
+      "status": "NOT_EVALUATED_AWAITING_OBJECT_DETECTOR",
+      "reason": "Flat/UI/document/graphic negatives are rejected via calibrated texture gating, but complex natural non-animal photos (e.g. fur-like rugs/foliage with manual species selected) and multi-pet frames require a trained local object detector in AI-4.0b/c."
+    },
+    {
+      "capability": "crop_shifted_near_duplicate_alignment",
+      "status": "CONSERVATIVELY_ABSTAINED_IN_AI4_0A",
+      "reason": "Global 8x8 perceptual hashes shift under >=4% spatial cropping and overlap with distinct centered studio cat portraits; AI-4.0a enforces a 100%-precision near-duplicate gate (0 false positives) and defers crop-invariant alignment to foreground embeddings in AI-4.0b/c."
+    }
+  ]
+}

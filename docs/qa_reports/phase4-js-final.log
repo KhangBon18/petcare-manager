@@ -1,0 +1,124 @@
+TAP version 13
+# Subtest: resetting lookup selection immediately recalculates the invoice total
+ok 1 - resetting lookup selection immediately recalculates the invoice total
+  ---
+  duration_ms: 43.927584
+  type: 'test'
+  ...
+# Subtest: aborts on the first keystroke and ignores an obsolete decoded response
+ok 2 - aborts on the first keystroke and ignores an obsolete decoded response
+  ---
+  duration_ms: 1.870792
+  type: 'test'
+  ...
+# Subtest: a result update refreshes totals and does not retain a stale estimate
+ok 3 - a result update refreshes totals and does not retain a stale estimate
+  ---
+  duration_ms: 0.720167
+  type: 'test'
+  ...
+# Subtest: rapid input produces one request with the latest query
+ok 4 - rapid input produces one request with the latest query
+  ---
+  duration_ms: 0.657042
+  type: 'test'
+  ...
+# Subtest: loading another page does not duplicate a restored selection
+ok 5 - loading another page does not duplicate a restored selection
+  ---
+  duration_ms: 1.204584
+  type: 'test'
+  ...
+# Subtest: cannot submit while lookup fields are disabled
+ok 6 - cannot submit while lookup fields are disabled
+  ---
+  duration_ms: 0.545375
+  type: 'test'
+  ...
+# Subtest: leaving the page cancels requests and scheduled searches
+ok 7 - leaving the page cancels requests and scheduled searches
+  ---
+  duration_ms: 0.790791
+  type: 'test'
+  ...
+# Subtest: server validation state survives initial invoice refresh
+ok 8 - server validation state survives initial invoice refresh
+  ---
+  duration_ms: 0.992375
+  type: 'test'
+  ...
+# Subtest: form autofocus chooses the first invalid field, and corrections clear its error
+ok 9 - form autofocus chooses the first invalid field, and corrections clear its error
+  ---
+  duration_ms: 1.010959
+  type: 'test'
+  ...
+# Subtest: POS increases products only to stock and allows one row for each pet
+ok 10 - POS increases products only to stock and allows one row for each pet
+  ---
+  duration_ms: 5.897834
+  type: 'test'
+  ...
+# Subtest: catalog search preserves the cart and aborts on a new keystroke
+ok 11 - catalog search preserves the cart and aborts on a new keystroke
+  ---
+  duration_ms: 1.942333
+  type: 'test'
+  ...
+# Subtest: quick customer locks duplicate submits, selects the saved customer and keeps the cart
+ok 12 - quick customer locks duplicate submits, selects the saved customer and keeps the cart
+  ---
+  duration_ms: 2.091166
+  type: 'test'
+  ...
+# Subtest: image/export POST locks only once and recovers on browser back
+ok 13 - image/export POST locks only once and recovers on browser back
+  ---
+  duration_ms: 2.419125
+  type: 'test'
+  ...
+# Subtest: assistant blocks duplicate requests and Escape restores focus without stealing it on reply
+ok 14 - assistant blocks duplicate requests and Escape restores focus without stealing it on reply
+  ---
+  duration_ms: 2.872417
+  type: 'test'
+  ...
+# Subtest: export polling exposes the download once ready and stops scheduling
+ok 15 - export polling exposes the download once ready and stops scheduling
+  ---
+  duration_ms: 1.452458
+  type: 'test'
+  ...
+# Subtest: assistant renders safe actionable catalog cards in local and AI replies
+ok 16 - assistant renders safe actionable catalog cards in local and AI replies
+  ---
+  duration_ms: 2.143292
+  type: 'test'
+  ...
+# Subtest: report export blocks duplicate clicks and unlocks after a failed network response
+ok 17 - report export blocks duplicate clicks and unlocks after a failed network response
+  ---
+  duration_ms: 1.924709
+  type: 'test'
+  ...
+# Subtest: photo suggestions discard stale replies and preserve manually entered attributes
+ok 18 - photo suggestions discard stale replies and preserve manually entered attributes
+  ---
+  duration_ms: 2.081583
+  type: 'test'
+  ...
+# Subtest: printing opens report details and restores their previous state afterwards
+ok 19 - printing opens report details and restores their previous state afterwards
+  ---
+  duration_ms: 1.240125
+  type: 'test'
+  ...
+1..19
+# tests 19
+# suites 0
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 129.487

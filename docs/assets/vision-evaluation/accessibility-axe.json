@@ -1,0 +1,132 @@
+{
+  "empty_form": {
+    "axe_version": "4.14.0",
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "nodes": [
+          {
+            "targets": [
+              ".button-primary > span"
+            ],
+            "checks": [
+              {
+                "message": "Element content contains only non-text characters",
+                "data": {
+                  "messageKey": "nonBmp"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "suggestions": {
+    "axe_version": "4.14.0",
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "nodes": [
+          {
+            "targets": [
+              ".button-primary > span[aria-hidden=\"true\"]"
+            ],
+            "checks": [
+              {
+                "message": "Element content contains only non-text characters",
+                "data": {
+                  "messageKey": "nonBmp"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "dismissed": {
+    "axe_version": "4.14.0",
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "nodes": [
+          {
+            "targets": [
+              ".button-primary > span"
+            ],
+            "checks": [
+              {
+                "message": "Element content contains only non-text characters",
+                "data": {
+                  "messageKey": "nonBmp"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "provider_error": {
+    "axe_version": "4.14.0",
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "nodes": [
+          {
+            "targets": [
+              ".button-primary > span"
+            ],
+            "checks": [
+              {
+                "message": "Element content contains only non-text characters",
+                "data": {
+                  "messageKey": "nonBmp"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "recovered": {
+    "axe_version": "4.14.0",
+    "violations": [],
+    "incomplete": [
+      {
+        "id": "color-contrast",
+        "impact": "serious",
+        "help": "Elements must meet minimum color contrast ratio thresholds",
+        "nodes": [
+          {
+            "targets": [
+              ".button-primary > span[aria-hidden=\"true\"]"
+            ],
+            "checks": [
+              {
+                "message": "Element content contains only non-text characters",
+                "data": {
+                  "messageKey": "nonBmp"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

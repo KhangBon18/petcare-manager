@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
+{% block title %}{{ t('Trợ lý AI') }}{% endblock %}
+
+{% block content %}
+<div
+  class="ai-workspace"
+  id="ai-workspace"
+  data-chat-url="{{ url_for('assistant.chat') }}"
+  data-reset-url="{{ url_for('assistant.reset') }}"
+  data-conversation-id="{{ initial_conversation_id }}"
+  data-initial-scope="{{ initial_scope }}"
+  data-initial-prompt="{{ initial_prompt }}"
+  data-request-timeout-ms="{{ (workspace_meta.provider.timeout_seconds * 1000) if workspace_meta.provider.active_mode == 'real_llm' else 20000 }}"
+  data-csrf-token="{{ csrf_token() }}"
+>
+  <header class="page-heading ai-workspace-header">
+    <div class="ai-workspace-title-block">
+      <h1>{{ t('Trợ lý AI') }}</h1>
+      <p>{{ 'Hỏi đáp tức thì về thú cưng, sản phẩm, kiến thức chăm sóc và số liệu cửa hàng.' if locale == 'vi' else 'Ask about pets, catalog products, care guidance, and live store operations.' }}</p>
+    </div>
+
+    <div class="ai-workspace-controls">
+      <div class="ai-scope-switcher" role="group" aria-label="{{ t('Phạm vi truy cập') }}">
+        <button
+          type="button"
+          class="ai-scope-btn {% if initial_scope != 'shopper_preview' %}is-active{% endif %}"
+          data-scope-value="workspace"
+          aria-pressed="{{ 'true' if initial_scope != 'shopper_preview' else 'false' }}"
+        >
+          {{ 'Cửa hàng' if locale == 'vi' else 'Store workspace' }}
+        </button>
+        <button
+          type="button"
+          class="ai-scope-btn {% if initial_scope == 'shopper_preview' %}is-active{% endif %}"
+          data-scope-value="shopper_preview"
+          aria-pressed="{{ 'true' if initial_scope == 'shopper_preview' else 'false' }}"
+        >
+          {{ 'Khách mua' if locale == 'vi' else 'Shopper mode' }}
+        </button>
+      </div>
+
+      <details class="ai-info-disclosure">
+        <summary class="button button-light button-small ai-info-summary">
+          <span class="ai-info-dot" aria-hidden="true"></span>
+          <span>{{ 'Chi tiết' if locale == 'vi' else 'Details' }}</span>
+        </summary>
+        <div class="ai-info-popover">
+          <div class="ai-info-badges">
+            <span
+              class="ai-engine-badge"
+              id="ai-engine-badge"
+              data-engine-state="{{ workspace_meta.provider.diagnostic_state }}"
+            >
+              {{ icon('sparkle') }}
+              <span id="ai-engine-badge-text">
+                {% if workspace_meta.provider.active_mode == 'real_llm' and workspace_meta.provider.tool_calling_enabled %}
+                  {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi trực tiếp) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (unverified until live reply) · MySQL Grounded' }}
+                {% elif workspace_meta.provider.active_mode == 'real_llm' %}
+                  {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (awaiting live reply) · MySQL Grounded' }}
+                {% else %}
+                  {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}
+                {% endif %}
+              </span>
+            </span>
+            <span class="ai-readonly-badge">{{ icon('check') }} {{ 'Chỉ đọc · An toàn theo cửa hàng' if locale == 'vi' else 'Read-only · Tenant isolated' }}</span>
+          </div>
+          <ul class="ai-guardrail-list">
+            <li>{{ t('Không suy đoán tính cách theo giống; thuộc tính chưa ghi nhận được báo rõ.') }}</li>
+            <li>{{ t('Giá bán, đơn giá quy đổi và tồn kho lấy trực tiếp từ MySQL cửa hàng hiện tại.') }}</li>
+            <li>{{ t('Kiến thức chăm sóc trích dẫn nguồn duyệt (WSAVA, AVMA, AAFP, ASPCA); không chẩn đoán hay kê đơn thuốc.') }}</li>
+            <li>{{ t('Chỉ đọc (Read-only): không tự lập hóa đơn, đặt đơn hàng hay sửa tồn kho khi chưa có người xác nhận.') }}</li>
+          </ul>
+          <p class="ai-info-scope-note">{{ 'Chế độ Khách mua tương ứng phạm vi Xem thử khách mua (QA): chỉ tra cứu thú cưng, sản phẩm đang bán và kiến thức chăm sóc.' if locale == 'vi' else 'Shopper mode scopes replies to available pets, active products, and reviewed pet-care knowledge.' }}</p>
+        </div>
+      </details>
+
+      <button type="button" class="button button-light button-small ai-reset-btn" id="ai-workspace-reset">
+        {{ icon('refresh') }} <span>{{ 'Mới' if locale == 'vi' else 'New chat' }}</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="panel ai-context-bar" id="ai-context-bar" aria-label="{{ t('Ngữ cảnh ưu tiên đang nhớ') }}">
+    <div class="ai-context-chips-wrap">
+      <strong class="ai-context-title">{{ t('Ngữ cảnh ưu tiên đang nhớ') }}:</strong>
+      <div class="ai-context-chips" id="ai-context-chips">
+        <span class="ai-context-empty" id="ai-context-empty">{{ t('Chưa có bộ lọc ưu tiên nào được ghim trong phiên này.') }}</span>
+      </div>
+    </div>
+    <div class="ai-context-actions">
+      <div class="ai-compare-tray" id="ai-compare-tray" hidden>
+        <span class="ai-compare-count" id="ai-compare-count">0</span>
+        <button type="button" class="button button-primary button-small" id="ai-compare-submit">
+          {{ t('So sánh các sản phẩm đã chọn') }}
+        </button>
+        <button type="button" class="button button-light button-small" id="ai-compare-clear">
+          {{ t('Bỏ chọn') }}
+        </button>
+      </div>
+      <button type="button" class="text-link ai-clear-slots-btn" id="ai-clear-slots" hidden>
+        {{ t('Xóa ngữ cảnh') }}
+      </button>
+    </div>
+  </section>
+
+  <div class="ai-workspace-grid">
+    <section class="panel ai-chat-panel" aria-label="{{ t('Trợ lý AI PetCare') }}">
+      <div class="ai-stream" id="ai-workspace-messages" role="log" aria-live="polite" aria-relevant="additions text">
+        <div class="ai-welcome-card" id="ai-welcome-panel">
+          <div class="ai-welcome-lead">
+            <span class="ai-welcome-icon" aria-hidden="true">{{ icon('sparkle') }}</span>
+            <div>
+              <h2>{{ 'Tôi có thể giúp gì cho cửa hàng hôm nay?' if locale == 'vi' else 'How can I help your store today?' }}</h2>
+              <p id="ai-scope-banner-copy">
+                {% if initial_scope == 'shopper_preview' %}
+                  {{ 'Chế độ khách mua: tra cứu thú cưng đang bán, sản phẩm phù hợp và hướng dẫn chăm sóc.' if locale == 'vi' else 'Shopper mode: browse available pets, product picks, and verified pet-care advice.' }}
+                {% else %}
+                  {{ 'Chọn một gợi ý nhanh bên dưới hoặc nhập câu hỏi bất kỳ để tra cứu theo dữ liệu thực.' if locale == 'vi' else 'Pick a quick suggestion below or ask anything grounded in live store records.' }}
+                {% endif %}
+              </p>
+            </div>
+          </div>
+
+          <div class="ai-prompt-groups">
+            {% for group in workspace_meta.prompt_categories %}
+            <section
+              class="ai-prompt-group"
+              {% if group.workspace_only %}data-workspace-only="true"{% endif %}
+              {% if group.workspace_only and initial_scope == 'shopper_preview' %}hidden{% endif %}
+              aria-label="{{ group.title }}"
+            >
+              <h3>{{ group.title }}</h3>
+              <div class="ai-prompt-list">
+                {% for prompt_text in group.prompts %}
+                <button type="button" class="ai-prompt-chip" data-ai-prompt="{{ prompt_text }}">
+                  <span>{{ prompt_text }}</span>
+                  <b aria-hidden="true">→</b>
+                </button>
+                {% endfor %}
+              </div>
+            </section>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <form class="ai-composer" id="ai-workspace-form" action="{{ url_for('assistant.chat') }}" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="visually-hidden" for="ai-workspace-input">{{ t('Câu hỏi cho trợ lý') }}</label>
+        <div class="ai-composer-row">
+          <textarea
+            id="ai-workspace-input"
+            name="message"
+            rows="2"
+            maxlength="1000"
+            placeholder="{{ t('Nhập câu hỏi tư vấn thú cưng, so sánh sản phẩm hoặc tra cứu doanh thu…') }}"
+            required
+          ></textarea>
+          <button type="submit" class="button button-primary ai-send-btn" id="ai-workspace-send">
+            {{ icon('send') }} <span>{{ t('Gửi') }}</span>
+          </button>
+        </div>
+        <div class="ai-composer-meta">
+          <small>{{ 'Enter để gửi · Shift+Enter xuống dòng' if locale == 'vi' else 'Enter to send · Shift+Enter for newline' }}</small>
+          <small class="ai-char-count" id="ai-char-count">0 / 1000</small>
+        </div>
+      </form>
+    </section>
+
+    <aside class="panel ai-side-rail" aria-label="{{ 'Lối tắt nhanh' if locale == 'vi' else 'Quick shortcuts' }}">
+      <div class="ai-rail-section ai-rail-links">
+        <h2>{{ 'Công cụ liên quan' if locale == 'vi' else 'Related tools' }}</h2>
+        <a class="ai-rail-link" href="{{ url_for('pets.find_similar') }}">
+          {{ icon('search') }}
+          <span>
+            <strong>{{ t('Tìm thú cưng bằng ảnh') }}</strong>
+            <small>{{ 'Đối chiếu trực quan cục bộ' if locale == 'vi' else 'Local visual matching' }}</small>
+          </span>
+        </a>
+        <a class="ai-rail-link" href="{{ url_for('pets.index') }}">
+          {{ icon('pets') }}
+          <span>
+            <strong>{{ t('Thú cưng') }}</strong>
+            <small>{{ 'Danh sách hồ sơ đang bán' if locale == 'vi' else 'Browse pet catalog' }}</small>
+          </span>
+        </a>
+        <a class="ai-rail-link" href="{{ url_for('products.index') }}">
+          {{ icon('products') }}
+          <span>
+            <strong>{{ t('Sản phẩm') }}</strong>
+            <small>{{ 'Tra cứu SKU & tồn kho' if locale == 'vi' else 'Inspect SKUs & stock' }}</small>
+          </span>
+        </a>
+        <a class="ai-rail-link" href="{{ url_for('invoices.create') }}">
+          {{ icon('invoice') }}
+          <span>
+            <strong>{{ t('Lập hóa đơn') }}</strong>
+            <small>{{ 'Bán hàng tại quầy POS' if locale == 'vi' else 'Point of sale checkout' }}</small>
+          </span>
+        </a>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/assistant_workspace.js') }}" defer></script>
+{% endblock %}

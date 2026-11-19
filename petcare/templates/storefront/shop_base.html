@@ -1,0 +1,108 @@
+{% from "partials/icons.html" import icon %}
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>{% block title %}{{ store.name }}{% endblock %} · PetCare Shop</title>
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront.css') }}">
+</head>
+<body class="sf-body">
+<a class="sf-skip-link" href="#sf-main-content">{{ 'Bỏ qua điều hướng' if locale == 'vi' else 'Skip to content' }}</a>
+
+<header class="sf-header">
+  <div class="sf-container sf-header-inner">
+    <a class="sf-brand" href="{{ url_for('storefront.home') }}">
+      <span class="sf-brand-mark">{{ icon('brand') }}</span>
+      <span class="sf-brand-copy">
+        <strong>{{ store.name }}</strong>
+        <small>{{ 'Cửa hàng thú cưng & phụ kiện' if locale == 'vi' else 'Pets & Essentials Boutique' }}</small>
+      </span>
+    </a>
+
+    <nav class="sf-nav" aria-label="{{ 'Điều hướng cửa hàng' if locale == 'vi' else 'Store navigation' }}">
+      <a href="{{ url_for('storefront.home') }}" {% if request.endpoint == 'storefront.home' %}aria-current="page"{% endif %}>{{ 'Trang chủ' if locale == 'vi' else 'Home' }}</a>
+      <a href="{{ url_for('storefront.products') }}" {% if request.endpoint in ('storefront.products', 'storefront.product_detail') %}aria-current="page"{% endif %}>{{ 'Sản phẩm' if locale == 'vi' else 'Products' }}</a>
+      <a href="{{ url_for('storefront.pets') }}" {% if request.endpoint in ('storefront.pets', 'storefront.pet_detail') %}aria-current="page"{% endif %}>{{ 'Thú cưng' if locale == 'vi' else 'Pets' }}</a>
+      <a href="{{ url_for('storefront.image_search') }}" {% if request.endpoint == 'storefront.image_search' %}aria-current="page"{% endif %}>{{ 'Tìm bằng ảnh' if locale == 'vi' else 'Image search' }}</a>
+      <a href="{{ url_for('storefront.ai_assistant') }}" {% if request.endpoint == 'storefront.ai_assistant' %}aria-current="page"{% endif %}>{{ 'Trợ lý mua sắm' if locale == 'vi' else 'AI Assistant' }}</a>
+    </nav>
+
+    <div class="sf-actions">
+      <form class="sf-lang-form" action="{{ url_for('storefront.set_language') }}" method="post" data-shop-lang-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+        {{ icon('globe') }}
+        <select name="locale" aria-label="{{ 'Ngôn ngữ cửa hàng' if locale == 'vi' else 'Shop language' }}" data-shop-lang>
+          {% for code, label in locale_labels.items() %}
+          <option value="{{ code }}" {% if locale == code %}selected{% endif %}>{{ code|upper }}</option>
+          {% endfor %}
+        </select>
+        <noscript><button type="submit">{{ 'Đổi' if locale == 'vi' else 'Go' }}</button></noscript>
+      </form>
+
+      <a class="sf-pill-btn" href="{{ url_for('storefront.cart') }}">
+        {{ icon('bag') }}
+        <span class="sf-pill-label">{{ 'Giỏ hàng' if locale == 'vi' else 'Cart' }}</span>
+        <span class="sf-cart-badge" id="sf-cart-count">{{ g.storefront_cart_count or 0 }}</span>
+      </a>
+
+      {% if g.customer %}
+      <a class="sf-pill-btn" href="{{ url_for('storefront.account') }}">
+        {{ icon('customers') }}
+        <span class="sf-pill-label">{{ g.customer.full_name }}</span>
+      </a>
+      {% else %}
+      <a class="sf-pill-btn" href="{{ url_for('storefront.customer_login') }}">
+        {{ icon('customers') }}
+        <span class="sf-pill-label">{{ 'Tài khoản' if locale == 'vi' else 'Account' }}</span>
+      </a>
+      {% endif %}
+    </div>
+  </div>
+</header>
+
+<main class="sf-main" id="sf-main-content" tabindex="-1">
+  <div class="sf-container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+      <div class="sf-flashes">
+        {% for category, message in messages %}
+        <div class="sf-flash sf-flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </div>
+</main>
+
+<footer class="sf-footer">
+  <div class="sf-container sf-footer-inner">
+    <div>
+      <strong>{{ store.name }}</strong> · {{ 'Thanh toán khi nhận hàng (COD) hoặc tại cửa hàng · Giá cập nhật trực tiếp' if locale == 'vi' else 'Cash on delivery or pay in-store · Live catalog pricing' }}
+    </div>
+    <div>
+      <a href="{{ url_for('storefront.order_lookup') }}">{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Track order' }}</a>
+      ·
+      <a href="{{ url_for('storefront.orders') if g.customer else url_for('storefront.customer_login') }}">{{ 'Đơn hàng của tôi' if locale == 'vi' else 'My orders' }}</a>
+      ·
+      <a href="{{ url_for('auth.login') }}">{{ 'Cổng nhân viên' if locale == 'vi' else 'Staff portal' }}</a>
+    </div>
+  </div>
+</footer>
+
+<nav class="sf-mobile-dock" aria-label="{{ 'Điều hướng nhanh' if locale == 'vi' else 'Mobile navigation' }}">
+  <a href="{{ url_for('storefront.home') }}" {% if request.endpoint == 'storefront.home' %}aria-current="page"{% endif %}>{{ icon('store') }}<span>{{ 'Trang chủ' if locale == 'vi' else 'Home' }}</span></a>
+  <a href="{{ url_for('storefront.products') }}" {% if request.endpoint in ('storefront.products', 'storefront.product_detail') %}aria-current="page"{% endif %}>{{ icon('products') }}<span>{{ 'Sản phẩm' if locale == 'vi' else 'Shop' }}</span></a>
+  <a href="{{ url_for('storefront.pets') }}" {% if request.endpoint in ('storefront.pets', 'storefront.pet_detail') %}aria-current="page"{% endif %}>{{ icon('pets') }}<span>{{ 'Thú cưng' if locale == 'vi' else 'Pets' }}</span></a>
+  <a href="{{ url_for('storefront.image_search') }}" {% if request.endpoint == 'storefront.image_search' %}aria-current="page"{% endif %}>{{ icon('camera') }}<span>{{ 'Tìm ảnh' if locale == 'vi' else 'Vision' }}</span></a>
+  <a href="{{ url_for('storefront.ai_assistant') }}" {% if request.endpoint == 'storefront.ai_assistant' %}aria-current="page"{% endif %}>{{ icon('sparkle') }}<span>{{ 'Trợ lý' if locale == 'vi' else 'AI' }}</span></a>
+</nav>
+
+<script defer src="{{ url_for('static', filename='js/storefront.js') }}"></script>
+</body>
+</html>

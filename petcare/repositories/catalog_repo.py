@@ -1,94 +1,92 @@
-"""Repository xử lý dữ liệu bảng services (Danh mục dịch vụ)."""
+"""Whitelisted SQL filters search the full tenant catalog before applying a display limit."""
 
-from datetime import datetime
-import sqlite3
-from typing import Any
+from petcare.repositories.base import fetch_all, fetch_one
 
 
-class CatalogRepository:
-    """Truy vấn SQL có tham số cho dịch vụ. Nhận kết nối conn, không tự kết thúc transaction."""
+def _like(value):
+    return "%" + value.replace("=", "==").replace("%", "=%").replace("_", "=_") + "%"
 
-    @staticmethod
-    def create(conn: sqlite3.Connection, name: str, category: str, price_vnd: int) -> int:
-        now_str = datetime.now().isoformat()
-        cursor = conn.execute(
-            """
-            INSERT INTO services (name, category, price_vnd, active, created_at)
-            VALUES (?, ?, ?, 1, ?)
-            """,
-            (name.strip(), category.strip(), int(price_vnd), now_str),
+
+def search(connection, kind, spec, limit=12):
+    if kind not in {"pet", "product"}:
+        raise ValueError("Unsupported catalog")
+    pet = kind == "pet"
+    table, price = ("pets", "sale_price") if pet else ("products", "unit_price")
+    where = [
+        "tenant_id = @petcare_tenant_id",
+        "sale_status = 'available'" if pet else "active = 1",
+    ]
+    params = []
+    fields = (
+        (
+            "code",
+            "name",
+            "breed",
+            "species",
+            "coat_color",
+            "eye_color",
+            "appearance_tags",
         )
-        return cursor.lastrowid
-
-    @staticmethod
-    def get_by_id(conn: sqlite3.Connection, service_id: int) -> dict[str, Any] | None:
-        row = conn.execute(
-            "SELECT * FROM services WHERE id = ?",
-            (service_id,),
-        ).fetchone()
-        return dict(row) if row else None
-
-    @staticmethod
-    def get_by_name(conn: sqlite3.Connection, name: str) -> dict[str, Any] | None:
-        row = conn.execute(
-            "SELECT * FROM services WHERE name = ?",
-            (name.strip(),),
-        ).fetchone()
-        return dict(row) if row else None
-
-    @staticmethod
-    def update(
-        conn: sqlite3.Connection,
-        service_id: int,
-        name: str,
-        category: str,
-        price_vnd: int,
-        active: int = 1,
-    ) -> bool:
-        cursor = conn.execute(
-            """
-            UPDATE services
-            SET name = ?, category = ?, price_vnd = ?, active = ?
-            WHERE id = ?
-            """,
-            (name.strip(), category.strip(), int(price_vnd), active, service_id),
+        if pet
+        else ("code", "name", "category")
+    )
+    if pet:
+        species = spec.get("species")
+        if species:
+            aliases = (
+                ("mèo", "cat", "feline")
+                if species == "cat"
+                else ("chó", "dog", "canine")
+            )
+            where.append(
+                "("
+                + " OR ".join(
+                    "species COLLATE utf8mb4_0900_ai_ci LIKE %s ESCAPE '='"
+                    for _ in aliases
+                )
+                + ")"
+            )
+            params.extend(_like(alias) for alias in aliases)
+        if spec.get("sex"):
+            where.append("sex = %s")
+            params.append(spec["sex"])
+        for field, key in (("coat_color", "coat_colors"), ("eye_color", "eye_colors")):
+            for aliases in spec.get(key, []):
+                where.append(
+                    "("
+                    + " OR ".join(
+                        field + " COLLATE utf8mb4_0900_ai_ci LIKE %s ESCAPE '='"
+                        for _ in aliases
+                    )
+                    + ")"
+                )
+                params.extend(_like(alias) for alias in aliases)
+    elif spec.get("low_stock"):
+        where.append("stock_qty <= reorder_level")
+    for constraint in spec.get("prices", []):
+        if constraint.minimum is not None:
+            where.append(price + (" >= %s" if constraint.include_minimum else " > %s"))
+            params.append(constraint.minimum)
+        if constraint.maximum is not None:
+            where.append(price + (" <= %s" if constraint.include_maximum else " < %s"))
+            params.append(constraint.maximum)
+    for term in spec.get("terms", []):
+        where.append(
+            "("
+            + " OR ".join(
+                field + " COLLATE utf8mb4_0900_ai_ci LIKE %s ESCAPE '='"
+                for field in fields
+            )
+            + ")"
         )
-        return cursor.rowcount > 0
-
-    @staticmethod
-    def search(
-        conn: sqlite3.Connection,
-        keyword: str = "",
-        category: str = "",
-        active_only: bool = True,
-    ) -> list[dict[str, Any]]:
-        query = "SELECT * FROM services WHERE 1=1"
-        params: list[Any] = []
-
-        if active_only:
-            query += " AND active = 1"
-
-        if category and category.strip():
-            query += " AND category = ?"
-            params.append(category.strip())
-
-        if keyword and keyword.strip():
-            kw = f"%{keyword.strip()}%"
-            query += " AND (name LIKE ? OR category LIKE ?)"
-            params.extend([kw, kw])
-
-        query += " ORDER BY id ASC"
-        rows = conn.execute(query, params).fetchall()
-        return [dict(r) for r in rows]
-
-    @staticmethod
-    def list_all(conn: sqlite3.Connection, active_only: bool = True) -> list[dict[str, Any]]:
-        return CatalogRepository.search(conn, keyword="", category="", active_only=active_only)
-
-    @staticmethod
-    def deactivate(conn: sqlite3.Connection, service_id: int) -> bool:
-        cursor = conn.execute(
-            "UPDATE services SET active = 0 WHERE id = ?",
-            (service_id,),
-        )
-        return cursor.rowcount > 0
+        params.extend(_like(term) for _ in fields)
+    clause = " AND ".join(where)
+    # B608 reviewed: table/columns/operators are closed code constants; every
+    # user value is bound separately. Regression tests exercise hostile values.
+    count_sql = "SELECT COUNT(*) total FROM " + table + " WHERE " + clause  # nosec B608
+    rows_sql = (
+        "SELECT * FROM " + table + " WHERE " + clause + " ORDER BY name, id LIMIT %s"  # nosec B608
+    )
+    total = fetch_one(connection, count_sql, tuple(params))["total"]
+    rows = fetch_all(connection, rows_sql, (*params, limit))
+    return total, rows

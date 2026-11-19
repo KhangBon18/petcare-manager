@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "dataset_id": "petcare-vision-synthetic-mechanics",
+  "version": "1.0.0",
+  "image_root": "..",
+  "evaluation_category": "mock_integration_mechanics_only",
+  "description": "Synthetic constructed illustrations for exercising scoring and data flow, not measuring model recognition quality.",
+  "annotation_policy": "Labels are verified against the constructed illustration. They describe only species and coat color encoded by the synthetic fixture. No human/pet population inference is valid.",
+  "supported_attribute_fields": [
+    "species",
+    "breed",
+    "coat_color",
+    "eye_color",
+    "appearance_tags",
+    "coat_pattern",
+    "coat_length",
+    "size",
+    "shape"
+  ],
+  "ground_truth_semantics": {
+    "omitted_field": "not annotated; excluded from that field's denominator",
+    "null": "annotated as unknown or not visually supported; a model should abstain",
+    "string": "independently documented expected value; exact normalized string match only"
+  },
+  "samples": [
+    {
+      "sample_id": "synthetic-cat-black-001",
+      "image_reference": "synthetic-cat-black.png",
+      "approved_usage_status": "synthetic_test_only",
+      "ground_truth_source": "verified_construction",
+      "ground_truth_source_note": "Constructed synthetic illustration; fixture manifest labels cat and black coat.",
+      "supported_fields": ["species", "coat_color"],
+      "ground_truth": {"species": "cat", "coat_color": "black"},
+      "split": "mechanics_only",
+      "scenario": "clear_supported_synthetic",
+      "evaluation_eligible": true
+    },
+    {
+      "sample_id": "synthetic-dog-brown-001",
+      "image_reference": "synthetic-dog-brown.webp",
+      "approved_usage_status": "synthetic_test_only",
+      "ground_truth_source": "verified_construction",
+      "ground_truth_source_note": "Constructed synthetic illustration; fixture manifest labels dog and brown coat.",
+      "supported_fields": ["species", "coat_color"],
+      "ground_truth": {"species": "dog", "coat_color": "brown"},
+      "split": "mechanics_only",
+      "scenario": "clear_supported_synthetic",
+      "evaluation_eligible": true
+    }
+  ],
+  "coverage_requirements": [
+    {"scenario": "clear_supported_examples", "status": "synthetic_mechanics_only", "counts_as_model_quality": false},
+    {"scenario": "ambiguous_appearance", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false},
+    {"scenario": "poor_lighting", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false},
+    {"scenario": "occlusion", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false},
+    {"scenario": "multiple_animals", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false},
+    {"scenario": "non_pet_images", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false},
+    {"scenario": "unsupported_input_format_or_corrupt_image", "status": "covered_by_processing_tests_only", "references": ["unsupported.gif", "corrupted.png", "empty.bin", "oversized.png"], "counts_as_model_quality": false},
+    {"scenario": "missing_visual_evidence_expected_abstention", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false},
+    {"scenario": "conflicting_attributes", "status": "awaiting_authorized_media_and_independent_labels", "counts_as_model_quality": false}
+  ],
+  "real_model_accuracy": "NOT_MEASURED"
+}

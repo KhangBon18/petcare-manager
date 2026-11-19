@@ -1,1 +1,1 @@
-"""SQL có tham số, nhận kết nối từ service; chưa triển khai."""
+"""Parameterized MySQL repositories called by service-layer transactions."""

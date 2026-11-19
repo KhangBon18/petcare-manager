@@ -1,0 +1,57 @@
+{
+  "purpose": "Synthetic integration fixtures for the existing pet profile appearance-suggestion workflow.",
+  "limitations": "Illustrations and labels are synthetic test inputs for deterministic validation/mock integration only; they do not measure or establish real model recognition accuracy.",
+  "valid_images": [
+    {
+      "file": "synthetic-cat-black.png",
+      "format": "PNG",
+      "mock_observation": {
+        "species": "cat",
+        "coat_color": "black"
+      }
+    },
+    {
+      "file": "synthetic-dog-brown.webp",
+      "format": "WEBP",
+      "mock_observation": {
+        "species": "dog",
+        "coat_color": "brown"
+      }
+    }
+  ],
+  "validation_cases": [
+    {
+      "file": "unsupported.gif",
+      "expected": "reject unsupported actual content format"
+    },
+    {
+      "file": "corrupted.png",
+      "expected": "reject corrupt content"
+    },
+    {
+      "file": "empty.bin",
+      "expected": "reject empty upload"
+    },
+    {
+      "file": "oversized.png",
+      "expected": "reject decoded dimensions above MAX_PIXELS"
+    },
+    {
+      "file": "extension-mismatch.jpg",
+      "expected": "accept only after detecting PNG content and re-encoding; filename is never used as a storage path"
+    },
+    {
+      "case": "invalid-mime",
+      "expected": "server trusts decoded image format, not the client Content-Type declaration"
+    }
+  ],
+  "integration_scenarios": [
+    "unauthorized staff role",
+    "tenant-scoped saved photo access",
+    "concurrent image processing slot",
+    "mock provider timeout/503",
+    "malformed model output",
+    "ambiguous model output",
+    "retry after provider failure"
+  ]
+}

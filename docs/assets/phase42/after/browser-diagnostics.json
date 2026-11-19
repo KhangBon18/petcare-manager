@@ -1,0 +1,58 @@
+[
+  {
+    "test": "test_browser_smoke.BrowserSmokeTests.test_admin_navigation_modules_responsive_pos_and_accessibility",
+    "console_errors": [],
+    "page_errors": [],
+    "failed_requests": [],
+    "http_errors": [],
+    "refund_posts": 0
+  },
+  {
+    "test": "test_browser_smoke.BrowserSmokeTests.test_browser_refund_confirmation_validation_idempotency_and_persistence",
+    "console_errors": [],
+    "page_errors": [],
+    "failed_requests": [],
+    "http_errors": [],
+    "refund_posts": 6
+  },
+  {
+    "test": "test_browser_smoke.BrowserSmokeTests.test_customer_pet_workflow_and_responsive_navigation",
+    "console_errors": [],
+    "page_errors": [],
+    "failed_requests": [],
+    "http_errors": [],
+    "refund_posts": 0
+  },
+  {
+    "test": "test_browser_smoke.BrowserSmokeTests.test_product_inventory_to_pos_checkout_workflow",
+    "console_errors": [],
+    "page_errors": [],
+    "failed_requests": [],
+    "http_errors": [],
+    "refund_posts": 0
+  },
+  {
+    "test": "test_browser_smoke.BrowserSmokeTests.test_staff_can_deactivate_and_reactivate_customer",
+    "console_errors": [],
+    "page_errors": [],
+    "failed_requests": [],
+    "http_errors": [],
+    "refund_posts": 0
+  },
+  {
+    "test": "test_browser_smoke.BrowserSmokeTests.test_staff_role_restriction_and_allowed_customer_access",
+    "console_errors": [
+      "Failed to load resource: the server responded with a status of 403 (FORBIDDEN)"
+    ],
+    "page_errors": [],
+    "failed_requests": [],
+    "http_errors": [
+      {
+        "method": "GET",
+        "path": "/users/",
+        "status": 403
+      }
+    ],
+    "refund_posts": 0
+  }
+]

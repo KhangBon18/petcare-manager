@@ -1,0 +1,24 @@
+{% extends "storefront/shop_base.html" %}
+{% block title %}{{ 'Đăng nhập khách hàng' if locale == 'vi' else 'Customer login' }}{% endblock %}
+
+{% block content %}
+<div class="sf-auth-card">
+  <h1>{{ 'Đăng nhập mua sắm' if locale == 'vi' else 'Sign in' }}</h1>
+  <p>{{ 'Theo dõi đơn hàng và lưu sẵn thông tin giao nhận.' if locale == 'vi' else 'Track your orders and save delivery contacts.' }}</p>
+  <form class="sf-form-stack" method="post" action="{{ url_for('storefront.customer_login') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="sf-field">
+      <label for="cust-email">Email</label>
+      <input id="cust-email" name="email" type="email" required autocomplete="email">
+    </div>
+    <div class="sf-field">
+      <label for="cust-pw">{{ 'Mật khẩu' if locale == 'vi' else 'Password' }}</label>
+      <input id="cust-pw" name="password" type="password" required autocomplete="current-password">
+    </div>
+    <button class="sf-btn sf-btn-primary" type="submit">{{ 'Đăng nhập' if locale == 'vi' else 'Sign in' }}</button>
+  </form>
+  <p>{{ 'Chưa có tài khoản?' if locale == 'vi' else 'New shopper?' }} <a href="{{ url_for('storefront.register') }}">{{ 'Đăng ký miễn phí' if locale == 'vi' else 'Create account' }}</a></p>
+  <p><a href="{{ url_for('storefront.order_lookup') }}">{{ 'Hoặc tra cứu đơn khách không cần đăng nhập' if locale == 'vi' else 'Or track a guest order' }}</a></p>
+</div>
+{% endblock %}
+

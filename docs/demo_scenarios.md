@@ -1,98 +1,40 @@
-# Kịch bản Dùng thử & Báo cáo Demo (demo_scenarios.md)
+# Demo nhanh — cửa hàng thú cưng
 
-Tài liệu này cung cấp kịch bản demo mẫu từng bước giúp 4 thành viên (Khang, Quân, Quý, Nhàn) tự tin trình diễn và bảo vệ đồ án trước giảng viên.
+Kịch bản bảo vệ ngắn và lệnh tổng duyệt mới nhất: [DEMO_SCRIPT.md](../DEMO_SCRIPT.md). Ma trận nghiệm thu: [Phase 4](phase4_acceptance.md). Các tình huống bên dưới dùng để tham khảo chi tiết.
 
----
 
-## 1. Chuẩn bị Trước Buổi Báo cáo
+## Chuẩn bị trước buổi bảo vệ
 
-Mở terminal tại thư mục dự án và khởi động ứng dụng:
-```bash
-# macOS
-.venv/bin/python main.py
+Dùng database local có hậu tố `_dev`/`_test`; schema hiện có **20 bảng**. Với database mới, chạy initialize một lần. Trước mỗi buổi demo, kích hoạt venv rồi chạy:
 
-# Windows PowerShell
-.venv\Scripts\python.exe main.py
+```sh
+python -m petcare.database.seed
+python run.py
 ```
 
-Tài khoản sử dụng:
-- **Admin**: `admin` / `Admin@123`
-- **Nhân viên**: `staff1` / `Staff@123`
+Mở URL local, đăng nhập store `main` bằng tài khoản demo đã được cấu hình riêng (admin hoặc staff). Seed giữ mật khẩu đã đổi, dữ liệu đã chỉnh sửa và ảnh hợp lệ; bổ sung hồ sơ/ảnh còn thiếu. Chỉ đúng các hóa đơn có marker demo được đưa về mốc ngày tương đối; hóa đơn đã hủy không mở lại và hóa đơn đã thanh toán không trừ tồn lần nữa. Seed không khôi phục thú cưng đã bán từ lần demo trước. Không ghi giá trị mật khẩu vào tài liệu.
 
----
+Bộ seed chuẩn: **12 khách, 22 sản phẩm, 74 thú cưng (35 chó, 37 mèo, 1 thỏ, 1 hamster), 68 ảnh, 7 hóa đơn demo**. Dev sau Phase 2 có 14 khách vì giữ thêm hồ sơ cũ; các số lượng còn lại khớp bộ chuẩn. Không có ảnh sản phẩm seed sẵn: thẻ có biểu tượng thay thế hoặc ảnh do admin tải lên. Hồ sơ và ảnh là dữ liệu hư cấu, không chạy seed trên database thật.
 
-## 2. Kịch bản Trình diễn 4 Phân cảnh
+## Kịch bản 5–7 phút
 
-### Phân cảnh 1: Đăng nhập, An toàn Mật khẩu & Phân quyền (Khang trình bày)
-1. Mở màn hình đăng nhập, cố tình nhập sai mật khẩu để giảng viên thấy hệ thống báo lỗi rõ ràng.
-2. Đăng nhập tài khoản `admin` / `Admin@123`.
-3. Giải thích:
-   - Mật khẩu được băm bằng PBKDF2-HMAC-SHA256, 100.000 vòng lặp kèm salt ngẫu nhiên, hoàn toàn không lưu plaintext trong SQLite.
-   - Khi ở tài khoản Admin, thanh điều hướng bên trái hiển thị đầy đủ mục **"👥 Quản lý Tài khoản"** và **"⚙️ Bảng giá"** cho phép thêm/sửa dịch vụ và đổi giá.
-4. Đăng xuất, đăng nhập lại bằng tài khoản `staff1` / `Staff@123`.
-   - Mục Tài khoản tự động ẩn khỏi menu điều hướng.
-   - Vào mục Bảng giá: Nút thêm/sửa giá bị ẩn; nếu nhân viên cố tình gọi code nghiệp vụ bên dưới cũng sẽ bị chặn tại Service layer (`PermissionError`).
+1. **Tổng quan:** chỉ doanh thu hôm nay và khối 7 ngày qua; mở báo cáo từ dashboard. Ngày giao dịch luôn tương đối với lần chạy seed mới nhất.
+2. **Danh mục:** mở Sản phẩm để xem mã/giá/tồn/ngưỡng nhập; mở Thú cưng để xem ảnh, bộ lọc và từng cá thể.
+3. **POS:** Hóa đơn → Lập hóa đơn. Bên trái tìm `FOOD-001`, bấm thẻ hai lần; tìm `ACC-001`, thêm một; chuyển bộ lọc Thú cưng và chọn Miu `PET-001` nếu còn sẵn sàng. Thú cưng chỉ có số lượng 1; tổng theo giá seed mới là 2.250.000 VND. Nếu hồ sơ/giá đã được chỉnh sửa, đối chiếu giá đang hiển thị thay vì giả định số mẫu.
+4. **Khách mới:** bấm **+ Thêm nhanh**, nhập khách hư cấu/số điện thoại hợp lệ và lưu. Khách được chọn ngay; mặt hàng, số lượng và tổng tiền vẫn giữ. Có thể đóng bằng Esc và tiếp tục đơn.
+5. **Tạo & thu tiền:** ghi nhận tồn hiện tại, tạo hóa đơn unpaid (chưa trừ kho), rồi thanh toán. Tồn giảm đúng; thú cưng được gắn người mua. Gửi lại thanh toán không ghi doanh thu lần hai. Khi demo lặp, chọn cá thể còn sẵn sàng khác hoặc dùng database test riêng; không reset dữ liệu dev để bán lại Miu.
+6. **Trợ lý:** hỏi “Hôm nay còn mèo nào?”, “Tìm mèo lông trắng dưới 3 triệu”, “Sản phẩm nào sắp hết?” và “Doanh thu hôm nay là bao nhiêu?”. Enter gửi, Esc đóng; chế độ local truy vấn MySQL không cần API key.
+7. **Tìm bằng ảnh:** chọn một ảnh hồ sơ trong 68 ảnh mẫu hoặc camera nếu được cấp quyền. Chờ trạng thái xử lý; kết quả là xếp hạng màu/bố cục tham khảo, chưa phải nhận diện vật thể bằng mô hình.
 
----
+AI tạo sinh/Vision trực tuyến chỉ hoạt động khi cấu hình endpoint phù hợp; `AI_VISION_ENABLED=1` chỉ dùng với endpoint hỗ trợ vision. Chưa cấu hình API vẫn demo được trợ lý local và xếp hạng ảnh. Xuất dữ liệu dùng worker có sẵn của dự án; UI hiển thị trạng thái chờ/đang xử lý/hoàn tất rõ ràng.
 
-### Phân cảnh 2: Tiếp nhận Khách hàng Lan & Thú cưng Miu (Quân trình bày)
-1. Nhấn vào mục **"🐾 Chủ nuôi"**:
-   - Thao tác tìm kiếm nhanh theo tên hoặc số điện thoại.
-   - Nhấn **"+ Thêm chủ nuôi"**: Nhập chị `Nguyễn Thị Lan`, SĐT `0901234567`, Địa chỉ `123 Nguyễn Huệ, Quận 1`.
-2. Nhấn nút **"Xem thú cưng của chủ"** hoặc chuyển sang tab **"🐶 Thú cưng"**:
-   - Nhấn **"+ Thêm thú cưng"**: Chọn chủ là chị Lan, tên `Miu`, loài `Mèo`, giống `Mèo Anh lông ngắn`, giới tính `Cái`, cân nặng `3.5` kg, ngày sinh `2024-03-15`.
-   - Thử nghiệm ngoại lệ: Nếu nhập cân nặng âm hoặc ngày sinh tương lai, hệ thống từ chối ngay.
-3. Nhấp đúp vào Miu để mở **"Hồ sơ tổng hợp (PetProfileView)"**:
-   - Hiển thị đầy đủ thông tin cá nhân và 4 tab lịch sử (hiện tại chưa có ca khám nào).
 
----
+## Điểm nhấn Phase 3 (thêm 3–4 phút)
 
-### Phân cảnh 3: Khám bệnh, Tiêm phòng & Lịch hẹn (Quý trình bày)
-1. Nhấn vào mục **"📅 Lịch hẹn"**:
-   - Nhấn **"+ Đặt lịch hẹn mới"**: Chọn Miu, loại dịch vụ `Khám tổng quát & Tiêm phòng`.
-   - Nhấn mạnh với thầy cô: *Lịch hẹn này chỉ lưu thời gian dự kiến tiếp đón, hoàn toàn không phát sinh chi phí hay tạo lượt dịch vụ trước*.
-2. Nhấn vào mục **"🩺 Khám bệnh"**:
-   - Nhấn **"+ Ghi nhận ca khám mới"**: Chọn Miu, gói dịch vụ `Khám bệnh tổng quát` (150.000 đ), triệu chứng `Hắt hơi nhẹ`, chẩn đoán `Viêm đường hô hấp trên`, kê đơn `Thuốc nhỏ mũi và men vi sinh`.
-   - Nhấn Lưu: Giải thích kiến trúc giao dịch kép — Hệ thống vừa tạo bệnh án vừa tự động tạo 1 bản ghi `service_visits` với giá 150.000 đ trong cùng 1 transaction.
-3. Nhấn vào mục **"💉 Tiêm phòng"**:
-   - Nhấn **"+ Ghi nhận mũi tiêm mới"**: Chọn Miu, gói `Tiêm vaccine Dại` (180.000 đ), tên vaccine `Rabisin`, ngày hẹn tiêm nhắc lại sau 1 năm.
-   - Chỉ cho thầy cô thấy bảng **"Lịch nhắc tiêm phòng đến hạn"** đã ghi nhận và có nút Đánh dấu đã xử lý nhắc nhở.
-4. Nhấn vào mục **"📋 Lượt dịch vụ"**:
-   - Nhấn **"+ Ghi nhận dịch vụ Chăm sóc / Spa"**: Chọn Miu làm thêm dịch vụ `Tắm vệ sinh & Cắt tỉa lông` (200.000 đ).
-   - Danh sách lượt dịch vụ hiển thị rõ 3 lượt của Miu đang ở trạng thái **"Chưa tính tiền"**.
-
----
-
-### Phân cảnh 4: Lập Hóa đơn, Thanh toán & Thống kê Doanh thu (Nhàn trình bày)
-1. Nhấn vào mục **"💳 Hóa đơn"**:
-   - Nhấn **"+ Lập hóa đơn mới"**: Chọn khách hàng `Nguyễn Thị Lan`.
-   - Bảng bên dưới tự động nạp chính xác 3 lượt chưa tính tiền của Miu (150k + 180k + 200k).
-   - Nhấn **"Tạo hóa đơn"**: Tổng tiền được tính đúng là `530.000 đ`, trạng thái `unpaid`.
-   - Kiểm tra lại danh sách lượt chưa tính tiền của chị Lan: Đã trở về 0.
-2. Thử nghiệm tính toàn vẹn:
-   - Thử cố tình tạo hóa đơn lần 2 với các lượt này -> Bị chặn với lỗi `Lượt dịch vụ đã được lập hóa đơn trước đó`.
-3. Thực hiện thanh toán trực tiếp:
-   - Chọn hóa đơn của chị Lan, nhấn **"Thanh toán trực tiếp"** -> Xác nhận thu tiền tại quầy.
-   - Hóa đơn chuyển sang trạng thái `paid`, lưu thời gian thanh toán `paid_at`.
-   - Nhấn Thanh toán lại -> Báo `Hóa đơn đã được thanh toán trước đó`, không cộng dồn tiền.
-   - Nhấn Hủy hóa đơn -> Hệ thống từ chối vì hóa đơn `paid` là bất biến.
-4. Nhấn vào mục **"📊 Thống kê"**:
-   - Chọn xem báo cáo hôm nay.
-   - Thầy cô đối chiếu số liệu:
-     - Doanh thu thực thu khớp đúng số tiền các đơn đã thanh toán.
-     - Lượt khám bệnh tăng thêm 1.
-     - Số thú cưng tiêm phòng ghi nhận mèo Miu.
-     - Top dịch vụ phổ biến xếp hạng đúng các dịch vụ vừa thanh toán.
-
----
-
-## 3. Câu hỏi Phản biện Thường gặp & Cách Trả lời
-
-**Q1: Tại sao không gộp bảng examinations và vaccinations vào bảng service_visits?**
-> *Trả lời*: Bảng `service_visits` đóng vai trò là bảng dòng chi phí chung (ledger) cho mọi hoạt động có thu phí (khám, tiêm, tắm spa, siêu âm). `examinations` lưu đặc thù y khoa (triệu chứng, chẩn đoán, thuốc), còn `vaccinations` lưu đặc thù tiêm chủng (tên vaccine, hạn nhắc lại). Tách riêng giúp dữ liệu chuẩn hóa, quan hệ 1-1 qua `visit_id UNIQUE` vừa đảm bảo tính module hóa vừa bảo đảm tính toàn vẹn.
-
-**Q2: Nếu cửa hàng đổi giá dịch vụ thì các hóa đơn trong quá khứ có bị sai không?**
-> *Trả lời*: Không bị sai. Khi tạo lượt dịch vụ, giá tại thời điểm đó được snapshot cố định vào `service_visits.unit_price_vnd`. Khi lập hóa đơn, giá và tên dịch vụ lại được snapshot vào `invoice_items`. Việc đổi giá trong danh mục `services` chỉ áp dụng cho các lượt dịch vụ phát sinh sau này.
-
-**Q3: Cơ sở dữ liệu có bị mất khi tắt ứng dụng không?**
-> *Trả lời*: Dữ liệu được lưu trữ thật trên ổ đĩa tại file `data/petcare.db` theo chuẩn SQLite ACID. Mọi giao dịch đều được commit và mở lại ứng dụng vẫn đọc đầy đủ 100%.
+- Trợ lý: hỏi “Tìm mèo Mây dưới 3 triệu”, kiểm tra card có ảnh/giá, bấm **Mở hồ sơ**. Hỏi “Hôm nay còn mèo nào?” để đối chiếu tổng từ toàn danh mục.
+- Dashboard: xem biểu đồ 7 ngày, tăng/giảm kỳ trước và bản tin Python. Mở gợi ý nhập lại; mặt hàng chưa bán có fallback theo ngưỡng.
+- Sản phẩm: tìm `FOOD-003`, mở hồ sơ để xem số lượng đã bán 14/30 ngày, tốc độ, ngày tồn và công thức. Số liệu phụ thuộc các giao dịch đang có.
+- Báo cáo: chọn 7 ngày, mở bảng ngày/chi tiết, tải Excel và đối chiếu tổng giữa các sheet với màn hình; chọn **In / Lưu PDF** để xem bản gọn, có cả chi tiết.
+- Thú cưng: vào form thêm, nhập tay loài trước rồi chọn ảnh mẫu; áp dụng gợi ý và xác nhận loài đã nhập không đổi. Hủy form sau demo nếu không muốn lưu hồ sơ thử.
+- Tìm ảnh: chọn `assets/demo/pets/may-calico.png`, lọc Mèo/Đang bán, xem điểm màu/cấu trúc/thuộc tính và nhãn lý do. Có thể dùng trạng thái khác để đối chiếu lịch sử.
+- Không cần API key để demo local; LLM/Vision trực tuyến chỉ hoạt động khi có endpoint/model phù hợp. Các ca provider lỗi đã có regression fallback.
