@@ -1,5 +1,13 @@
 # Nhật ký thay đổi
 
+## v2.0.0 (Đề xuất) — Storefront, Redesign Option A, AI Vision 4.0 & Release Readiness — 2026-11-19
+
+- **PR #3 (AI Vision 4.0)**: Pipeline thị giác cục bộ `yolox_nano.onnx` + `mobilenetv2-12.onnx` + `mobilenetv2-12-features.onnx` (`1280`-D + CIE-Lab), kho tối đa 5 ảnh tham chiếu (`pet_reference_photos`), chỉ mục LSH và ranh giới trung thực không nhận dạng danh tính chéo góc chụp.
+- **PR #4 (Option A UI/UX Redesign)**: Giao diện Precision Cloud SaaS Light đồng bộ trên toàn bộ workspace quản trị/POS, thẻ POS gọn và đủ 22 ảnh sản phẩm, 68 ảnh thú cưng mẫu và 10 SVG minh họa.
+- **PR #5 (Customer Storefront `/shop` & Order Queue `/orders/`)**: Mua sắm công khai, giỏ hàng, đặt đơn nhận tại quầy hoặc COD (`unpaid` cho tới khi thu tiền tường minh), giữ kho/thú cưng qua `customer_order_pet_locks`, tìm thú cưng bằng ảnh và trợ lý mua sắm AI công khai.
+- **PR #6 (Demo/Staging Readiness & UI Acceptance 1.0)**: Script `scripts/demo_staging_setup.py`, neo `#assistant-launcher` vào `.topbar` (0 che nút), card đơn hàng mobile `/shop/account` hết cắt xén ở `320px/390px`, chống lặp văn bản banner/reply AI nội bộ, mở rộng lưới card AI khách hàng, thu gọn hero mobile, ẩn/hiện có điều kiện địa chỉ COD và hiển thị ảnh truy vấn `/100`.
+- Xác minh hậu merge (`b95ddd8`): **6/6** GitHub Actions CI, **567/567** Python/MySQL, **49/49** JS, **35/35** Playwright E2E, **0** lỗ hổng `pip-audit` và **0** phát hiện Bandit mới.
+
 ## P1.3 — trả hàng và hoàn tiền — 2026-11-02
 
 - Thêm sổ hoàn tiền riêng cho hóa đơn đã thanh toán; hỗ trợ hoàn từng phần/nhiều lần, chống gửi trùng và giữ nguyên hóa đơn gốc.

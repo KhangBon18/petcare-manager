@@ -18,4 +18,11 @@ demo_exports/
 backups/
 # Playwright CLI output (may contain credentials)
 .playwright-cli/
+.playwright/
+.pytest_cache/
 tests/a11y/node_modules/
+# Local contributor AI agent tooling & unrelated personal captures
+.agents/
+docs/skills.md
+skills-lock.json
+ChatGPT Image*.png

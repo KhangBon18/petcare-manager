@@ -5,7 +5,7 @@ Các lệnh dưới đây để **nhóm tự chạy** sau khi đọc diff. Trợ
 ## 1. Xem thay đổi trước khi stage
 
 ```sh
-cd "/Users/heisenbon/Documents/Workspace Code/NNLTPython/petcare-manager"
+cd petcare-manager
 git branch --show-current
 git status --short --untracked-files=all
 git diff --check

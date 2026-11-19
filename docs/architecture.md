@@ -1,3 +1,7 @@
+> **Release Architecture Snapshot (`v2.0.0`, `solo/khang-petcare` @ `b95ddd8`)**: Codebase hiện tại gồm **17 Flask Blueprints** (`account`, `assistant`, `audit`, `auth`, `customers`, `health`, `invoices`, `main`, `metrics`, `orders`, `pets`, `products`, `purchasing`, `reports`, `store`, `storefront`, `users`), **31 bảng MySQL 8 / InnoDB** (bổ sung `customer_accounts`, `customer_orders`, `customer_order_items`, `customer_order_pet_locks`, `pet_reference_photos` cùng 4 bảng purchasing và 2 bảng refunds), cùng pipeline **AI Vision 4.0 ONNX cục bộ** (`yolox_nano.onnx`, `mobilenetv2-12.onnx`, `mobilenetv2-12-features.onnx`). Các phần lưu trữ bên dưới ghi lại bối cảnh qua từng giai đoạn phát triển.
+
+---
+
 # Kiến trúc hiện hành
 
 ## Quyết định tenancy cho SaaS
