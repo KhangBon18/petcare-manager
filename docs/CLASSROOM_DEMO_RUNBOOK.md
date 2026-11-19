@@ -15,7 +15,7 @@
 
 ### Chế độ 1 — Khởi động Demo Offline toàn phần (Mode A + Workers + Vision Mock)
 ```bash
-cd "/Users/heisenbon/Documents/Workspace Code/NNLTPython/petcare-manager"
+cd petcare-manager
 .venv/bin/python -c "import flask, mysql.connector, PIL, cryptography"
 
 # Launcher tự tạo container MySQL _test trong tmpfs, nạp seed tổng hợp, mở web + mail/export workers + vision mock:

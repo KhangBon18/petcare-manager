@@ -1,312 +1,179 @@
-# PetCare Manager — quản lý cửa hàng thú cưng & Storefront
+# PetCare Manager
 
-Ứng dụng web quản lý cửa hàng thú cưng multi-tenant bằng **Python + Flask + Vanilla HTML/CSS/JS + MySQL 8 + Local ONNX AI Vision**. Bản tích hợp hoàn chỉnh trên `solo/khang-petcare` gồm 3 lớp sản phẩm đồng nhất giao diện **Option A (Precision Cloud SaaS Light)**:
+**Multi-Tenant Pet Store Operations, POS Billing, Customer Storefront (`/shop`), Conversational Assistant & Local ONNX AI Vision 4.0** built with **Python + Flask + Jinja2 + Vanilla CSS/JS + MySQL 8.4**.
 
-1. **Quản trị nội bộ & POS** (`/`): Dashboard doanh thu thuần, POS lập hóa đơn tại quầy, quản lý khách hàng/thú cưng/sản phẩm/kho, nhà cung cấp & nhập hàng, hoàn trả, báo cáo/xuất dữ liệu, và **Trợ lý AI nội bộ** (`/assistant/chat`).
-2. **AI Vision 4.0 cục bộ** (`/pets/find-similar`, `/shop/image-search`): nhận diện loài Mèo/Chó bằng `yolox_nano.onnx`, trích xuất đặc trưng hình thái (`mobilenetv2-12-features.onnx`) + sắc độ CIE-Lab + kho đa ảnh tham chiếu (`pet_reference_photos`) để gợi ý ứng viên cùng loài.
-3. **Customer Storefront** (`/shop`): trang mua sắm công khai cho khách hàng — duyệt sản phẩm & thú cưng, giỏ hàng, đặt đơn COD/nhận tại cửa hàng (giữ `unpaid` tới khi thu tiền tường minh), tìm thú cưng bằng ảnh và **Trợ lý mua sắm AI công khai** (`/shop/ai-assistant`).
+> **Environment Status**: Verified across local QA and GitHub Actions CI (`6/6` checks) for reproducible demo and controlled staging deployments. Not deployed to public production automatically.
 
-> **Trạng thái môi trường**: Hiện sẵn sàng cho **demo học thuật có kiểm soát và staging** (`APP_ENV=production` với cấu hình HTTPS/TLS riêng khi lên staging). Chưa deploy production công khai.
+---
 
-## Tài liệu hướng dẫn & vận hành chuẩn (Demo & Staging 1.0)
+## 1. Main Features
 
-- [Hướng dẫn cài đặt chi tiết (Setup Guide)](docs/SETUP_GUIDE.md) — bare-metal, MySQL 8, Docker Compose, `.env`, ONNX & troubleshooting.
-- [Kịch bản Demo 7–10 phút (Demo Guide)](docs/DEMO_GUIDE.md) — kịch bản nói tiếng Việt, luồng điều hướng 3 vai trò và phương án dự phòng offline.
-- [Checklist Nghiệm thu Người dùng & Giao diện (UAT Checklist)](docs/USER_ACCEPTANCE_CHECKLIST.md) — kiểm chứng Admin/Staff/Customer, COD & 4 viewport (`1440px`, `834px`, `390px`, `320px`).
-- [Kế hoạch Triển khai Staging (Staging Deployment Plan)](docs/STAGING_DEPLOYMENT_PLAN.md) — audit bảo mật, cấu hình proxy/TLS, migration & hạ tầng tối thiểu.
-- [Báo cáo Sẵn sàng Phát hành (Release Readiness Report)](docs/RELEASE_READINESS_REPORT.md) — tổng hợp kiểm thử, hình ảnh thực tế và các giới hạn hiện hành.
+- **Store Workspace & POS (`/dashboard`, `/invoices/`, `/customers/`)**: Net paid dashboard KPIs & 8-week demand restock forecast, POS checkout with InnoDB row locking and immutable paid-invoice snapshots, multi-batch purchasing & suppliers (`/purchasing/`), separate refund ledger with restock disposition, multi-store tenant switcher, and read-only audit log (`/activity/`).
+- **Customer Storefront (`/shop`)**: Public mobile-first storefront with catalog & pet browsing, real-time stock/reservation awareness (`customer_order_pet_locks`), cart, Store Pickup vs COD checkout, order tracking (`/shop/order-lookup`), customer portal (`/shop/account`), public Shopping AI Assistant (`/shop/ai-assistant`), and public Visual Pet Search (`/shop/image-search`).
+- **Online Order Fulfillment (`/orders/`)**: Dedicated staff/admin queue (`pending -> confirmed -> preparing -> ready_completed -> paid/fulfilled` or `rejected/cancelled`).
+- **AI Assistant (`/assistant/chat` & Topbar Drawer)**: Deterministic offline Python + MySQL operational/catalog engine with optional opt-in OpenAI/Gemini provider fallback and veterinary safety referrals.
+- **Local AI Vision 4.0 ONNX (`/pets/find-similar`, `/shop/image-search`)**: Offline `onnxruntime` species gate + `1280`-D embedding & CIE-Lab similarity retrieval across up to 5 reference photos per pet.
+- **Encrypted Backup & Export**: AES-256-GCM `.pcarebackup` backups (`scripts/petcare_backup.py`) and tenant `.pcarexport` bundles (`email-worker` + `export-worker`).
 
-## Demo nhanh trên database `_test` cô lập
+---
 
-Không nối demo vào database sản xuất hoặc `petcare_shop_dev` có dữ liệu thật:
+## 2. Architecture & Tech Stack
 
+- **Pattern**: Layered Flask monolith with strict route -> service -> repository boundaries (`petcare/app_factory.py` registers **17 Flask Blueprints**; **31 InnoDB tables** across 4 SQL modules with zero ORM).
+- **Backend**: Python **3.11 – 3.13** (`Flask 3.1`, `Flask-WTF`, `mysql-connector-python`, `Babel`, `Pillow`, `cryptography`, `XlsxWriter`, `boto3`, `gunicorn`).
+- **Database**: **MySQL 8.0.16+** (`InnoDB`, `utf8mb4_unicode_ci`). SQLite is unsupported at runtime.
+- **Local Vision Runtime**: `numpy` + `onnxruntime` CPU inference (no PyTorch or outbound network required).
+- **Frontend**: Option A Light UI (`petcare/static/css/tokens.css`, `ui.css`, `app.css`, `storefront.css`), vanilla JS, local GSAP `3.15.0` (Node.js `18+` only used for unit/axe test runners; no frontend build step).
+
+See [docs/architecture.md](docs/architecture.md) and [docs/DATABASE_MIGRATIONS.md](docs/DATABASE_MIGRATIONS.md).
+
+---
+
+## 3. Quick Start (Fresh Local Setup & Isolated Demo)
+
+### 3.1 Prerequisites
+- Python **3.11+** (`3.11`, `3.12`, `3.13` verified in CI)
+- MySQL **8.0.16+** (`InnoDB`, `utf8mb4`)
+- Verified ONNX models committed under `petcare/vision/models/`: `yolox_nano.onnx`, `mobilenetv2-12.onnx`, `mobilenetv2-12-features.onnx`
+
+### 3.2 Installation & Environment Configuration
 ```sh
+git clone https://github.com/KhangBon18/petcare-manager.git
+cd petcare-manager
 python3 -m venv .venv
-source .venv/bin/activate
+source .venv/bin/activate          # Windows: .venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 python -m pip install -r requirements.txt -c requirements.lock
-cp .env.example .env  # Chỉnh DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, SECRET_KEY
 
-# Nạp dữ liệu demo an toàn (Admin + Staff + Customer Storefront + 22 SP + 74 thú cưng + hóa đơn & đơn online)
-PETCARE_DEMO_MODE=1 APP_ENV=test DB_NAME=petcare_demo_stage_test \
-PETCARE_DEMO_ADMIN_PASSWORD='<16+ ký tự>' \
-PETCARE_DEMO_STAFF_PASSWORD='<16+ ký tự khác>' \
-PETCARE_DEMO_CUSTOMER_PASSWORD='<16+ ký tự khác>' \
+cp .env.example .env
+# Edit .env: set DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, SECRET_KEY
+```
+
+### 3.3 Database Initialization (Production/Dev Schema)
+Create an empty UTF8MB4 database and least-privilege user, then initialize idempotently:
+```sql
+CREATE DATABASE petcare_shop_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'petcare_app'@'127.0.0.1' IDENTIFIED BY '<strong-local-password>';
+GRANT SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, REFERENCES, DROP ON petcare_shop_dev.* TO 'petcare_app'@'127.0.0.1';
+FLUSH PRIVILEGES;
+```
+```sh
+python -m petcare.database.initialize
+```
+
+### 3.4 Isolated Demo Setup & Starting Flask
+Never seed demo data into real/development databases. Seed only against an isolated `*_test` database:
+```sh
+D_TMP=$(python -c "import tempfile; print(tempfile.gettempdir())")
+mkdir -p "$D_TMP/petcare-demo/pets" "$D_TMP/petcare-demo/prods" "$D_TMP/petcare-demo/exports"
+
+PETCARE_DEMO_MODE=1 APP_ENV=test COOKIE_SECURE=0 \
+DB_NAME=petcare_demo_stage_test \
+PET_IMAGE_DIR="$D_TMP/petcare-demo/pets" \
+PRODUCT_IMAGE_DIR="$D_TMP/petcare-demo/prods" \
+TENANT_EXPORT_DIR="$D_TMP/petcare-demo/exports" \
+PETCARE_DEMO_ADMIN_PASSWORD='<16+-char-admin-password>' \
+PETCARE_DEMO_STAFF_PASSWORD='<16+-char-staff-password>' \
+PETCARE_DEMO_CUSTOMER_PASSWORD='<16+-char-customer-password>' \
 python scripts/demo_staging_setup.py --reset-disposable --json
 
+PETCARE_DEMO_MODE=1 APP_ENV=test COOKIE_SECURE=0 \
+DB_NAME=petcare_demo_stage_test \
+PET_IMAGE_DIR="$D_TMP/petcare-demo/pets" \
+PRODUCT_IMAGE_DIR="$D_TMP/petcare-demo/prods" \
+TENANT_EXPORT_DIR="$D_TMP/petcare-demo/exports" \
 python run.py
-# Mở Workspace nội bộ: http://127.0.0.1:5055/login
-# Mở Customer Storefront: http://127.0.0.1:5055/shop
 ```
+- Internal Workspace (`/login`): `http://127.0.0.1:5055/login` (demo users: `admin`, `staff1`, store slug `main`)
+- Customer Storefront (`/shop`): `http://127.0.0.1:5055/shop` (demo customer: `demo.customer@example.invalid`)
+- Optional background workers: `python -m petcare.services.tenant_export_worker_cli` and `python -m petcare.services.mail_worker`
 
-Để trình diễn rehearsal tự động cũ theo lớp học AI-3.3/3.4, vẫn có `scripts/demo/classroom.sh --target qa` và [Classroom Demo Runbook](docs/CLASSROOM_DEMO_RUNBOOK.md).
-
-Không dùng lệnh seed trực tiếp trên dữ liệu thật. `seed` và `demo_staging_setup.py` đều fail-closed nếu thiếu `PETCARE_DEMO_MODE=1` hoặc sai hậu tố database (`_test` / `_dev`).
-
-Ứng dụng chọn tiếng Việt hoặc English theo `Accept-Language`; người dùng có thể đổi ngôn ngữ từ màn hình đăng nhập hoặc thanh điều hướng, và lựa chọn được lưu theo tài khoản để dùng xuyên các cửa hàng. Bản English bao phủ đăng nhập, điều hướng, dashboard, trợ lý, khách hàng, sản phẩm, hồ sơ thú cưng, hóa đơn, báo cáo, tìm bằng ảnh/camera, cài đặt tài khoản/cửa hàng, onboarding, quản lý thành viên, xuất dữ liệu, bàn giao chủ cửa hàng và các màn hình lỗi. Email xác minh/khôi phục, lời mời, bàn giao owner và Excel báo cáo hỗ trợ hai ngôn ngữ; các màn hình nghiệp vụ chính định dạng ngày/giờ theo locale và múi giờ cửa hàng, định dạng số theo locale. CSV giữ schema và giá trị trung tính locale để trao đổi dữ liệu. Các thông báo lỗi/flash tĩnh và loại/sự kiện audit đã biết có bản dịch được kiểm thử; nội dung audit nhập ngoài hoặc tự do chưa có mẫu dịch sẽ giữ nguyên ngôn ngữ nguồn. Cần kiểm thử QA bản địa hóa toàn bộ route trước public launch.
-
-Khám bệnh, tiêm phòng, lịch hẹn chăm sóc và dịch vụ spa thuộc phiên bản desktop cũ; bản đặc tả cũ được lưu trong docs/archive/. Không chuyển dữ liệu clinic sang dữ liệu hàng hóa.
-
-Design tokens, hướng dẫn layout desktop/mobile và trạng thái component được ghi tại [Design System PetCare Manager](design-system/petcare-manager/MASTER.md). Quy tắc dùng skill trong repo nằm tại [docs/skills.md](docs/skills.md); tổng quan ranh giới module tại [docs/architecture.md](docs/architecture.md).
-
-## Cấu trúc ứng dụng
-
-- `run.py` chạy Flask local ở 127.0.0.1:5055; `wsgi.py` cung cấp `wsgi:app` cho Gunicorn.
-- `petcare/app_factory.py` tạo app và đăng ký blueprint; `petcare/__init__.py` và `petcare/app.py` giữ import tương thích.
-- `petcare/app_configuration.py` kiểm tra runtime/production config; `petcare/app_hooks.py` đăng ký CSRF, request lifecycle, security headers, error handlers và Jinja helpers.
-- `petcare/routes/` xử lý HTTP; `petcare/services/` xác thực, quyền, nghiệp vụ và transaction; `petcare/repositories/` giữ SQL MySQL tham số hóa, không tự commit.
-- `petcare/database/` chứa kết nối/pool MySQL, schema/migration, readiness, seed và công cụ vận hành.
-- `petcare/services/catalog_intent.py`, `assistant_local.py`, `assistant_service.py` tách lọc truy vấn, câu trả lời cục bộ và điều phối trợ lý.
-- `petcare/templates/` dùng Jinja; `petcare/static/css/tokens.css`, `app.css`, `motion.css` và `static/js/` là frontend thuần, không cần build.
-- `tests/` có unit, web, JavaScript và test tích hợp cần MySQL database `_test` riêng.
-
-## Yêu cầu
-
-- Python 3.11 trở lên (Pillow 13 đã bỏ hỗ trợ Python 3.10).
-- MySQL 8.0.16 trở lên, InnoDB và utf8mb4.
-- Trình duyệt hiện đại.
-- Khi cần cài MySQL mới: dùng [hướng dẫn cài MySQL chính thức cho macOS](https://dev.mysql.com/doc/refman/8.4/en/macos-installation.html) hoặc [hướng dẫn MySQL chính thức cho Windows](https://dev.mysql.com/doc/refman/8.4/en/windows-installation.html). Windows khuyến nghị MSI và MySQL Configurator; macOS có gói cài đặt DMG.
-- Dùng database riêng petcare_shop_dev. Không trỏ ứng dụng vào database clinic hoặc database sản xuất.
-
-## Cài đặt trên macOS / Linux
-
-Tại thư mục gốc repo:
-
-1. Tạo và kích hoạt môi trường ảo:
-
-   python3 -m venv .venv
-   source .venv/bin/activate
-
-2. Cài thư viện:
-
-   python -m pip install -r requirements.txt -c requirements.lock
-
-3. Tạo file cấu hình local:
-
-   cp .env.example .env
-
-   Sửa DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD và đặt SECRET_KEY ngẫu nhiên. `DB_POOL_SIZE` điều chỉnh số kết nối tối đa mỗi process (mặc định 5); tính tổng theo số web worker và worker nền để không vượt connection budget MySQL. Production cần thêm `DB_SSL_CA` trỏ tới CA bundle MySQL được mount read-only để xác thực chứng chỉ và hostname. Không commit .env.
-
-   Tài khoản có thể xác minh email và khôi phục mật khẩu. Email được ghi vào outbox MySQL với payload mã hóa, sau đó worker gửi và retry lỗi tạm thời. Để thử luồng đầy đủ, cấu hình `MAIL_HOST`, `MAIL_PORT`, `MAIL_FROM`, `MAIL_OUTBOX_KEY` và thông tin SMTP trong `.env`; tạo key bằng lệnh trong `.env.example` rồi giữ ổn định trong secret store. Production bắt buộc TLS STARTTLS. Nếu không cấu hình SMTP, app không thể gửi link verify/reset.
-
-4. Tạo database và user riêng trong MySQL bằng tài khoản quản trị MySQL. Ví dụ SQL (đổi mật khẩu trước khi chạy):
-
-   CREATE DATABASE petcare_shop_dev CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-   CREATE USER 'petcare_app'@'127.0.0.1' IDENTIFIED BY 'change-this-local-password';
-   GRANT ALL PRIVILEGES ON petcare_shop_dev.* TO 'petcare_app'@'127.0.0.1';
-   FLUSH PRIVILEGES;
-
-   Nếu ứng dụng kết nối qua 127.0.0.1 thay vì socket, MySQL có thể phân biệt localhost và 127.0.0.1. Điều chỉnh host của DB user theo cấu hình server local.
-
-5. Chỉ sau khi xác nhận backup phù hợp và target DB là môi trường local, khởi tạo schema. Database single-store cũ sẽ được backfill vào store `main`; migration không xóa dữ liệu nhưng có DDL và cần review trước khi chạy trên database đang tồn tại:
-
-   python -m petcare.database.initialize
-
-   Với demo học thuật, ưu tiên launcher QA ở đầu README. Không seed demo vào database đang chứa dữ liệu thật.
-
-6. Chạy ứng dụng:
-
-   python run.py
-
-   Mở terminal thứ hai tại thư mục dự án để chạy export worker:
-
-   python -m petcare.services.tenant_export_worker_cli
-
-   Nếu cấu hình SMTP, mở terminal thứ ba cho email worker:
-
-   python -m petcare.services.mail_worker
-
-7. Mở http://127.0.0.1:5055.
-
-   Health checks: `/healthz` xác nhận process web còn hoạt động, `/readyz` kiểm tra web + MySQL/schema; `/workersz` chỉ trả `ready` khi cả email worker và export worker ghi heartbeat thành công trong 90 giây gần nhất. Bản ghi tiến trình quá 30 ngày được email worker dọn theo lịch. Nếu chỉ chạy web mà không chạy đủ hai worker, các trang web vẫn phục vụ nhưng `/workersz` báo `unavailable`.
-
-## Cài đặt trên Windows PowerShell
-
-1. Tạo môi trường ảo và cài thư viện:
-
-   py -m venv .venv
-   .venv\Scripts\Activate.ps1
-   python -m pip install -r requirements.txt -c requirements.lock
-
-2. Sao chép .env.example thành .env. Cập nhật thông tin kết nối MySQL và SECRET_KEY bằng trình soạn thảo.
-
-3. Tạo database petcare_shop_dev và MySQL user local riêng với charset utf8mb4; cấp quyền trên đúng database đó. Không dùng tài khoản root trong cấu hình ứng dụng.
-
-4. Khởi tạo schema sau khi xác nhận đây là database local phù hợp; dùng launcher QA nếu cần synthetic data:
-
-   python -m petcare.database.initialize
-   python run.py
-
-   Để bật xử lý export nền, chạy `python -m petcare.services.tenant_export_worker_cli` trong terminal khác; nếu cấu hình SMTP thì chạy `python -m petcare.services.mail_worker` thêm một terminal nữa.
-
-5. Mở http://127.0.0.1:5055.
-
-## MySQL bằng Docker Desktop (tùy chọn)
-
-Docker Desktop đã có trên máy phát triển hiện tại. Tạo .env từ .env.example, đặt hai mật khẩu local riêng và SECRET_KEY, rồi chạy:
-
-   docker compose up -d mysql
-
-Đợi database healthy, sau đó chạy initialize, seed và Flask như trên. Compose chỉ mở cổng 3306 trên 127.0.0.1 và dùng volume riêng petcare_manager_mysql_data.
-
-Để chỉ chạy MySQL như môi trường phát triển trên host: `docker compose up -d mysql`. Khi chạy ứng dụng trong container lần đầu, khởi tạo schema trước rồi mới mở web:
-
-   docker compose run --rm web python -m petcare.database.initialize
-   docker compose up -d --build web email-worker export-worker
-
-Trong môi trường local, chỉ nạp dữ liệu tổng hợp trên database mới/được chỉ định rõ, tên kết thúc `_dev` hoặc `_test`, với `APP_ENV=development`/`test`, `PETCARE_DEMO_MODE=1` và hai password demo khác nhau do operator tự cung cấp (`PETCARE_DEMO_ADMIN_PASSWORD`, `PETCARE_DEMO_STAFF_PASSWORD`, mỗi password dài 16–1024 ký tự). Không có mật khẩu mặc định. Với buổi học, launcher QA ở đầu README tự tạo schema cô lập an toàn. Không chạy seed trên production hoặc database chứa dữ liệu thật. Compose giữ cổng web trên loopback và dùng chung volume riêng cho ảnh cùng export worker. Để dừng container nhưng giữ dữ liệu: `docker compose down`. Không dùng `docker compose down -v` trừ khi chủ động muốn xóa toàn bộ dữ liệu trong volume.
-
-### Backup local / Docker Compose
-
-Backup MySQL cùng ảnh hồ sơ thú cưng và sản phẩm. Lệnh tạo hỏi passphrase hai lần; verify hỏi lại để xác thực bundle và checksum:
-
-   python scripts/petcare_backup.py create --media-source host
-   python scripts/petcare_backup.py verify backups/petcare-YYYYMMDDTHHMMSSZ.pcarebackup
-
-`create` hỏi passphrase hai lần; `verify` hỏi lại passphrase. `host` dành cho ứng dụng Flask chạy trên máy; nếu app chạy trong container, dùng `--media-source compose` để lấy ảnh từ volume của web. Chi tiết khôi phục và chuyển backup `.tar.gz` cũ sang bundle mã hóa nằm trong [docs/backup_restore.md](docs/backup_restore.md).
-
-### Export dữ liệu một cửa hàng
-
-Với quyền database phù hợp, export theo slug vào một bundle mã hóa mới rồi xác minh xác thực và manifest/checksum:
-
-```bash
-python -m petcare.database.export_tenant export main /secure/private/main-export.pcarexport
-python -m petcare.database.export_tenant verify /secure/private/main-export.pcarexport
-python -m petcare.database.export_tenant decrypt /secure/private/main-export.pcarexport /secure/private/main-export.zip
+### 3.5 Starting with Docker Compose
+```sh
+docker compose config --quiet
+docker compose build
+docker compose up -d mysql
+docker compose run --rm web python -m petcare.database.initialize
+docker compose up -d web email-worker export-worker
 ```
+Health endpoints: `/healthz`, `/readyz`, `/workersz`. Full instructions: [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) and [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md).
 
-Lệnh `export` hỏi passphrase hai lần và không đưa bí mật vào command line. Hãy dùng ít nhất 12 ký tự, giữ passphrase riêng khỏi file export và lưu bản dự phòng an toàn: quên passphrase thì không thể khôi phục dữ liệu. Bundle dùng AES-256-GCM với khóa dẫn xuất PBKDF2-HMAC-SHA256, salt và nonce ngẫu nhiên. Nó gồm CSV từng bảng, metadata tenant, ảnh sản phẩm/thú cưng và SHA-256; không chứa password hash hoặc token hash. Text CSV có thể bị bảng tính hiểu là công thức sẽ được trung hòa bằng dấu nháy đơn; số âm và ngày vẫn giữ dạng dữ liệu. Export dùng snapshot đọc nhất quán, chỉ lấy một tenant, không ghi đè file có sẵn và tạo file quyền `0600`. `verify` xác thực mã hóa và checksum mà không trích xuất; `decrypt` chỉ tạo ZIP quyền riêng tư mới sau khi xác thực thành công. ZIP giải mã chứa dữ liệu cá nhân: giới hạn người truy cập và xóa theo chính sách lưu trữ của đơn vị. Lệnh operator này không xóa tenant hay thay thế backup/restore vận hành.
+---
 
-Quản trị viên cửa hàng cũng có thể vào **Tài khoản → Xuất dữ liệu cửa hàng** để yêu cầu export tenant đang chọn. Luồng xác nhận lại mật khẩu, xếp job MySQL và giao worker riêng tạo bundle mã hóa; trang trạng thái tự cập nhật, các yêu cầu gần đây có thể mở lại. Chỉ người tạo trong đúng tenant tải được file. Passphrase chờ xử lý được mã hóa bằng `TENANT_EXPORT_JOB_KEY`, xóa sau khi worker hoàn tất; file được giữ tối đa `TENANT_EXPORT_RETENTION_HOURS` giờ (mặc định 24), sau đó worker dọn file và job. Production phải dùng cùng key ổn định cho web/worker và local storage chỉ khi hai service có chung durable volume; multi-instance nên dùng `TENANT_EXPORT_STORAGE_BACKEND=s3`. Trong key rotation, giữ key cũ tạm thời ở `TENANT_EXPORT_JOB_FALLBACK_KEYS` cho tới khi job cũ hoàn tất. Vẫn cần lưu passphrase của bundle riêng để giải mã sau này.
+## 4. Roles, Storefront COD Semantics & AI Modules
 
-ZIP tenant export tạo bởi phiên bản cũ chưa được mã hóa; có thể xác minh rồi chuyển bằng `python -m petcare.database.export_tenant encrypt /secure/private/old-export.zip /secure/private/new-export.pcarexport`. Giữ file ZIP cũ riêng tư cho tới khi bundle mới đã verify và được sao lưu an toàn.
+- **Admin & Staff Isolation**: Role and tenant membership reload from MySQL per request (`session_version` revokes stale sessions). Staff cannot access `/store/settings`, `/users/`, `/purchasing/`, `/activity/`, or refund creation. See [docs/ADMIN_STAFF_GUIDE.md](docs/ADMIN_STAFF_GUIDE.md).
+- **Customer Storefront & COD Payments**: Customer orders start `pending` / `unpaid` with zero online gateway charge. Confirming an order reserves product quantities and acquires `customer_order_pet_locks`. **Cash on Delivery (COD)** / pay-at-store orders remain `unpaid` until staff explicitly confirm payment collection in `/orders/<id>`, which atomically issues a paid invoice and deducts inventory. See [docs/CUSTOMER_STOREFRONT_GUIDE.md](docs/CUSTOMER_STOREFRONT_GUIDE.md).
+- **AI Assistant & External Fallback**: Works offline by default (`AI_PROVIDER_APPROVED=0`) via deterministic Python + MySQL queries. Optional external OpenAI/Gemini endpoints (`AI_API_BASE_URL` / `GEMINI_API_KEY`) fall back automatically to local Python on errors/timeouts and visibly label response provenance. See [docs/AI_FEATURES.md](docs/AI_FEATURES.md).
+- **AI Vision 4.0 & Honest Identity Boundary**:
+  - `yolox_nano.onnx` + `mobilenetv2-12.onnx` + `mobilenetv2-12-features.onnx` verify domestic Cat/Dog uploads locally.
+  - Visual similarity scores (`.../100`) assist browsing by appearance and **do NOT verify individual animal biometric identity** (`same_pet_multi_view_reidentification = NOT EVALUATED`). Exact SHA-256 matches only identify identical stored files.
+  - **Verified vs Illustrative Photos**: Seeded pet portraits (`assets/demo/pets/`: 68 synthetic portraits) are stored privately and served behind authenticated/public pet photo routes; items without photos render fallback vectors (`petcare/static/img/catalog/fallbacks/*.svg`) visibly badged **"Minh họa" / "Illustrative"**.
 
-## Triển khai production
+---
 
-`run.py` dùng Flask development server và chỉ dành cho phát triển. Image Docker chạy qua Gunicorn (`wsgi:app`) với access log không ghi query string, nơi có thể chứa từ khóa khách hàng hoặc invite token. Production bắt buộc dùng database riêng không có hậu tố `_dev`/`_test`, biến môi trường `SECRET_KEY` ngẫu nhiên riêng (không dùng giá trị tự sinh theo worker), `APP_ENV=production`, `COOKIE_SECURE=1`, `PUBLIC_BASE_URL=https://<domain-tin-cậy>` và TLS sau reverse proxy. Chỉ đặt `TRUST_PROXY=1` khi app chỉ nhận request qua đúng một proxy tin cậy và proxy ghi đè forwarded IP/protocol; ứng dụng không tin forwarded host/port. Endpoint Prometheus `/metrics` mặc định tắt; nếu bật, cấp `OPS_METRICS_TOKEN` từ secret manager và chỉ cho monitoring riêng tư truy cập. Hướng dẫn vận hành nằm trong [docs/operations.md](docs/operations.md); launch gates nằm trong [docs/launch_readiness.md](docs/launch_readiness.md).
+## 5. Screenshots
 
-Trên production, cấp cho tài khoản runtime của web chỉ `SELECT`, `INSERT`, `UPDATE`, `DELETE` trên database cửa hàng. Chạy `python -m petcare.database.initialize` bằng tài khoản migration riêng có `CREATE`, `ALTER`, `INDEX`, `REFERENCES` và quyền đọc metadata; không cấp quyền DDL cho web runtime và không dùng MySQL `root`. Các lệnh cài local ở phần trên dùng cho dev, không phải cấu hình quyền production.
+| Storefront Desktop (`/shop`) | Customer Visual Search (`/shop/image-search`) |
+|---|---|
+| ![Storefront Desktop](docs/assets/demo-readiness/08-shop-home-1440.png) | ![Visual Search](docs/assets/acceptance-1.0/after-shop-image-search-1440.png) |
 
-Initializer đọc `MIGRATION_DB_USER`/`MIGRATION_DB_PASSWORD` chỉ trong job migration; production từ chối chạy nếu thiếu tài khoản riêng hoặc tài khoản trỏ sang database khác. Tham khảo [hướng dẫn quyền MySQL](docs/database_privileges.md); không truyền migration secret vào service web.
+| Admin Customers & Topbar AI (`1440px`) | Mobile Account Order Cards (`320px`) |
+|---|---|
+| ![Customers Topbar](docs/assets/acceptance-1.0/after-customers-topbar-1440.png) | ![Mobile Account](docs/assets/acceptance-1.0/after-shop-account-320.png) |
 
-Xem [hướng dẫn cấu hình, IAM và chuyển ảnh sang S3](docs/media_storage.md) trước khi đổi backend; cấu hình S3 không tự di chuyển ảnh local hiện có.
+---
 
-Ảnh dùng filesystem riêng ở chế độ local. Với nhiều app instance, đặt `MEDIA_STORAGE_BACKEND=s3`, `MEDIA_S3_BUCKET` và `MEDIA_S3_REGION`; SDK dùng IAM/workload identity nếu không khai báo access key pair. Bucket phải private, bật chặn public access và encryption. Custom S3 endpoint production bắt buộc HTTPS. Route ảnh vẫn đi qua app để xác minh đăng nhập, membership và quyền sở hữu tenant; không bật public ACL/CDN bypass. Tenant export có thể đóng gói ảnh từ backend này. `scripts/petcare_backup.py` chỉ hỗ trợ ảnh local và từ chối tạo backup khi chọn S3 để tránh thiếu ảnh.
-
-GitHub Actions được cấu hình tại `.github/workflows/ci.yml`: chạy unit/web/MySQL integration trên MySQL 8.4 với Python 3.11–3.13, audit dependency Python bằng `pip-audit`, quét Python source bằng Bandit, quét secret cả source tree và production container bằng Trivy, đồng thời build và quét image. Hosted run cần xanh trước mỗi release.
-
-## Chuẩn bị nhanh trước khi bảo vệ
-
-Sau khi đã initialize/seed đầy đủ, giữ `python run.py` chạy ở terminal thứ nhất. Tại terminal thứ hai cùng venv và `.env`, chạy:
+## 6. Testing & Security Configuration
 
 ```sh
-python run.py prepare-demo
-# Hoặc JSON + exit code cho automation:
-python run.py prepare-demo --json
+# Syntax + Python unit/web + MySQL integration (on isolated *_test schema)
+python -m compileall -q run.py main.py petcare tests
+APP_ENV=test DB_HOST=127.0.0.1 DB_PORT=3306 DB_USER=petcare_app DB_PASSWORD="<pw>" \
+DB_NAME=petcare_ci_test PETCARE_TEST_DB_NAME=petcare_ci_test \
+python -m unittest discover -s tests -q
+
+# JavaScript module tests + Playwright E2E / Axe accessibility
+node --test tests/js/*.test.cjs
+python scripts/browser_smoke/run_smoke.py
+
+# Security & Dependency checks
+bandit -q -r petcare scripts main.py run.py wsgi.py -x petcare/templates,petcare/static -b .security/bandit-baseline.json
+pip-audit -r requirements.lock && pip-audit -r requirements-browser.lock
 ```
 
-Lệnh kiểm MySQL/schema, quyền demo, tồn/ảnh local và `/readyz` của đúng server/database; chỉ làm mới ngày của các hóa đơn seed đã thanh toán và stock movement tương ứng. Không thanh toán lại, đổi kho/trạng thái thú cưng hay mật khẩu. Chỉ dùng local `_dev`/`_test`, `SECRET_KEY` cố định; không dùng production. Ngân sách 4,7 giây; lỗi/quá hạn trả exit 1, chỉ exit 0 mới sẵn sàng. Nạp dữ liệu/ảnh ban đầu không thuộc lệnh nhanh này. Kết quả đo Phase 4: 0,76 / 0,67 giây tính cả khởi động Python.
+Key security defaults: CSRF protection on mutating routes, PBKDF2-HMAC-SHA256 passwords, strict CSP without inline scripts, EXIF-stripped private media (`<= 5 MB`), `COOKIE_SECURE=1` + `DB_SSL_CA` + DML-only runtime MySQL user in production. Never commit `.env` or real credentials. See [SECURITY.md](SECURITY.md) & [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md).
 
-Kịch bản trình bày 8 phút: [DEMO_SCRIPT.md](DEMO_SCRIPT.md). Ma trận nghiệm thu: [Phase 4](docs/phase4_acceptance.md).
+---
 
-Chuẩn bị vấn đáp: [DEFENSE_QA_GUIDE.md](DEFENSE_QA_GUIDE.md). Các lệnh commit/tag để nhóm tự chạy: [CODE_FREEZE_GIT_GUIDE.md](CODE_FREEZE_GIT_GUIDE.md). Bộ báo cáo/Excel/PDF/ảnh QA lịch sử được gom tại [docs/qa_reports/](docs/qa_reports/README.md).
+## 7. Complete Documentation Index
 
-## Tài khoản và dữ liệu demo
+| Area | Document |
+|---|---|
+| Setup & Install | [docs/SETUP_GUIDE.md](docs/SETUP_GUIDE.md) |
+| Architecture & Data Model | [docs/architecture.md](docs/architecture.md), [docs/DATABASE_MIGRATIONS.md](docs/DATABASE_MIGRATIONS.md) |
+| User Guides | [docs/user_guide.md](docs/user_guide.md), [docs/ADMIN_STAFF_GUIDE.md](docs/ADMIN_STAFF_GUIDE.md), [docs/CUSTOMER_STOREFRONT_GUIDE.md](docs/CUSTOMER_STOREFRONT_GUIDE.md) |
+| AI & Vision 4.0 | [docs/AI_FEATURES.md](docs/AI_FEATURES.md), [docs/AI4_0E_FINAL_VISION_QA.md](docs/AI4_0E_FINAL_VISION_QA.md) |
+| Demo & Operations | [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md), [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
+| QA & Security | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md), [SECURITY.md](SECURITY.md), [docs/SECURITY.md](docs/SECURITY.md), [docs/FINAL_UI_MODULE_ACCEPTANCE.md](docs/FINAL_UI_MODULE_ACCEPTANCE.md) |
+| Audit & Releases | [docs/REPOSITORY_CLEANUP_AUDIT.md](docs/REPOSITORY_CLEANUP_AUDIT.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md), [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
 
-Seed idempotent tạo dữ liệu hoàn toàn tổng hợp trong store `main`, có nhãn demo:
+---
 
-- Mã cửa hàng: `main`
-- Admin demo: `admin`; nhân viên demo: `staff1`. Chỉ dùng trong database demo cô lập; mật khẩu do operator chọn/tạo riêng cho mỗi lần provision, không có password mặc định và không lưu trong source/tài liệu.
-- 12 hồ sơ khách demo với số điện thoại giả có đầu `00000000`.
-- 22 sản phẩm có mã, danh mục, mô tả, giá, tồn kho và ngưỡng bổ sung riêng.
-- 74 cá thể thú cưng: 35 chó, 37 mèo, 1 thỏ và 1 hamster; 68 hồ sơ có ảnh AI tổng hợp (32 chó, 32 mèo và 4 ảnh mẫu cũ).
-- Ảnh và hồ sơ là dữ liệu hư cấu phục vụ học tập/demo, không đại diện cho thú cưng hoặc hàng tồn tại cửa hàng thật.
-- 7 hóa đơn demo đã thanh toán để báo cáo có dữ liệu lịch sử; tồn kho được cập nhật qua luồng bán thật.
+## 8. Known Limitations
 
-`python -m petcare.database.seed` yêu cầu database hậu tố phù hợp với `APP_ENV`, `PETCARE_DEMO_MODE=1`, và operator-supplied admin/staff password riêng. Khi chuẩn bị dữ liệu demo, seed cập nhật lại ngày tương đối của các hóa đơn có marker demo; chỉ dùng trên database demo đã xác định, không dùng trên dữ liệu thật. Seed idempotent theo marker nhưng không xóa mọi record ngoài fixture.
+1. **Visual Search Is Appearance Similarity Only**: Does not verify cross-view individual animal identity.
+2. **Offline COD / Counter Payment Only**: No online card/e-wallet gateway; financial confirmation happens manually in `/orders/<id>`.
+3. **Self-Service Tenant Signup Off by Default**: `PUBLIC_SIGNUP_ENABLED=0` pending commercial billing and abuse-control policies.
+4. **Tablet `834px` Storefront Hero**: Stacks vertically with 2×2 portrait tiles (`1114px` height, `0` overflow).
 
-Schema tích hợp hiện hành (`solo/khang-petcare`) gồm **31 bảng** MySQL sau khi chạy đầy đủ `python -m petcare.database.initialize` (bao gồm các migration: `datetime_storage_utc_v1`, `purchasing_orders_v1`, `invoice_refunds_v1`, `purchase_receipt_idempotency_v1`, `pet_reference_photos_v1`, `storefront_orders_v1`, `storefront_orders_v1_1`). Quá trình migration hoàn toàn cộng dồn, không xóa bảng hay dữ liệu đang có; cần sao lưu database trước khi chạy trên database cũ. Bộ dữ liệu demo chuẩn có 12 khách mẫu, 22 sản phẩm, 74 thú cưng (68 ảnh lưu trữ kèm kho ảnh tham chiếu & 6 ảnh minh họa danh mục), 7 hóa đơn bán hàng mẫu (hoặc 8 nếu thêm đơn online demo từ `demo_staging_setup.py`). Dashboard hiển thị doanh thu thuần; mở ứng dụng tại `http://127.0.0.1:5055` sau khi chạy `python run.py`.
+---
 
-Để dùng database mới với dữ liệu thật: tạo database riêng, cấu hình `.env`, chạy `python -m petcare.database.initialize`, rồi chạy `python -m petcare.database.create_admin`. Lệnh tạo admin yêu cầu xác nhận đúng tên database, nhập mật khẩu qua prompt ẩn và chỉ hoạt động khi database chưa có tài khoản. Sau đó đăng nhập, tạo nhân viên trong **Tài khoản**, rồi nhập danh mục và khách hàng thật. Không chạy seed demo trên database thật. Mật khẩu được băm PBKDF2-HMAC-SHA256; ứng dụng không lưu mật khẩu rõ.
+## 9. Clean Release Packaging (`git archive`)
 
-Để provision thêm cửa hàng trong cùng database, dùng `python -m petcare.database.create_store` trong terminal tương tác. Lệnh xác nhận database, tạo slug/tenant và owner; có thể gắn thêm một username hiện có nếu nhập đúng mật khẩu hiện tại. Admin của cửa hàng có thể vào **Tài khoản → Mời thành viên** để tạo lời mời theo email một lần (hết hạn sau 7 ngày) và thu hồi lời mời. Owner bàn giao vai trò từ **Tài khoản → Bàn giao chủ cửa hàng**: owner và admin được chọn đều phải xác thực lại; admin mục tiêu phải chấp nhận trong vòng 72 giờ. Khi SMTP hoạt động và email người nhận đã xác minh, hệ thống gửi email thông báo nhưng vẫn bắt buộc đăng nhập và chấp thuận trong ứng dụng. Self-service `/signup` có feature flag `PUBLIC_SIGNUP_ENABLED=0` mặc định; account owner chỉ có quyền sau khi xác minh email. Không bật signup công khai trước khi có billing/plan limits, terms/privacy, edge abuse controls và email provider đã kiểm live. Khi đăng nhập, nhập slug cửa hàng; tài khoản có nhiều membership có thể đổi cửa hàng từ sidebar.
-
-## Luồng dùng thử
-
-1. Đăng nhập admin.
-2. Mở Sản phẩm để xem danh mục demo có mô tả, tồn kho và mức cảnh báo bổ sung.
-3. Chọn một khách, sản phẩm và thú cưng demo để lập hóa đơn; server tự tính tổng từ giá hiện hành.
-4. Trước khi thanh toán, kiểm tra tồn kho đang hiển thị; tạo hóa đơn chưa trừ tồn.
-5. Xác nhận thanh toán; tồn kho từng mặt hàng được trừ đúng số lượng và thú cưng chuyển sang Đã bán, gắn với khách mua.
-6. Mở Báo cáo để đối chiếu doanh thu. Gửi lại thao tác thanh toán không làm thay đổi số liệu lần hai.
-
-Form hóa đơn tìm khách hàng/mặt hàng trực tiếp trên máy chủ, tải mỗi lần 25 kết quả. Admin xem **Nhật ký hoạt động** để kiểm tra các lần tạo/thu/hủy hóa đơn, điều chỉnh tồn và thay đổi tài khoản.
-
-## Trợ lý cửa hàng và tìm thú cưng bằng ảnh
-
-- Nút **Hỏi trợ lý** trả lời tổng quan, doanh thu hôm nay/tuần/tháng, tồn thấp, tìm sản phẩm và lọc thú cưng theo loài, giống, màu lông/mắt, giới tính hoặc mức giá; có hướng dẫn luồng hóa đơn và tìm bằng ảnh. Câu trả lời local lấy dữ liệu từ MySQL, không cần API key. Câu trả lời tạo sinh chỉ bật khi cấu hình endpoint; giao diện hiển thị rõ nguồn trả lời. Nút **Xóa cuộc trò chuyện** xóa lịch sử trong trang hiện tại, dừng chờ kết quả trên trình duyệt và ngăn gửi lịch sử đó ở lượt sau.
-- Trang **Tìm bằng ảnh** chạy mô hình thị giác cục bộ (`YOLOX-Nano` + `MobileNetV2-12` trên `onnxruntime`, không cần gọi mạng ngoài) để tự động phát hiện 1 Mèo hoặc 1 Chó đáng tin cậy, từ chối ảnh phi động vật/đa động vật, ưu tiên tệp ảnh khớp mã băm lưu kho (`SHA-256`) và xếp hạng các hồ sơ cùng loài có ngoại hình tương tự bằng vector nhúng tiền cảnh `1280` chiều kết hợp biểu đồ màu lông `CIE-Lab` cân bằng trắng. Admin có thể lưu tối đa `5` ảnh tham chiếu đã xác minh cho mỗi cá thể (`pets.photo_filename` + `pet_reference_photos`), đổi tên ngẫu nhiên, loại EXIF và lưu riêng tư theo backend media đã cấu hình (local mặc định).
-- **Giới hạn định danh trung thực (`Identity-Safe Boundary`)**: Tính năng tìm bằng ảnh chỉ xác nhận **cùng tệp ảnh đã lưu** khi có bằng chứng mã băm; đối với ảnh chụp mới khác tệp, kết quả chỉ phản ánh **tương đồng ngoại hình cùng loài** (hoặc gợi ý ứng viên để nhân viên kiểm tra xác minh tại quầy), **tuyệt đối không tự động xác nhận hai bức ảnh khác nhau là cùng một cá thể thú cưng** (`same_pet_multi_view_reidentification = NOT EVALUATED`; xem [docs/AI4_0E_FINAL_VISION_QA.md](docs/AI4_0E_FINAL_VISION_QA.md) và [docs/AI4_0E_REAL_DATASET_GUIDE.md](docs/AI4_0E_REAL_DATASET_GUIDE.md)). Có thể bật thêm AI Vision bên ngoài qua endpoint tương thích OpenAI khi được phê duyệt.
-- Để bật câu trả lời tạo sinh: đặt `AI_API_BASE_URL`, `AI_MODEL` và nếu cần `AI_API_KEY` trong `.env`. Endpoint cần hỗ trợ `/v1/chat/completions`. Trợ lý chỉ gửi phần dữ liệu cửa hàng phù hợp câu hỏi; tùy mục có thể gồm tên/giá sản phẩm hoặc tên/đặc điểm thú cưng, không tự gửi hồ sơ khách hàng. Câu hỏi và tối đa 8 tin nhắn chat trước đó vẫn được gửi tới endpoint; không nhập dữ liệu nhạy cảm nếu chính sách nhà cung cấp chưa được duyệt. Hộp chat thông báo nội dung trao đổi khi AI đang bật. Production yêu cầu HTTPS; chỉ bật `AI_ALLOW_HTTP_ENDPOINT=1` cho endpoint nội bộ trên mạng tin cậy.
-- Muốn bật phân tích ảnh: chỉ khi endpoint hỗ trợ ảnh, đặt thêm `AI_VISION_ENABLED=1`. Ảnh tải lên để tìm kiếm sẽ được gửi tới endpoint đã cấu hình; mặc định mục này là `0`. Khi AI Vision tắt, ảnh tìm kiếm vẫn được gửi tới máy chủ ứng dụng nhưng không gửi tới endpoint AI và không lưu thành hồ sơ.
-- Giới hạn ảnh hồ sơ/sản phẩm/tìm kiếm là 5 MB mỗi ảnh; ảnh được chuẩn hóa, bỏ metadata và lưu ở filesystem local hoặc bucket S3-compatible riêng tư. MySQL lưu tên file, metadata hồ sơ và descriptor để xếp hạng. Backup local chỉ dùng với backend local; S3 cần backup/versioning theo provider.
-- Trên POSIX, ảnh mới dùng quyền riêng tư cho thư mục/tệp. Trước khi nâng cấp một máy đã có ảnh cũ, chạy `.venv/bin/python -m petcare.vision.secure_photo_permissions` (hoặc `python -m ...` trong môi trường đã kích hoạt) để siết quyền các ảnh hiện có.
-
-### Quét ảnh bằng camera
-
-- Trên laptop, mở **Tìm bằng ảnh** rồi nhấn **Bật camera máy tính**. Trình duyệt chỉ xin quyền sau cú nhấn này; xem khung hình trực tiếp, nhấn **Chụp ảnh & tìm** để gửi một ảnh vào luồng tìm hiện có. Nhấn **Tắt camera** hoặc rời trang để đóng camera.
-- Trên điện thoại cùng Wi‑Fi, nút chọn ảnh có thể mở camera sau. Muốn mở trang trên điện thoại bằng QR, lấy IP Wi‑Fi riêng của laptop (macOS: `ipconfig getifaddr en0`; Windows: chạy `ipconfig` và lấy IPv4 của Wi‑Fi), đặt trong `.env`:
-
-  ```env
-  LAN_ACCESS_ENABLED=1
-  APP_PORT=5055
-  LAN_ACCESS_BASE_URL=http://192.168.1.25:5055
-  ```
-
-  Thay IP ví dụ bằng IP thật rồi khởi động lại `python run.py`. Dùng cổng trống; macOS có thể đã dành cổng 5000 cho AirPlay Receiver, nên mặc định và ví dụ dùng 5055. Hai thiết bị cần cùng Wi‑Fi; nếu tường lửa hỏi, chỉ cho phép kết nối trên mạng riêng. Quét QR ở trang tìm bằng ảnh, đăng nhập trên điện thoại, rồi chụp/chọn ảnh. Kết quả hiện trên điện thoại. Khi không cần nữa, đặt `LAN_ACCESS_ENABLED=0` và khởi động lại.
-- Cấu hình LAN mặc định tắt; nếu thiếu URL hợp lệ, máy chủ tiếp tục chỉ nghe trên localhost. Chỉ dùng trên mạng tin cậy vì HTTP LAN không mã hóa. Camera trực tiếp qua `getUserMedia` cần localhost hoặc HTTPS; trên điện thoại LAN dùng camera gốc qua trình chọn ảnh vì trình duyệt thường chặn camera trực tiếp trên HTTP.
-- Production không chấp nhận QR LAN dùng HTTP. Nếu cần stream camera trực tiếp trên điện thoại, dùng một origin HTTPS đáng tin; camera gốc qua trình chọn ảnh vẫn hoạt động trên mạng LAN HTTP riêng.
-- Tính năng chụp một khung hình để tìm, không truyền video liên tục. Chế độ cục bộ tự động nhận diện loài Mèo/Chó và xếp hạng ngoại hình tương đồng cùng loài từ kho ảnh tham chiếu của cửa hàng, nhưng không xác nhận danh tính cá thể; nhân viên luôn cần đối chiếu thực tế trước khi kết luận.
-- Descriptor ảnh cũ vẫn đọc được và được tìm theo luồng tương thích cho tới khi reindex. Chạy `.venv/bin/python -m petcare.vision.reindex_pet_descriptors` để xem trước rồi thêm `--apply` để cập nhật descriptor và chỉ mục SimHash theo batch; lệnh không sửa ảnh gốc và mặc định không ghi database.
-
-## Cấu hình bảo mật
-
-- Session chỉ giữ user id; trạng thái active và role được đọc lại từ MySQL trong mỗi request.
-- Các request thay đổi dữ liệu dùng POST và CSRF token.
-- Tổng hóa đơn, snapshot tên/giá, tồn kho và trạng thái bán được xác thực phía server.
-- Mật khẩu MySQL và SECRET_KEY chỉ nằm trong .env. Không đưa .env, DB dump, dữ liệu khách thật hoặc .venv lên Git.
-- Mặc định chỉ chạy trên localhost; LAN chỉ bật chủ động bằng cấu hình nêu trên. Không cấu hình Flask debug hoặc mở cổng công khai cho dữ liệu thật.
-
-## Kiểm tra
-
-- Biên dịch cú pháp: python -m compileall -q run.py main.py petcare tests
-- Unit và web tests: python -m unittest discover -s tests -v
-- Test MySQL tích hợp: cấu hình DB_HOST/DB_PORT/DB_USER/DB_PASSWORD và PETCARE_TEST_DB_NAME trỏ tới database test riêng có hậu tố _test. Không chạy fixture test trên DB làm việc.
-- Regression JavaScript cho form/focus/lookup: `node --test tests/js/*.test.cjs` (Node.js 18+ chỉ phục vụ kiểm thử; ứng dụng không cần build frontend).
-
-Mặc định local là `http://127.0.0.1:5055`; Compose cũng mở host port 5055 (container vẫn dùng 8000). Không chạy đồng thời hai bản trên cùng cổng. `/readyz` phải trả HTTP 200 trước khi demo; nếu báo thiếu schema, sao lưu rồi chạy `python -m petcare.database.initialize` để migration cộng thêm.
-
-Khai báo Pillow chấp nhận `>=12.0,<14.0` để tương thích môi trường demo cũ; ưu tiên cài `Pillow>=13.0,<14.0` vì bản 12.3.0 có advisory bảo mật. Phase 1 đã kiểm thử cả 12.3.0 và bản 13.x. Trợ lý hiểu “dưới/trên” là so sánh nghiêm ngặt, “tối đa/tối thiểu/từ…đến…” bao gồm biên; “khoảng N” dùng khoảng ±10%.
-
-Phần test nào cần MySQL thật sẽ không được tính là đã nghiệm thu nếu không có server MySQL test hoạt động.
-
-## Hỗ trợ sự cố thường gặp
-
-- Connection refused / can't connect: đảm bảo MySQL đang chạy và DB_HOST/DB_PORT đúng.
-- Access denied: kiểm tra DB_USER, DB_PASSWORD và host được cấp quyền trong MySQL.
-- Unknown database: tạo petcare_shop_dev trước khi initialize.
-- Port 3306 đang dùng: chọn cổng khác và cập nhật DB_PORT.
-- Lỗi schema/check constraint: xác nhận MySQL 8.0.16+; không chạy schema này trên SQLite.
-
-
-## AI và Automation — Phase 3
-
-Trợ lý trả card có ảnh/giá/trạng thái và mở hồ sơ từ truy vấn SQL trên toàn danh mục đang bán; số đếm không bị giới hạn bởi preview. Gợi ý nhập hàng trên Dashboard/Sản phẩm giải thích tốc độ bán paid 14/30 ngày, ngày tồn và lượng cần nhập; mặt hàng chưa bán dùng ngưỡng nhập lại.
-
-Báo cáo có kỳ nhanh, biểu đồ theo ngày, so sánh kỳ trước và bản tin Python. **Xuất Excel** lấy đúng snapshot đang xem (hiệu lực 15 phút, có CSRF và chữ ký); **In / Lưu PDF** dùng trình duyệt. Giới hạn 366 ngày/5.000 dòng mỗi kỳ để xuất đủ chi tiết; tồn kho là thời điểm chốt. Cài lại requirements để có XlsxWriter.
-
-Tìm ảnh có bộ lọc loài/trạng thái và giải thích điểm; chọn ảnh trên form pet sẽ gợi ý thuộc tính để người dùng duyệt, chỉ điền trường trống. Local vẫn chạy khi không có API; provider lỗi sẽ fallback. Xem [thiết kế và công thức Phase 3](docs/phase3_ai_automation.md).
-
-
-## Animation GSAP — 29/10/2026
-
-Lớp motion nhẹ cho login, dashboard/biểu đồ, POS, trợ lý và toast; dùng GSAP 3.15.0 lưu local để demo offline. Giữ màu chủ đạo, nghiệp vụ, i18n, CSP và tag `v1.0-demo-ready`. Có reduced motion, cleanup khi in/quay lại trang và fallback khi không tải được thư viện. Không cần cài Node/npm để chạy Flask. Xem [cấu trúc, skill và kiểm thử](docs/gsap_motion.md).
+Build reproducible release ZIPs directly from the verified `main` commit (never from a dirty local working tree):
+```sh
+git archive --format=zip --prefix=petcare-manager/ -o ../PetCare-Manager-<version>.zip main
+(cd .. && shasum -a 256 PetCare-Manager-<version>.zip > PetCare-Manager-<version>.sha256)
+(cd .. && shasum -a 256 -c PetCare-Manager-<version>.sha256)
+```
