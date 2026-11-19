@@ -5,10 +5,12 @@ from __future__ import annotations
 import base64
 import heapq
 import json
+from pathlib import Path
 import re
 import unicodedata
 
 from flask import current_app
+import numpy as np
 
 from petcare.ai import client as ai_client
 from petcare.database.connection import read_connection
@@ -17,13 +19,39 @@ from petcare.repositories import pet_repo
 from petcare.services.common import require_actor, text_value
 from petcare.services.ui_text import ui_text
 from petcare.services.exceptions import ValidationError
+from petcare.vision.coat_color_lab import (
+    compare_lab_histograms,
+    decode_embedding_f16_b64,
+    embedding_cosine_similarity,
+    l2_normalize_embedding,
+    lab_coat_groups_compatible,
+)
 from petcare.vision.image_features import (
+    ImageDescriptor,
     InvalidImage,
-    descriptor_from_json,
-    similarity_components,
+    compare_coat_profiles,
+    compare_images,
     compare_images_from_json,
     describe_image,
+    descriptor_from_json,
+    hamming_hex64,
     normalize_image_bytes,
+    sha256_hex,
+    similarity_components,
+)
+from petcare.vision.local_pet_detector import (
+    SUBJECT_AMBIGUOUS,
+    SUBJECT_MULTIPLE_ANIMALS,
+    SUBJECT_NO_RELIABLE_ANIMAL,
+    SUBJECT_ONE_CAT,
+    SUBJECT_ONE_DOG,
+    SUBJECT_OTHER_ANIMAL,
+    SpeciesGateDecision,
+    analyze_pet_image,
+)
+from petcare.vision.species_taxonomy import (
+    canonicalize_species,
+    coat_groups_compatible,
 )
 
 
@@ -43,6 +71,72 @@ _VISION_PROMPT_EN = (
 )
 _RESULT_LIMIT = 12
 _RESULT_MIN_SCORE = 0.12
+
+# AI-4.0a evidence-backed match tiers and outcomes
+MATCH_TIER_EXACT = "exact_image_match"
+MATCH_TIER_NEAR_DUP = "near_duplicate_image"
+MATCH_TIER_SIMILAR = "visually_similar_candidate"
+MATCH_OUTCOME_NONE = "no_confident_match"
+
+# AI-4.0e canonical 5-state identity-safe decision taxonomy
+IDENTITY_DECISION_EXACT = "exact_stored_image_match"
+IDENTITY_DECISION_NEAR_DUP = "near_duplicate_image"
+IDENTITY_DECISION_POTENTIAL_SAME_PET = "potential_same_pet_candidate"
+IDENTITY_DECISION_VISUALLY_SIMILAR = "visually_similar_pet"
+IDENTITY_DECISION_NO_MATCH = "no_confident_match"
+ALLOWED_IDENTITY_DECISIONS = frozenset({
+    IDENTITY_DECISION_EXACT,
+    IDENTITY_DECISION_NEAR_DUP,
+    IDENTITY_DECISION_POTENTIAL_SAME_PET,
+    IDENTITY_DECISION_VISUALLY_SIMILAR,
+    IDENTITY_DECISION_NO_MATCH,
+})
+
+# Thresholds derived strictly from the identity-disjoint AI-4.0a calibration split
+# (see scripts/evaluate_ai4_pet_image_matching.py):
+# - Resized/re-encoded JPEG copies (480px q=70): dHash <= 1, pHash <= 2, vis >= 0.9526, structure >= 0.9993
+# - Centered studio portraits of distinct cats can drop to dHash=7, pHash=8, vis=0.9288 under crops.
+#   We therefore enforce a conservative precision-first near-duplicate gate (0 false positives on calibration).
+NEAR_DUP_MAX_DHASH = 5
+NEAR_DUP_MAX_PHASH = 6
+NEAR_DUP_MAX_COMBINED_HASH = 9
+NEAR_DUP_MIN_VISUAL_SCORE = 0.94
+NEAR_DUP_MIN_STRUCTURE_SCORE = 0.96
+
+# - Natural calibration pet portraits flat_pixel_ratio: 0.265 .. 0.592
+# - UI/document/solid/cartoon calibration negatives flat_pixel_ratio: 0.754 .. 1.000
+SIMILAR_MAX_FLAT_PIXEL_RATIO = 0.68
+SIMILAR_MIN_COMBINED_SCORE = 0.68
+SIMILAR_MIN_DETECTOR_BBOX_SCORE = 0.60
+MAX_SIMILAR_CANDIDATES = 5
+
+_RETRIEVAL_CALIBRATION_PATH = (
+    Path(__file__).resolve().parents[1]
+    / "vision"
+    / "models"
+    / "retrieval_ranking_calibration_v1.json"
+)
+_RETRIEVAL_CALIBRATION_CACHE: dict | None = None
+
+
+def _get_retrieval_calibration() -> dict:
+    global _RETRIEVAL_CALIBRATION_CACHE
+    if _RETRIEVAL_CALIBRATION_CACHE is not None:
+        return _RETRIEVAL_CALIBRATION_CACHE
+    try:
+        raw = json.loads(_RETRIEVAL_CALIBRATION_PATH.read_text(encoding="utf-8"))
+        _RETRIEVAL_CALIBRATION_CACHE = dict(raw["parameters"])
+    except Exception:
+        _RETRIEVAL_CALIBRATION_CACHE = {
+            "embedding_weight": 0.58,
+            "lab_coat_weight": 0.34,
+            "structure_weight": 0.08,
+            "min_combined_similarity": 0.67,
+            "min_embedding_cosine": 0.54,
+            "min_lab_coat_similarity": 0.45,
+            "max_similar_candidates": MAX_SIMILAR_CANDIDATES,
+        }
+    return _RETRIEVAL_CALIBRATION_CACHE
 _VISION_FIELD_LIMITS = {
     "species": 80,
     "breed": 100,
@@ -281,10 +375,705 @@ def _metadata_score(pet: dict, analysis: dict | None, dominant_colors: tuple[str
     return score / total_weight if total_weight else 0.0
 
 
-def search_similar(
-    actor_id: int, image_bytes: bytes, species="", status="available", tenant_id=None
+def _is_exact_descriptor_match(query: ImageDescriptor, saved: ImageDescriptor | None, visual_score: float | None) -> bool:
+    if saved is None:
+        return False
+    q_hashes = {h for h in (query.raw_sha256, query.normalized_sha256) if len(h) == 64}
+    s_hashes = {h for h in (saved.raw_sha256, saved.normalized_sha256) if len(h) == 64}
+    if q_hashes and s_hashes:
+        return bool(q_hashes & s_hashes)
+    # Backward compatibility for pre-AI-4.0a rows stored without SHA-256 digests
+    if not s_hashes and visual_score is not None and visual_score >= 0.999999:
+        if not saved.visual_hash or saved.visual_hash == query.visual_hash:
+            return True
+    return False
+
+
+# Calibrated crop-robust near-duplicate thresholds derived exclusively from AI-4.0d calibration split
+# (max distinct-pet embedding cosine on calibration = 0.9335; min 4%-crop+bright+6% cosine = 0.9645 -> 0 FP)
+CROP_NEAR_DUP_MIN_EMBEDDING_COSINE = 0.955
+CROP_NEAR_DUP_MIN_LAB_SIM = 0.86
+CROP_NEAR_DUP_MIN_VISUAL_SCORE = 0.90
+CROP_NEAR_DUP_MAX_COMBINED_HASH = 24
+
+# Potential matching pet staff-verification review threshold (never confirms identity; capped <= 89)
+POTENTIAL_MATCH_REVIEW_MIN_COMBINED = 0.80
+POTENTIAL_MATCH_REVIEW_MIN_EMBEDDING = 0.78
+POTENTIAL_MATCH_REVIEW_MIN_COAT = 0.78
+
+
+def _is_near_duplicate_match(
+    query: ImageDescriptor,
+    saved: ImageDescriptor | None,
+    visual_score: float | None,
+    *,
+    q_emb_vec: np.ndarray | None = None,
+    q_lab_hist: tuple[float, ...] = (),
+    enable_crop_robust: bool = False,
+) -> bool:
+    if saved is None or visual_score is None:
+        return False
+    d_dist = hamming_hex64(query.dhash64, saved.dhash64)
+    p_dist = hamming_hex64(query.phash64, saved.phash64)
+    if d_dist is None or p_dist is None:
+        return False
+    if (
+        visual_score >= NEAR_DUP_MIN_VISUAL_SCORE
+        and d_dist <= NEAR_DUP_MAX_DHASH
+        and p_dist <= NEAR_DUP_MAX_PHASH
+        and (d_dist + p_dist) <= NEAR_DUP_MAX_COMBINED_HASH
+    ):
+        parts = similarity_components(query, saved)
+        if parts and parts["structure"] >= NEAR_DUP_MIN_STRUCTURE_SCORE:
+            return True
+
+    if (
+        enable_crop_robust
+        and q_emb_vec is not None
+        and q_lab_hist
+        and saved.embedding_b64
+        and saved.fg_lab_histogram
+        and visual_score >= CROP_NEAR_DUP_MIN_VISUAL_SCORE
+        and (d_dist + p_dist) <= CROP_NEAR_DUP_MAX_COMBINED_HASH
+    ):
+        c_emb = decode_embedding_f16_b64(saved.embedding_b64, actual_version=saved.embedding_version)
+        esim = embedding_cosine_similarity(q_emb_vec, c_emb)
+        lsim = compare_lab_histograms(q_lab_hist, saved.fg_lab_histogram)
+        if (
+            esim is not None
+            and lsim is not None
+            and esim >= CROP_NEAR_DUP_MIN_EMBEDDING_COSINE
+            and lsim >= CROP_NEAR_DUP_MIN_LAB_SIM
+        ):
+            return True
+    return False
+
+
+def rank_pet_candidates_ai4a(
+    query: ImageDescriptor,
+    candidates,
+    *,
+    explicit_species: str | None = None,
+    analysis: dict | None = None,
+    include_similar: bool = True,
+    species_gate: SpeciesGateDecision | None = None,
+    use_foreground_embeddings: bool = True,
+    ranking_mode: str = "ai4_0c_combined",
+    gallery_mode: str = "calibrated_gallery_hybrid",
+    crop_robust_near_dup: bool | None = None,
 ) -> dict:
-    """Use a local visual descriptor, optionally refined by a configured vision model."""
+    """Gallery-level AI-4.0d/c/b/a pet photo matcher ranking unique pet records across 1..5 reference photos."""
+    has_reference_photos = False
+    # Each entry: (pet_dict, list_of_(filename, role, slot_idx, ImageDescriptor|None, vis_score|None))
+    materialized_galleries: list[
+        tuple[dict, list[tuple[str | None, str, int, ImageDescriptor | None, float | None]]]
+    ] = []
+
+    for pet in candidates:
+        gallery_entries: list[tuple[str | None, str, int, ImageDescriptor | None, float | None]] = []
+        primary_fn = pet.get("photo_filename")
+        raw_desc = pet.get("photo_descriptor")
+        if primary_fn or raw_desc:
+            has_reference_photos = True
+            saved = descriptor_from_json(raw_desc) if raw_desc else None
+            vis = compare_images(query, saved) if saved is not None else compare_images_from_json(query, raw_desc)
+            gallery_entries.append((primary_fn, "primary", 1, saved, vis))
+
+        if gallery_mode != "primary_only":
+            extra_refs = pet.get("reference_photos") or ()
+            for offset, ref in enumerate(extra_refs[:4], start=len(gallery_entries) + 1):
+                r_fn = ref.get("photo_filename")
+                r_raw = ref.get("photo_descriptor")
+                if r_fn or r_raw:
+                    has_reference_photos = True
+                    r_saved = descriptor_from_json(r_raw) if r_raw else None
+                    r_vis = (
+                        compare_images(query, r_saved)
+                        if r_saved is not None
+                        else compare_images_from_json(query, r_raw)
+                    )
+                    gallery_entries.append(
+                        (r_fn, str(ref.get("image_role") or "additional"), offset, r_saved, r_vis)
+                    )
+
+        materialized_galleries.append((pet, gallery_entries))
+
+    subject_status = species_gate.subject_status if species_gate is not None else None
+    q_emb_b64 = (
+        species_gate.foreground_embedding_b64
+        if species_gate is not None and species_gate.foreground_embedding_b64
+        else query.embedding_b64
+    )
+    q_emb_vec = decode_embedding_f16_b64(q_emb_b64) if q_emb_b64 else None
+    q_lab_hist = (
+        species_gate.foreground_lab_histogram
+        if species_gate is not None and species_gate.foreground_lab_histogram
+        else query.fg_lab_histogram
+    )
+    q_lab_coat7 = (
+        species_gate.foreground_lab_coat_profile
+        if species_gate is not None and species_gate.foreground_lab_coat_profile
+        else query.fg_coat_profile
+    )
+
+    # Guardrail (Phase 6): A manual species filter must NEVER override a verified species contradiction
+    if (
+        species_gate is not None
+        and explicit_species is not None
+        and species_gate.verified_species is not None
+        and explicit_species != species_gate.verified_species
+    ):
+        return {
+            "results": [],
+            "has_reference_photos": has_reference_photos,
+            "match_outcome": MATCH_OUTCOME_NONE,
+            "identity_decision": IDENTITY_DECISION_NO_MATCH,
+            "abstention_reason": "species_contradiction",
+            "verified_species": species_gate.verified_species,
+            "verified_species_source": "local_detector",
+            "subject_status": subject_status,
+        }
+
+    # Pass 1: Tier 0 (Exact SHA-256 across gallery) and Tier 1 (Calibrated near-duplicate across gallery)
+    # Emits AT MOST ONE hit per pet record!
+    exact_hits: list[dict] = []
+    near_dup_hits: list[dict] = []
+
+    for pet, gallery_entries in materialized_galleries:
+        if not gallery_entries:
+            continue
+        pet_species = canonicalize_species(pet.get("species"))
+        gallery_count = len(gallery_entries)
+
+        matched_exact = None
+        for entry in gallery_entries:
+            _fn, _role, _slot, saved, vis = entry
+            if _is_exact_descriptor_match(query, saved, vis):
+                matched_exact = entry
+                break
+
+        if matched_exact is not None:
+            fn, role, slot, saved, _vis = matched_exact
+            if explicit_species is not None and pet_species != explicit_species:
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
+                    "abstention_reason": "species_contradiction",
+                    "verified_species": pet_species,
+                    "verified_species_source": "matched_store_photo",
+                    "subject_status": subject_status,
+                }
+            metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
+            exact_hits.append({
+                "pet": pet,
+                "saved": saved,
+                "score": 100,
+                "sort_score": 1.0,
+                "visual_score": 100,
+                "attribute_score": round(metadata_score * 100),
+                "match_tier": MATCH_TIER_EXACT,
+                "matched_photo_filename": fn or pet.get("photo_filename"),
+                "matched_photo_role": role,
+                "matched_photo_index": slot,
+                "gallery_photo_count": gallery_count,
+                "potential_same_pet_review": False,
+            })
+            continue
+
+        use_crop_nd = use_foreground_embeddings if crop_robust_near_dup is None else bool(crop_robust_near_dup)
+        best_ndup = None
+        for entry in gallery_entries:
+            _fn, _role, _slot, saved, vis = entry
+            if vis is not None and _is_near_duplicate_match(
+                query,
+                saved,
+                vis,
+                q_emb_vec=q_emb_vec,
+                q_lab_hist=q_lab_hist,
+                enable_crop_robust=use_crop_nd,
+            ):
+                if best_ndup is None or vis > best_ndup[4]:
+                    best_ndup = entry
+
+        if best_ndup is not None:
+            if explicit_species is not None and pet_species != explicit_species:
+                continue
+            fn, role, slot, saved, vis = best_ndup
+            metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
+            bounded = max(0.90, min(0.99, float(vis)))
+            near_dup_hits.append({
+                "pet": pet,
+                "saved": saved,
+                "score": max(90, min(99, round(bounded * 100))),
+                "sort_score": bounded,
+                "visual_score": round(float(vis) * 100),
+                "attribute_score": round(metadata_score * 100),
+                "match_tier": MATCH_TIER_NEAR_DUP,
+                "matched_photo_filename": fn or pet.get("photo_filename"),
+                "matched_photo_role": role,
+                "matched_photo_index": slot,
+                "gallery_photo_count": gallery_count,
+                "potential_same_pet_review": False,
+            })
+
+    exact_hits.sort(key=lambda r: (r["sort_score"], str(r["pet"].get("name", "")), -int(r["pet"]["id"])), reverse=True)
+    near_dup_hits.sort(key=lambda r: (r["sort_score"], str(r["pet"].get("name", "")), -int(r["pet"]["id"])), reverse=True)
+
+    # Resolve verified query species using exact/near-dup store match, local species gate, or safe manual fallback
+    verified_species: str | None = None
+    verified_species_source: str | None = None
+
+    if exact_hits:
+        verified_species = canonicalize_species(exact_hits[0]["pet"].get("species"))
+        verified_species_source = "matched_store_photo"
+    elif near_dup_hits:
+        verified_species = canonicalize_species(near_dup_hits[0]["pet"].get("species"))
+        verified_species_source = "matched_store_photo"
+    elif species_gate is not None:
+        if species_gate.subject_status in (SUBJECT_ONE_CAT, SUBJECT_ONE_DOG):
+            verified_species = species_gate.verified_species
+            verified_species_source = "local_detector"
+        elif species_gate.subject_status == SUBJECT_MULTIPLE_ANIMALS:
+            return {
+                "results": [],
+                "has_reference_photos": has_reference_photos,
+                "match_outcome": MATCH_OUTCOME_NONE,
+                "identity_decision": IDENTITY_DECISION_NO_MATCH,
+                "abstention_reason": "multiple_animals_detected",
+                "verified_species": None,
+                "verified_species_source": None,
+                "subject_status": subject_status,
+            }
+        elif species_gate.subject_status == SUBJECT_NO_RELIABLE_ANIMAL:
+            return {
+                "results": [],
+                "has_reference_photos": has_reference_photos,
+                "match_outcome": MATCH_OUTCOME_NONE,
+                "identity_decision": IDENTITY_DECISION_NO_MATCH,
+                "abstention_reason": species_gate.detail_reason,
+                "verified_species": None,
+                "verified_species_source": None,
+                "subject_status": subject_status,
+            }
+        elif species_gate.subject_status == SUBJECT_OTHER_ANIMAL:
+            if explicit_species in (None, "cat", "dog"):
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
+                    "abstention_reason": "unsupported_other_animal",
+                    "verified_species": None,
+                    "verified_species_source": None,
+                    "subject_status": subject_status,
+                }
+            verified_species = explicit_species
+            verified_species_source = "user_filter"
+        elif species_gate.subject_status == SUBJECT_AMBIGUOUS:
+            if explicit_species is None:
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
+                    "abstention_reason": "ambiguous_subject",
+                    "verified_species": None,
+                    "verified_species_source": None,
+                    "subject_status": subject_status,
+                }
+            if (
+                explicit_species in ("cat", "dog")
+                and species_gate.candidate_species_support
+                and explicit_species not in species_gate.candidate_species_support
+            ):
+                return {
+                    "results": [],
+                    "has_reference_photos": has_reference_photos,
+                    "match_outcome": MATCH_OUTCOME_NONE,
+                    "identity_decision": IDENTITY_DECISION_NO_MATCH,
+                    "abstention_reason": "species_contradiction",
+                    "verified_species": None,
+                    "verified_species_source": None,
+                    "subject_status": subject_status,
+                }
+            verified_species = explicit_species
+            verified_species_source = "user_filter"
+        elif explicit_species is not None:
+            verified_species = explicit_species
+            verified_species_source = "user_filter"
+    elif explicit_species is not None:
+        verified_species = explicit_species
+        verified_species_source = "user_filter"
+
+    if verified_species is not None:
+        near_dup_hits = [
+            r for r in near_dup_hits
+            if canonicalize_species(r["pet"].get("species")) == verified_species
+        ]
+
+    if verified_species is None:
+        abstention_reason = (
+            "non_photographic_or_low_texture"
+            if query.flat_pixel_ratio > SIMILAR_MAX_FLAT_PIXEL_RATIO
+            else "species_unverified"
+        )
+        return {
+            "results": [],
+            "has_reference_photos": has_reference_photos,
+            "match_outcome": MATCH_OUTCOME_NONE,
+            "identity_decision": IDENTITY_DECISION_NO_MATCH,
+            "abstention_reason": abstention_reason,
+            "verified_species": None,
+            "verified_species_source": None,
+            "subject_status": subject_status,
+        }
+
+    direct_ids = {int(r["pet"]["id"]) for r in (*exact_hits, *near_dup_hits)}
+    similar_hits: list[dict] = []
+    non_photo_rejected = query.flat_pixel_ratio > SIMILAR_MAX_FLAT_PIXEL_RATIO
+
+    use_fg_bbox = bool(
+        species_gate is not None
+        and species_gate.foreground_coat_profile
+        and species_gate.foreground_descriptor is not None
+    )
+    active_coat_profile = (
+        species_gate.foreground_coat_profile
+        if use_fg_bbox and species_gate is not None
+        else query.subject_coat_profile
+    )
+    min_sim_threshold = (
+        SIMILAR_MIN_DETECTOR_BBOX_SCORE if use_fg_bbox else SIMILAR_MIN_COMBINED_SCORE
+    )
+    rcal = _get_retrieval_calibration()
+    w_emb = float(rcal["embedding_weight"])
+    w_lab = float(rcal["lab_coat_weight"])
+    w_struct = float(rcal["structure_weight"])
+    min_comb_4c = float(rcal["min_combined_similarity"])
+    min_emb_cos = float(rcal["min_embedding_cosine"])
+    min_lab_sim = float(rcal["min_lab_coat_similarity"])
+
+    active_mode = ranking_mode if use_foreground_embeddings else "ai4_0b_baseline"
+
+    def _score_one_photo(
+        pet: dict,
+        saved: ImageDescriptor,
+        visual_score: float,
+    ) -> tuple[float, float | None, float, np.ndarray | None, tuple[float, ...], float] | None:
+        best_vis = visual_score
+        if use_fg_bbox and species_gate is not None and species_gate.foreground_descriptor is not None:
+            bbox_vis = compare_images(species_gate.foreground_descriptor, saved)
+            best_vis = max(visual_score, bbox_vis)
+
+        c_emb_vec = (
+            decode_embedding_f16_b64(saved.embedding_b64, actual_version=saved.embedding_version)
+            if saved.embedding_b64
+            else None
+        )
+        c_lab_hist = saved.fg_lab_histogram
+        has_4c_pair = bool(
+            q_emb_vec is not None
+            and c_emb_vec is not None
+            and q_lab_hist
+            and c_lab_hist
+        )
+
+        ref_fg = (
+            species_gate.foreground_descriptor
+            if species_gate is not None and species_gate.foreground_descriptor is not None
+            else query
+        )
+        fg_parts = similarity_components(ref_fg, saved)
+        struct_sim = float(fg_parts["structure"]) if fg_parts else 0.5
+
+        if active_mode == "embedding_only" and q_emb_vec is not None and c_emb_vec is not None:
+            emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
+            if emb_sim is None:
+                return None
+            return emb_sim, emb_sim, emb_sim, c_emb_vec, c_lab_hist, struct_sim
+
+        if active_mode == "coat_lab_only" and q_lab_hist and c_lab_hist:
+            if not lab_coat_groups_compatible(
+                q_lab_coat7,
+                pet.get("coat_color"),
+                pet.get("appearance_tags"),
+                saved.fg_coat_profile,
+            ):
+                return None
+            lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
+            if lab_sim is None:
+                return None
+            return lab_sim, None, lab_sim, c_emb_vec, c_lab_hist, struct_sim
+
+        if active_mode == "ai4_0c_combined" and has_4c_pair:
+            if not lab_coat_groups_compatible(
+                q_lab_coat7,
+                pet.get("coat_color"),
+                pet.get("appearance_tags"),
+                saved.fg_coat_profile,
+            ):
+                return None
+            emb_sim = embedding_cosine_similarity(q_emb_vec, c_emb_vec)
+            lab_sim = compare_lab_histograms(q_lab_hist, c_lab_hist)
+            if (
+                emb_sim is None
+                or lab_sim is None
+                or emb_sim < min_emb_cos
+                or lab_sim < min_lab_sim
+            ):
+                return None
+            comb = w_emb * emb_sim + w_lab * lab_sim + w_struct * struct_sim
+            return comb, emb_sim, lab_sim, c_emb_vec, c_lab_hist, struct_sim
+
+        coat_sim = compare_coat_profiles(active_coat_profile, saved.subject_coat_profile)
+        eff_coat = coat_sim if coat_sim is not None else best_vis
+        if not coat_groups_compatible(
+            active_coat_profile,
+            pet.get("coat_color"),
+            pet.get("appearance_tags"),
+            saved.subject_coat_profile,
+        ):
+            return None
+        comb = (0.45 * best_vis + 0.55 * eff_coat) if use_fg_bbox else (0.55 * best_vis + 0.45 * eff_coat)
+        return comb, None, eff_coat, None, (), best_vis
+
+    if include_similar and not non_photo_rejected:
+        for pet, gallery_entries in materialized_galleries:
+            pet_id = int(pet["id"])
+            if pet_id in direct_ids or not gallery_entries:
+                continue
+            if canonicalize_species(pet.get("species")) != verified_species:
+                continue
+
+            gallery_count = len(gallery_entries)
+            per_photo_evals: list[tuple[float, float | None, float, np.ndarray | None, tuple[float, ...], float, tuple]] = []
+            for entry in gallery_entries:
+                _fn, _role, _slot, saved, vis = entry
+                if saved is None or vis is None:
+                    continue
+                scored_one = _score_one_photo(pet, saved, vis)
+                if scored_one is not None:
+                    per_photo_evals.append((*scored_one, entry))
+
+            if not per_photo_evals:
+                continue
+
+            per_photo_evals.sort(key=lambda item: item[0], reverse=True)
+            best_comb, best_emb, best_coat, _be, _bl, best_aux, best_entry = per_photo_evals[0]
+            best_fn, best_role, best_slot, best_saved, best_raw_vis = best_entry
+
+            eff_threshold = (
+                min_comb_4c
+                if (active_mode in {"embedding_only", "coat_lab_only"} or best_emb is not None)
+                else min_sim_threshold
+            )
+
+            # Gallery-level aggregation across authorized reference photos (Phase 5)
+            if gallery_mode == "mean_gallery" and len(per_photo_evals) >= 2:
+                combined_sim = sum(it[0] for it in per_photo_evals) / len(per_photo_evals)
+            elif (
+                gallery_mode == "calibrated_gallery_hybrid"
+                and len(per_photo_evals) >= 2
+                and active_mode == "ai4_0c_combined"
+                and q_emb_vec is not None
+                and q_lab_hist
+            ):
+                # Require at least one photo to clear threshold individually (zero gallery-size inflation!),
+                # then anchor 80% on best matching view + 20% on L2 gallery prototype consistency.
+                if best_comb < eff_threshold:
+                    continue
+                valid_embs = [it[3] for it in per_photo_evals if it[3] is not None]
+                valid_labs = [it[4] for it in per_photo_evals if it[4]]
+                if valid_embs and valid_labs:
+                    proto_emb = l2_normalize_embedding(np.sum(np.stack(valid_embs, axis=0), axis=0))
+                    proto_lab = tuple(
+                        float(x) for x in np.mean(np.asarray(valid_labs, dtype=np.float32), axis=0)
+                    )
+                    proto_esim = embedding_cosine_similarity(q_emb_vec, proto_emb)
+                    proto_lsim = compare_lab_histograms(q_lab_hist, proto_lab)
+                    if proto_esim is not None and proto_lsim is not None:
+                        proto_comb = w_emb * proto_esim + w_lab * proto_lsim + w_struct * best_aux
+                        combined_sim = 0.80 * best_comb + 0.20 * proto_comb
+                    else:
+                        combined_sim = best_comb
+                else:
+                    combined_sim = best_comb
+            else:
+                # max_photo or single-photo record
+                combined_sim = best_comb
+
+            if combined_sim < eff_threshold:
+                continue
+
+            metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
+            capped_score = min(89, max(1, round(combined_sim * 100)))
+            potential_review = bool(
+                best_emb is not None
+                and best_emb >= POTENTIAL_MATCH_REVIEW_MIN_EMBEDDING
+                and best_coat >= POTENTIAL_MATCH_REVIEW_MIN_COAT
+                and combined_sim >= POTENTIAL_MATCH_REVIEW_MIN_COMBINED
+            )
+            similar_hits.append({
+                "pet": pet,
+                "saved": best_saved,
+                "score": capped_score,
+                "sort_score": combined_sim,
+                "visual_score": round((best_emb if best_emb is not None else (best_raw_vis or 0.0)) * 100),
+                "embedding_score": round(best_emb * 100) if best_emb is not None else None,
+                "coat_score": round(best_coat * 100),
+                "attribute_score": round(metadata_score * 100),
+                "match_tier": MATCH_TIER_SIMILAR,
+                "matched_photo_filename": best_fn or pet.get("photo_filename"),
+                "matched_photo_role": best_role,
+                "matched_photo_index": best_slot,
+                "gallery_photo_count": gallery_count,
+                "potential_same_pet_review": potential_review,
+            })
+
+    similar_hits.sort(
+        key=lambda r: (r["sort_score"], str(r["pet"].get("name", "")), -int(r["pet"]["id"])),
+        reverse=True,
+    )
+    combined_results = [*exact_hits, *near_dup_hits, *similar_hits[:MAX_SIMILAR_CANDIDATES]]
+
+    for result in combined_results:
+        saved = result.pop("saved", None)
+        result.pop("sort_score", None)
+        emb_pct = result.get("embedding_score")
+        coat_pct = result.get("coat_score")
+        parts = similarity_components(query, saved) if saved else None
+        result["components"] = {
+            key: round(value * 100) for key, value in (parts or {}).items()
+        }
+        if emb_pct is not None:
+            result["components"]["morphology"] = emb_pct
+        if coat_pct is not None and result["match_tier"] == MATCH_TIER_SIMILAR:
+            result["components"]["color"] = coat_pct
+        result["components"]["attributes"] = result["attribute_score"]
+        result["reasons"] = []
+        matched_colors = [
+            color
+            for color in query.dominant_colors
+            if _tokens(color) & _tokens(result["pet"].get("coat_color", ""))
+        ]
+        if result["match_tier"] == MATCH_TIER_EXACT:
+            result["identity_decision"] = IDENTITY_DECISION_EXACT
+            if result.get("matched_photo_index", 1) > 1:
+                result["reasons"].append({"kind": "exact_gallery_photo", "value": f"#{result['matched_photo_index']}"})
+            else:
+                result["reasons"].append({"kind": "exact_photo", "value": ""})
+        elif result["match_tier"] == MATCH_TIER_NEAR_DUP:
+            result["identity_decision"] = IDENTITY_DECISION_NEAR_DUP
+            result["reasons"].append({"kind": "near_duplicate", "value": ""})
+        else:
+            result["identity_decision"] = (
+                IDENTITY_DECISION_POTENTIAL_SAME_PET
+                if result.get("potential_same_pet_review")
+                else IDENTITY_DECISION_VISUALLY_SIMILAR
+            )
+            if result.get("matched_photo_index", 1) > 1:
+                result["reasons"].append({"kind": "gallery_angle", "value": f"#{result['matched_photo_index']}"})
+            if emb_pct is not None and emb_pct >= 70:
+                result["reasons"].append({"kind": "appearance_embedding", "value": ""})
+            if coat_pct is not None and coat_pct >= 74:
+                result["reasons"].append({"kind": "lab_coat", "value": ""})
+        if matched_colors:
+            result["reasons"].append({"kind": "coat", "value": ", ".join(matched_colors)})
+        if parts and parts["color"] >= 0.8 and not any(r["kind"] == "lab_coat" for r in result["reasons"]):
+            result["reasons"].append({"kind": "color", "value": ""})
+        if parts and parts["structure"] >= 0.8:
+            result["reasons"].append({"kind": "structure", "value": ""})
+
+    if exact_hits:
+        outcome = MATCH_TIER_EXACT
+        top_decision = IDENTITY_DECISION_EXACT
+        abstention = None
+    elif near_dup_hits:
+        outcome = MATCH_TIER_NEAR_DUP
+        top_decision = IDENTITY_DECISION_NEAR_DUP
+        abstention = None
+    elif combined_results:
+        outcome = "visually_similar_only"
+        top_decision = (
+            IDENTITY_DECISION_POTENTIAL_SAME_PET
+            if any(r.get("potential_same_pet_review") for r in combined_results)
+            else IDENTITY_DECISION_VISUALLY_SIMILAR
+        )
+        abstention = None
+    else:
+        outcome = MATCH_OUTCOME_NONE
+        top_decision = IDENTITY_DECISION_NO_MATCH
+        if non_photo_rejected:
+            abstention = "non_photographic_or_low_texture"
+        else:
+            abstention = "below_similarity_threshold"
+
+    return {
+        "results": combined_results,
+        "has_reference_photos": has_reference_photos,
+        "match_outcome": outcome,
+        "identity_decision": top_decision,
+        "abstention_reason": abstention,
+        "verified_species": verified_species,
+        "verified_species_source": verified_species_source,
+        "subject_status": subject_status,
+    }
+
+
+rank_pet_candidates_ai4b = rank_pet_candidates_ai4a
+rank_pet_candidates_ai4c = rank_pet_candidates_ai4a
+rank_pet_candidates_ai4d = rank_pet_candidates_ai4a
+rank_pet_candidates_ai4e = rank_pet_candidates_ai4a
+
+
+def _legacy_stream_rank(query, candidates, analysis) -> list[dict]:
+    """Compatibility heap path retained for synthetic unit-test stubs lacking ImageDescriptor."""
+    top_results = []
+    for pet in candidates:
+        visual_score = compare_images_from_json(query, pet.get("photo_descriptor"))
+        metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
+        if visual_score is None:
+            score = (0.5 if analysis else 0.35) * metadata_score
+        else:
+            score = 0.82 * visual_score + 0.18 * metadata_score
+        if score < _RESULT_MIN_SCORE:
+            continue
+        pet_id = int(pet["id"])
+        result = {
+            "pet": pet,
+            "score": round(max(0.0, min(1.0, score)) * 100),
+            "visual_score": round(visual_score * 100) if visual_score is not None else None,
+            "attribute_score": round(metadata_score * 100),
+            "match_tier": MATCH_TIER_SIMILAR,
+            "identity_decision": IDENTITY_DECISION_VISUALLY_SIMILAR,
+        }
+        rank = (score, str(pet["name"]), -pet_id)
+        if len(top_results) < _RESULT_LIMIT:
+            heapq.heappush(top_results, (rank, result))
+        elif rank > top_results[0][0]:
+            heapq.heapreplace(top_results, (rank, result))
+    results = [item[1] for item in sorted(top_results, key=lambda item: item[0], reverse=True)]
+    for result in results:
+        saved = descriptor_from_json(result["pet"].get("photo_descriptor"))
+        parts = similarity_components(query, saved) if saved else None
+        result["components"] = {key: round(value * 100) for key, value in (parts or {}).items()}
+        result["components"]["attributes"] = result["attribute_score"]
+        result["reasons"] = []
+    return results[:12]
+
+
+def search_similar(
+    actor_id: int,
+    image_bytes: bytes,
+    species="",
+    status="available",
+    tenant_id=None,
+    *,
+    include_similar: bool = True,
+) -> dict:
+    """Precision-first local pet photo matcher with SHA-256 exact priority and hard species filtering."""
     species = text_value(species, "Loài", 80, required=False)
     if status not in {"available", "sold", "inactive", ""}:
         raise ValidationError(
@@ -297,13 +1086,25 @@ def search_similar(
     # image to an external vision endpoint.
     with read_connection() as connection:
         require_actor(connection, actor_id, tenant_id=tenant_id)
+    raw_sha = sha256_hex(image_bytes)
     normalized = normalize_image_bytes(image_bytes)
-    query = describe_image(normalized)
+    norm_sha = sha256_hex(normalized)
+    query = describe_image(normalized, raw_sha256=raw_sha, normalized_sha256=norm_sha)
     analysis, warning, _provider_status = _analysis_from_model(normalized)
-    top_results = []
+    explicit_species = canonicalize_species(species)
+    local_gate_enabled = bool(current_app.config.get("AI_LOCAL_SPECIES_GATE_ENABLED", True))
+    fg_emb_enabled = bool(current_app.config.get("AI_FOREGROUND_EMBEDDING_ENABLED", True))
+    species_gate = (
+        analyze_pet_image(normalized, flat_pixel_ratio=query.flat_pixel_ratio)
+        if isinstance(query, ImageDescriptor) and local_gate_enabled
+        else None
+    )
     search_scope = "full"
+
     with read_connection() as connection:
         require_actor(connection, actor_id, tenant_id=tenant_id)
+        # Note: When explicit species is provided, still scan available candidates if we need to detect
+        # an exact stored photo contradiction when local_gate_enabled is False, otherwise iter_filtered_for_image_search.
         filtered = bool(species or status != "available")
         has_reference_photos = (
             False if filtered else pet_repo.has_available_reference_photos(connection)
@@ -325,63 +1126,35 @@ def search_similar(
                 else:
                     candidates = iter(indexed_candidates)
                     search_scope = "indexed"
-        for pet in candidates:
-            if pet.get("photo_filename"):
-                has_reference_photos = True
-            visual_score = compare_images_from_json(query, pet.get("photo_descriptor"))
-            metadata_score = _metadata_score(pet, analysis, query.dominant_colors)
-            if visual_score is None:
-                # Metadata-only matches are intentionally conservative. Without a
-                # saved reference photo the ranking is a hint, not visual matching.
-                score = (0.5 if analysis else 0.35) * metadata_score
-            else:
-                score = 0.82 * visual_score + 0.18 * metadata_score
-            if score < _RESULT_MIN_SCORE:
-                continue
 
-            pet_id = int(pet["id"])
-            result = {
-                "pet": pet,
-                "score": round(max(0.0, min(1.0, score)) * 100),
-                "visual_score": (
-                    round(visual_score * 100) if visual_score is not None else None
-                ),
-                "attribute_score": round(metadata_score * 100),
-            }
-            # The old display order is descending score/name with ascending id
-            # for ties. Keep that exact ordering while bounding memory at top-k.
-            rank = (score, str(pet["name"]), -pet_id)
-            if len(top_results) < _RESULT_LIMIT:
-                heapq.heappush(top_results, (rank, result))
-            elif rank > top_results[0][0]:
-                heapq.heapreplace(top_results, (rank, result))
-    results = [
-        item[1] for item in sorted(top_results, key=lambda item: item[0], reverse=True)
-    ]
-    for result in results:
-        saved = descriptor_from_json(result["pet"].get("photo_descriptor"))
-        parts = similarity_components(query, saved) if saved else None
-        result["components"] = {
-            key: round(value * 100) for key, value in (parts or {}).items()
-        }
-        result["components"]["attributes"] = result["attribute_score"]
-        result["reasons"] = []
-        matched_colors = [
-            color
-            for color in query.dominant_colors
-            if _tokens(color) & _tokens(result["pet"].get("coat_color", ""))
-        ]
-        if matched_colors:
-            result["reasons"].append(
-                {"kind": "coat", "value": ", ".join(matched_colors)}
+        if isinstance(query, ImageDescriptor):
+            outcome = rank_pet_candidates_ai4a(
+                query,
+                candidates,
+                explicit_species=explicit_species,
+                analysis=analysis,
+                include_similar=include_similar,
+                species_gate=species_gate,
+                use_foreground_embeddings=fg_emb_enabled,
             )
-        if parts and parts["color"] >= 0.8:
-            result["reasons"].append({"kind": "color", "value": ""})
-        if parts and parts["structure"] >= 0.8:
-            result["reasons"].append({"kind": "structure", "value": ""})
+            results = outcome["results"]
+            has_reference_photos = has_reference_photos or outcome["has_reference_photos"]
+            match_outcome = outcome["match_outcome"]
+            abstention_reason = outcome["abstention_reason"]
+            verified_species = outcome["verified_species"]
+            verified_species_source = outcome["verified_species_source"]
+            subject_status = outcome["subject_status"]
+        else:
+            results = _legacy_stream_rank(query, candidates, analysis)
+            match_outcome = "visually_similar_only" if results else MATCH_OUTCOME_NONE
+            abstention_reason = None if results else "below_similarity_threshold"
+            verified_species = explicit_species
+            verified_species_source = "user_filter" if explicit_species else None
+            subject_status = None
+
     return {
         "filters": {"species": species, "status": status},
-        "results": results[:12],
+        "results": results,
         "dominant_colors": query.dominant_colors,
         "analysis": analysis,
         "vision_enabled": bool(
@@ -390,6 +1163,23 @@ def search_similar(
         "warning": warning,
         "has_reference_photos": has_reference_photos,
         "search_scope": search_scope,
+        "match_outcome": match_outcome,
+        "abstention_reason": abstention_reason,
+        "verified_species": verified_species,
+        "verified_species_source": verified_species_source,
+        "subject_status": subject_status,
+        "species_gate": (
+            {
+                "subject_status": species_gate.subject_status,
+                "verified_species": species_gate.verified_species,
+                "detail_reason": species_gate.detail_reason,
+                "animal_count": species_gate.animal_count,
+                "detector_label": species_gate.detector_label,
+                "inference_ms": species_gate.inference_ms,
+            }
+            if species_gate is not None
+            else None
+        ),
         # The normalized query is rendered only in this authenticated response;
         # it is not persisted with pet records or sent to a remote provider.
         "query_preview": "data:image/jpeg;base64," + base64.b64encode(normalized).decode("ascii"),

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "calibration_id": "ai4-0b-species-gate-cal-v1",
+  "calibrated_on_split": "calibration",
+  "holdout_touched": false,
+  "calibration_sample_count": 45,
+  "uncalibrated_nll_t1": 0.233,
+  "calibrated_nll": 0.2139,
+  "parameters": {
+    "temperature": 0.8,
+    "detector_animal_min_score": 0.25,
+    "detector_toy_min_score": 0.35,
+    "nms_iou_threshold": 0.45,
+    "nested_box_containment_threshold": 0.9,
+    "nested_box_center_shift_max": 0.12,
+    "crop_context_margin_ratio": 0.08,
+    "min_calibrated_species_prob": 0.4,
+    "min_species_margin": 0.3,
+    "require_stage_agreement": true,
+    "max_flat_pixel_ratio": 0.68
+  }
+}

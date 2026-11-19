@@ -265,3 +265,24 @@ test("printing opens report details and restores their previous state afterwards
   h.window.dispatchEvent(new UIEvent("beforeprint"));
   h.window.dispatchEvent(new UIEvent("afterprint"));assert.equal(closed.open,false);assert.equal(opened.open,true);
 });
+
+test("gallery photo input enforces 5 MB limit and updates preview caption", () => {
+  const input=el("input",{dataset:{galleryPhoto:"",tooLargeMessage:"Ảnh cần nhỏ hơn 5 MB.",newCaption:"Ảnh mới:"},value:"picked.jpg"});
+  const img=el("img",{dataset:{galleryPreviewImage:""}});
+  const caption=el("span",{dataset:{previewCaption:""}});
+  const wrap=el("div",{dataset:{galleryPreview:""},hidden:true},[img,caption]);
+  const status=el("p",{dataset:{galleryUploadStatus:""}});
+  const revoked=[];
+  const URLMock={createObjectURL:()=>"blob:gallery-1",revokeObjectURL:u=>revoked.push(u)};
+  const h=run("photo_preview.js",el("document",{},[input,wrap,status]),{URL:URLMock});
+  input.files=[{name:"oversize.jpg",size:6*1024*1024}];
+  input.dispatchEvent(new UIEvent("change"));
+  assert.equal(input.value,"");assert.equal(wrap.hidden,true);assert.equal(status.textContent,"Ảnh cần nhỏ hơn 5 MB.");
+  input.files=[{name:"side_angle.jpg",size:120000}];
+  input.dispatchEvent(new UIEvent("change"));
+  img.onload();
+  assert.equal(wrap.hidden,false);assert.equal(img.src,"blob:gallery-1");
+  assert.equal(caption.textContent,"Ảnh mới: side_angle.jpg");assert.equal(status.textContent,"");
+  h.window.dispatchEvent(new UIEvent("pagehide"));
+  assert.deepEqual(revoked,["blob:gallery-1"]);
+});

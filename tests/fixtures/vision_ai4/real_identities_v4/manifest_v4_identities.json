@@ -1,0 +1,793 @@
+{
+  "schema_version": 4,
+  "dataset_id": "petcare-ai4-0e-real-identity-and-open-set-manifest",
+  "version": "4.1.0",
+  "target_dataset_spec": {
+    "enrolled_verified_identities_target": 24,
+    "enrolled_cats_target": 12,
+    "enrolled_dogs_target": 12,
+    "min_independent_photos_per_identity": 3,
+    "absent_open_set_pets_target": 8,
+    "negative_photographs_target": 16
+  },
+  "historical_benchmark_policy": "The AI-4.0a/b/c/d splits were inspected across prior engineering iterations and are treated strictly as historical regression benchmarks, never as a fresh untouched final multi-view identity holdout.",
+  "anti_fabrication_rules": [
+    "Never generate fake same-pet identity labels from visual similarity.",
+    "Never count resized, cropped, or recompressed versions of one photograph as independent multi-view captures.",
+    "Never assume two Wikimedia photographs depict the same individual animal without explicit verified provenance.",
+    "Never upload any photograph to external AI endpoints."
+  ],
+  "enrolled_multi_view_identities": [],
+  "absent_open_set_identities": [
+    {
+      "identity_id": "real_open_cat_01",
+      "legacy_sample_id": "real-cat-orange-cal-01",
+      "species": "cat",
+      "coat_group": "orange_gold",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-orange-cal-01_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-orange-cal-01.jpg",
+          "raw_sha256": "8547af0f0f2304d2157cf8174f00e7697ea665fa8edfde1cd6f4847db8d59640",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Ginger cat (14358857469).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Ginger_cat_(14358857469).jpg",
+            "license": "CC BY 2.0",
+            "artist": "YuJeen from Riga, Latvia",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-orange-cal-01",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_02",
+      "legacy_sample_id": "real-cat-orange-cal-02",
+      "species": "cat",
+      "coat_group": "orange_gold",
+      "coat_length_group": "long_fluffy",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-orange-cal-02_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-orange-cal-02.jpg",
+          "raw_sha256": "84d1601c0094b0122246fd62ce98b209ca09f4fe5b384ad8f88e437d9e355ca9",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Ginger long-haired cat (Unsplash).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Ginger_long-haired_cat_(Unsplash).jpg",
+            "license": "CC0",
+            "artist": "dorota dylka dylka",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-orange-cal-02",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_03",
+      "legacy_sample_id": "real-cat-other-cal-03",
+      "species": "cat",
+      "coat_group": "brown",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-other-cal-03_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-other-cal-03.jpg",
+          "raw_sha256": "1178c9c6c54ef6f6e66c41ba7a3306354c41c2abe077b1527c8389aa2568432e",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Relaxed tabby cat (Unsplash).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Relaxed_tabby_cat_(Unsplash).jpg",
+            "license": "CC0",
+            "artist": "Erik-Jan Leusink ejleusink",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-other-cal-03",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_04",
+      "legacy_sample_id": "real-cat-other-cal-04",
+      "species": "cat",
+      "coat_group": "black_dark",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-other-cal-04_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-other-cal-04.jpg",
+          "raw_sha256": "b5b1d1fb39ecbdb2933848f8dad820bfaddd2968402731d63119554488a8a5dc",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Watchful black cat (Unsplash).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Watchful_black_cat_(Unsplash).jpg",
+            "license": "CC0",
+            "artist": "Abdu Rahman ofabi",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-other-cal-04",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_05",
+      "legacy_sample_id": "real-cat-orange-hold-01",
+      "species": "cat",
+      "coat_group": "orange_gold",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-orange-hold-01_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-orange-hold-01.jpg",
+          "raw_sha256": "93ed0a8d4f2c5b22b0bfc34d3f25adfc3fea9a4a87f15ab9b342f1e3aa0a9ddb",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Red mackerel tabby cat 2011-12-08 (8653607508).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Red_mackerel_tabby_cat_2011-12-08_(8653607508).jpg",
+            "license": "CC BY 2.0",
+            "artist": "Greg Mote from Glendora, CA, USA",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-orange-hold-01",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_06",
+      "legacy_sample_id": "real-cat-orange-hold-02",
+      "species": "cat",
+      "coat_group": "orange_gold",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-orange-hold-02_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-orange-hold-02.jpg",
+          "raw_sha256": "51387c3780c29fcb8dd23756f2ca5ea943e19ecb8479fe612edeec3d105910de",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Orange and white cat 01.jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Orange_and_white_cat_01.jpg",
+            "license": "CC BY 4.0",
+            "artist": "Ioutpizzaedthehut12",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-orange-hold-02",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_07",
+      "legacy_sample_id": "real-cat-other-hold-03",
+      "species": "cat",
+      "coat_group": "gray_silver",
+      "coat_length_group": "long_fluffy",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-other-hold-03_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-other-hold-03.jpg",
+          "raw_sha256": "040d31b8b130354af9d3e665facb5fba187df44202cab3876cde3a41064b53af",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Furry gray cat (Unsplash).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Furry_gray_cat_(Unsplash).jpg",
+            "license": "CC0",
+            "artist": "Kamonnat Onnom artiistz",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-other-hold-03",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_cat_08",
+      "legacy_sample_id": "real-cat-other-hold-04",
+      "species": "cat",
+      "coat_group": "gray_silver",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-cat-other-hold-04_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-cat-other-hold-04.jpg",
+          "raw_sha256": "d95dc7e791af9a3f4ab97a2838a89273e824ef1c256a0ded02924a00beee0ac6",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Cute gray cat sitting in bed.jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Cute_gray_cat_sitting_in_bed.jpg",
+            "license": "CC0",
+            "artist": "Aleenamustlive",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-cat-other-hold-04",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_09",
+      "legacy_sample_id": "real-dog-golden-cal-01",
+      "species": "dog",
+      "coat_group": "orange_gold",
+      "coat_length_group": "long_fluffy",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-golden-cal-01_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-golden-cal-01.jpg",
+          "raw_sha256": "aaa5b9acc53f9941daad3a70c8aed30c76940e68369b21b34f36eb5e858e4ac5",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Golden Retriever, Birmingham, United States (Unsplash).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Golden_Retriever,_Birmingham,_United_States_(Unsplash).jpg",
+            "license": "CC0",
+            "artist": "Tanner Vines tannervee",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-golden-cal-01",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_10",
+      "legacy_sample_id": "real-dog-golden-cal-02",
+      "species": "dog",
+      "coat_group": "orange_gold",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-golden-cal-02_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-golden-cal-02.jpg",
+          "raw_sha256": "8b35b0ab34c91de7e13dfde453ae23bb94eec80a1ac699a6fa6476cd135143e9",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Fawn and white Welsh Corgi puppy standing on rear legs and sticking out the tongue.jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Fawn_and_white_Welsh_Corgi_puppy_standing_on_rear_legs_and_sticking_out_the_tongue.jpg",
+            "license": "CC0",
+            "artist": "Huoadg5888Minor edits made by Subsidiary account",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-golden-cal-02",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_11",
+      "legacy_sample_id": "real-dog-other-cal-03",
+      "species": "dog",
+      "coat_group": "black_dark",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-other-cal-03_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-other-cal-03.jpg",
+          "raw_sha256": "614d5de6ca4ff5dece53919b0f85c596615f602e536366ff22071f3924ab57e0",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Labrador Retriever black portrait Flickr.jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Labrador_Retriever_black_portrait_Flickr.jpg",
+            "license": "CC BY 2.0",
+            "artist": "Peter Wadsworth",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-other-cal-03",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_12",
+      "legacy_sample_id": "real-dog-other-cal-04",
+      "species": "dog",
+      "coat_group": "gray_silver",
+      "coat_length_group": "long_fluffy",
+      "evaluation_split": "calibration_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-other-cal-04_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-other-cal-04.jpg",
+          "raw_sha256": "8a391acb139ac6a79a1570a1425ca7def9623f88203cc9f87112524581d5141a",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Siberian Husky Ivan portrait.jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Siberian_Husky_Ivan_portrait.jpg",
+            "license": "CC BY 2.0",
+            "artist": "Randi Hausken",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-other-cal-04",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_13",
+      "legacy_sample_id": "real-dog-golden-hold-01",
+      "species": "dog",
+      "coat_group": "orange_gold",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-golden-hold-01_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-golden-hold-01.jpg",
+          "raw_sha256": "7dd653a31ce8a5a604418b2cc4f34b471ff5381be081747bcf3c93557219b3a8",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Shiba Inu Dog Portrait (cc) (4115686100).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Shiba_Inu_Dog_Portrait_(cc)_(4115686100).jpg",
+            "license": "CC BY 2.0",
+            "artist": "Jason Hargrove from New York",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-golden-hold-01",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_14",
+      "legacy_sample_id": "real-dog-golden-hold-02",
+      "species": "dog",
+      "coat_group": "cream_tan",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-golden-hold-02_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-golden-hold-02.jpg",
+          "raw_sha256": "54ea4548c296d3aea76c11a7b90d9e917979540a9a372fb75ce096e8f1f88222",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:43 Old dog - senior labrador dog with collar resting on sidewalk.jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:43_Old_dog_-_senior_labrador_dog_with_collar_resting_on_sidewalk.jpg",
+            "license": "CC BY 3.0",
+            "artist": "Marek Ślusarczyk (Tupungato) Photo portfolio",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-golden-hold-02",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_15",
+      "legacy_sample_id": "real-dog-other-hold-03",
+      "species": "dog",
+      "coat_group": "brown",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-other-hold-03_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-other-hold-03.jpg",
+          "raw_sha256": "c4608fb97f61ecc3e5327b2304c3052a03935954926903bcb02d0d73864e7c2e",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Las Vegas, United States (Unsplash RyNzZL4MWt4).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Las_Vegas,_United_States_(Unsplash_RyNzZL4MWt4).jpg",
+            "license": "CC0",
+            "artist": "Aaron Barnaby aaronbarnaby",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-other-hold-03",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    },
+    {
+      "identity_id": "real_open_dog_16",
+      "legacy_sample_id": "real-dog-other-hold-04",
+      "species": "dog",
+      "coat_group": "black_dark",
+      "coat_length_group": "short_sleek",
+      "evaluation_split": "acceptance_identities",
+      "gallery_vs_query_assignment": "absent_query_only",
+      "photos": [
+        {
+          "photo_id": "real-dog-other-hold-04_p1",
+          "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-dog-other-hold-04.jpg",
+          "raw_sha256": "67bdbbf3d707521e76d06f8dc9145eb1141d8aa542e1bbef4b731d14784ac92f",
+          "assignment": "query",
+          "source_and_usage_rights": {
+            "source_kind": "wikimedia_commons",
+            "source_title": "File:Buster the black Labrador Retriever (2007).jpg",
+            "source_page_url": "https://commons.wikimedia.org/wiki/File:Buster_the_black_Labrador_Retriever_(2007).jpg",
+            "license": "Public domain",
+            "artist": "Burnopfielder1",
+            "owner_consent_or_open_license": true
+          },
+          "capture_session": {
+            "session_id": "wikimedia_real-dog-other-hold-04",
+            "independent_capture": true,
+            "multi_view_same_animal_verified": false
+          }
+        }
+      ]
+    }
+  ],
+  "real_negative_photographs": [
+    {
+      "negative_id": "real-neg-toy-cal-01",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-toy-cal-01.jpg",
+      "raw_sha256": "4d4bd2508c962a5ae50ae7d69bcc457a55f8bc472a3ca0dcf4dff4ca33e86a89",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Old Teddy Bear.jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Old_Teddy_Bear.jpg",
+        "license": "Public domain",
+        "artist": "Wikimedia Commons contributor",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-rug-cal-02",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-rug-cal-02.jpg",
+      "raw_sha256": "bfd15e70a3c7f49d5a51b814497c09426072d315d2e47bd07586c0725d3aa1ac",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Woven Rug MET AR256.jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Woven_Rug_MET_AR256.jpg",
+        "license": "CC0",
+        "artist": "Wikimedia Commons contributor",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-sofa-cal-03",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-sofa-cal-03.jpg",
+      "raw_sha256": "f4bc8405dd3eb32de76f86f6e65c26f568421f2e7e28dea65aabf01966e6b750",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Furnished living room. (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Furnished_living_room._(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Stephen Di Donato sdidonato",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-plant-cal-04",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-plant-cal-04.jpg",
+      "raw_sha256": "206acafb8b12942bfa77e8113cde8bad5e439b4041cb7a93ca99ba209e1b52bb",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Potted Succulents (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Potted_Succulents_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Noom Peerapong imnoom",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-toy-hold-01",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-toy-hold-01.jpg",
+      "raw_sha256": "f190fb2051e9108980bd6f44aaa93f80036791fb199d1bc0321b16e63bdc1989",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Lucky Cat (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Lucky_Cat_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Charles Deluvio charlesdeluvio",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-blanket-hold-02",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-blanket-hold-02.jpg",
+      "raw_sha256": "cb92f83c9ed106130e8105af38bd16297130eecbf522c1fa3f83a27912e62f6f",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Wool - Flickr - Rosmarie Voegtli.jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Wool_-_Flickr_-_Rosmarie_Voegtli.jpg",
+        "license": "CC BY 2.0",
+        "artist": "Rosmarie Voegtli",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-chair-hold-03",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-chair-hold-03.jpg",
+      "raw_sha256": "4838e6ba2318ef5a7f1866d102c87cb4a31650d41397001c0cf9f366199de68a",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Coffee table by a wooden wall (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Coffee_table_by_a_wooden_wall_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Crew crew",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-neg-food-hold-04",
+      "category": "non_animal",
+      "expected_animal_count": 0,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-neg-food-hold-04.jpg",
+      "raw_sha256": "cad18032bcd674c223ae27ab942c62250a0dd65da10ea01950410007077bfa2c",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Tropical fruit bowl window (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Tropical_fruit_bowl_window_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Marcello Aquino marcelloaquino",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-multi-catdog-cal-01",
+      "category": "multi_animal",
+      "expected_animal_count": 2,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-multi-catdog-cal-01.jpg",
+      "raw_sha256": "3107825fd8eadc3395848e5d8728ad50f4fabdec2fec925f86f013d617a18024",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Cat and dog sleeping together.jpeg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Cat_and_dog_sleeping_together.jpeg",
+        "license": "Public domain",
+        "artist": "Wikimedia Commons contributor",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-multi-twocats-cal-02",
+      "category": "multi_animal",
+      "expected_animal_count": 2,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-multi-twocats-cal-02.jpg",
+      "raw_sha256": "105f6022d755f46f1681d92ebc8dcd72706d78d8352e0f80a1693d1ebe769dc8",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Snuggly kittens (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Snuggly_kittens_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Q'AILA mewmewmew",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-multi-twodogs-cal-03",
+      "category": "multi_animal",
+      "expected_animal_count": 2,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-multi-twodogs-cal-03.jpg",
+      "raw_sha256": "08610119b80ff82b58c385d2cb5389c562e71985b857426be81446dca99a6e5c",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Two dogs playing on the beach (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Two_dogs_playing_on_the_beach_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Mark Galer markgaler",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-multi-catdog-hold-01",
+      "category": "multi_animal",
+      "expected_animal_count": 2,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-multi-catdog-hold-01.jpg",
+      "raw_sha256": "894bd6b6518b227165923ba60c2841a5f27c61e2066e29767e896926bdfb7894",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Real life best friends (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Real_life_best_friends_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Krista Mangulsone krista",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-multi-twocats-hold-02",
+      "category": "multi_animal",
+      "expected_animal_count": 2,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-multi-twocats-hold-02.jpg",
+      "raw_sha256": "78906035cd78ad79102bcc19ca0b5259c82038ff0c49fb947d2db65dd8d103c7",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:2 sleepy (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:2_sleepy_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Olya Kuzovkina o_l_l_a",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-multi-twodogs-hold-03",
+      "category": "multi_animal",
+      "expected_animal_count": 2,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-multi-twodogs-hold-03.jpg",
+      "raw_sha256": "7ec3bdee7ad684be676e701258ebabfaf041d7a3a8b2695ff4cf8a52bb567723",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Dog sledding in Rovaniemi (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Dog_sledding_in_Rovaniemi_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "🔮🌊💜✨ darkroomsg",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-other-bird-cal-01",
+      "category": "other_animal",
+      "expected_animal_count": 1,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-other-bird-cal-01.jpg",
+      "raw_sha256": "f3db80ce81d33adaf264bc6181687ba50aa81e0596f45b1c2ed483491e5db505",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Green and yellow macaw bird (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Green_and_yellow_macaw_bird_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Andrew Li xan700",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-other-horse-cal-02",
+      "category": "other_animal",
+      "expected_animal_count": 1,
+      "evaluation_split": "calibration_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-other-horse-cal-02.jpg",
+      "raw_sha256": "01faeb1680b17c46bbde00c3501a90c91df023b170b8ad7b6ebbfe6a17a54df7",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Black horse on branches (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Black_horse_on_branches_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Gabriela Kucerova gabrielakucerova",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-other-bird-hold-01",
+      "category": "other_animal",
+      "expected_animal_count": 1,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-other-bird-hold-01.jpg",
+      "raw_sha256": "fbecfac289fc1bf4760d15a3b3d8812e4346f62c8622f81c925da3f99e37df53",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Red and yellow parrot (Unsplash).jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Red_and_yellow_parrot_(Unsplash).jpg",
+        "license": "CC0",
+        "artist": "Dominik Vayrynen dominikvayrynen",
+        "owner_consent_or_open_license": true
+      }
+    },
+    {
+      "negative_id": "real-other-sheep-hold-02",
+      "category": "other_animal",
+      "expected_animal_count": 1,
+      "evaluation_split": "acceptance_identities",
+      "image_relpath": "tests/fixtures/vision_ai4/real_pack/real-other-sheep-hold-02.jpg",
+      "raw_sha256": "f2e9647eda9e7ec943a51b6dce664167be0136e6f5e08bb38d23b81254976faa",
+      "source_and_usage_rights": {
+        "source_kind": "wikimedia_commons",
+        "source_title": "File:Teruel black-eyed sheep, Spain.jpg",
+        "source_page_url": "https://commons.wikimedia.org/wiki/File:Teruel_black-eyed_sheep,_Spain.jpg",
+        "license": "CC0",
+        "artist": "Joselodos",
+        "owner_consent_or_open_license": true
+      }
+    }
+  ]
+}

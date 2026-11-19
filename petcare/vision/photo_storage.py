@@ -8,13 +8,16 @@ from pathlib import Path
 import re
 from uuid import uuid4
 
+from petcare.config import Config
 from petcare.vision.image_features import (
     ImageDescriptor,
     describe_image,
     descriptor_to_json,
     normalize_image_bytes,
     read_upload,
+    sha256_hex,
 )
+from petcare.vision.local_pet_detector import enrich_descriptor_with_local_vision
 from petcare.vision.media_storage import LocalMediaStorage
 
 
@@ -75,8 +78,14 @@ def store_pet_photo(
 ) -> StoredPhoto:
     """Validate and re-encode a user upload, stripping metadata and its name."""
     data = read_upload(upload.stream, max_bytes)
+    raw_sha = sha256_hex(data)
     normalized = normalize_image_bytes(data)
-    descriptor = describe_image(normalized)
+    norm_sha = sha256_hex(normalized)
+    descriptor = describe_image(
+        normalized, raw_sha256=raw_sha, normalized_sha256=norm_sha
+    )
+    if getattr(Config, "AI_FOREGROUND_EMBEDDING_ENABLED", True):
+        descriptor = enrich_descriptor_with_local_vision(normalized, descriptor)
 
     filename = _save_normalized_image(normalized, image_dir, tenant_id)
     return StoredPhoto(filename, descriptor, descriptor_to_json(descriptor))

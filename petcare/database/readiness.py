@@ -64,6 +64,10 @@ REQUIRED_COLUMNS = {
     "pet_photo_lsh": {
         "tenant_id", "pet_id", "hash_version", "band", "bucket_value",
     },
+    "pet_reference_photos": {
+        "id", "tenant_id", "pet_id", "photo_filename", "photo_descriptor",
+        "image_role", "sort_order", "created_at", "updated_at",
+    },
     "invoices": {
         "id", "tenant_id", "customer_id", "created_by", "created_at", "status", "currency_code",
         "paid_at", "note",
@@ -115,6 +119,8 @@ REQUIRED_TENANT_FOREIGN_KEYS = {
     ("pets", "fk_pets_tenant"),
     ("pets", "fk_pets_tenant_buyer"),
     ("pet_photo_lsh", "fk_pet_photo_lsh_tenant_pet"),
+    ("pet_reference_photos", "fk_pet_reference_photos_tenant"),
+    ("pet_reference_photos", "fk_pet_reference_photos_tenant_pet"),
     ("invoices", "fk_invoices_tenant"),
     ("invoices", "fk_invoices_tenant_customer"),
     ("invoices", "fk_invoices_tenant_user"),

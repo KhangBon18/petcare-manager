@@ -13,6 +13,7 @@ UTC_DATETIME_MIGRATION = "datetime_storage_utc_v1"
 PURCHASING_MIGRATION = "purchasing_orders_v1"
 REFUNDS_MIGRATION = "invoice_refunds_v1"
 PURCHASE_RECEIPTS_MIGRATION = "purchase_receipt_idempotency_v1"
+PET_REFERENCE_PHOTOS_MIGRATION = "pet_reference_photos_v1"
 
 
 def migrate_datetime_storage_to_utc(cursor):
@@ -200,6 +201,62 @@ def _migrate_purchase_receipt_idempotency(cursor):
         "INSERT INTO schema_migrations (version) VALUES (%s) "
         "ON DUPLICATE KEY UPDATE version = VALUES(version)",
         (PURCHASE_RECEIPTS_MIGRATION,),
+    )
+
+
+def _migrate_pet_reference_photos(cursor):
+    """Ensure multi-photo LSH key and additive pet_reference_photos constraints are installed idempotently."""
+    cursor.execute(
+        "SELECT column_name FROM information_schema.key_column_usage "
+        "WHERE table_schema = DATABASE() AND table_name = 'pet_photo_lsh' "
+        "AND constraint_name = 'PRIMARY'"
+    )
+    lsh_pk_cols = {row[0] for row in cursor.fetchall()}
+    if lsh_pk_cols and "bucket_value" not in lsh_pk_cols:
+        cursor.execute(
+            "ALTER TABLE pet_photo_lsh DROP PRIMARY KEY, "
+            "ADD PRIMARY KEY (tenant_id, pet_id, hash_version, band, bucket_value)"
+        )
+
+    cursor.execute(
+        "SELECT constraint_name FROM information_schema.table_constraints "
+        "WHERE constraint_schema = DATABASE() AND table_name = 'pet_reference_photos' "
+        "AND constraint_type IN ('FOREIGN KEY', 'CHECK')"
+    )
+    ref_constraints = {row[0] for row in cursor.fetchall()}
+    if "fk_pet_reference_photos_tenant" not in ref_constraints:
+        cursor.execute(
+            "ALTER TABLE pet_reference_photos ADD CONSTRAINT fk_pet_reference_photos_tenant "
+            "FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT"
+        )
+    if "fk_pet_reference_photos_tenant_pet" not in ref_constraints:
+        cursor.execute(
+            "ALTER TABLE pet_reference_photos ADD CONSTRAINT fk_pet_reference_photos_tenant_pet "
+            "FOREIGN KEY (tenant_id, pet_id) REFERENCES pets(tenant_id, id) ON DELETE CASCADE"
+        )
+    if "chk_pet_reference_photos_sort_order" not in ref_constraints:
+        cursor.execute(
+            "ALTER TABLE pet_reference_photos ADD CONSTRAINT chk_pet_reference_photos_sort_order "
+            "CHECK (sort_order BETWEEN 1 AND 5)"
+        )
+
+    cursor.execute(
+        "SELECT column_type FROM information_schema.columns "
+        "WHERE table_schema = DATABASE() AND table_name = 'pet_reference_photos' "
+        "AND column_name = 'image_role'"
+    )
+    role_col = cursor.fetchone()
+    if role_col and ("'front_view'" not in str(role_col[0]).lower() or "'lighting_variant'" not in str(role_col[0]).lower()):
+        cursor.execute(
+            "ALTER TABLE pet_reference_photos MODIFY COLUMN image_role "
+            "ENUM('additional', 'front_view', 'side_view', 'coat_detail', "
+            "'lighting_variant', 'face_closeup', 'full_body') NOT NULL DEFAULT 'additional'"
+        )
+
+    cursor.execute(
+        "INSERT INTO schema_migrations (version) VALUES (%s) "
+        "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+        (PET_REFERENCE_PHOTOS_MIGRATION,),
     )
 
 
@@ -515,6 +572,7 @@ def initialize_database():
             _migrate_purchasing_stock_links(cursor)
             _migrate_invoice_refunds(cursor)
             _migrate_purchase_receipt_idempotency(cursor)
+            _migrate_pet_reference_photos(cursor)
         finally:
             cursor.close()
 

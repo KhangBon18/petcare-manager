@@ -12,7 +12,41 @@ from petcare.vision.image_features import (
 PHOTO_HASH_VERSION = VISUAL_HASH_VERSION
 PHOTO_HASH_BAND_COUNT = VISUAL_HASH_BITS // 8
 MAX_IMAGE_SEARCH_CANDIDATES = 5000
+MAX_PET_GALLERY_PHOTOS = 5
+VALID_IMAGE_ROLES = (
+    "additional",
+    "front_view",
+    "side_view",
+    "coat_detail",
+    "lighting_variant",
+    "face_closeup",
+    "full_body",
+)
 _PHOTO_HASH_RE = "^[0-9a-fA-F]{16}$"
+
+
+def _attach_reference_photos_batch(connection, rows):
+    """Attach ordered ``reference_photos`` lists to a batch of pet rows in one query."""
+    if not rows:
+        return rows
+    pet_ids = [int(r["id"]) for r in rows if r.get("id") is not None]
+    if not pet_ids:
+        return rows
+    marks = ", ".join(["%s"] * len(pet_ids))
+    ref_rows = fetch_all(
+        connection,
+        # B608: placeholder count only; all pet_ids are bound integers.
+        "SELECT id, pet_id, photo_filename, photo_descriptor, image_role, sort_order "  # nosec B608
+        f"FROM pet_reference_photos WHERE tenant_id = @petcare_tenant_id AND pet_id IN ({marks}) "
+        "ORDER BY pet_id, sort_order, id",
+        tuple(pet_ids),
+    )
+    by_pet: dict[int, list[dict]] = {}
+    for ref in ref_rows:
+        by_pet.setdefault(int(ref["pet_id"]), []).append(ref)
+    for row in rows:
+        row["reference_photos"] = by_pet.get(int(row["id"]), [])
+    return rows
 
 
 def list_pets(connection, search="", status=""):
@@ -44,7 +78,7 @@ def iter_available_for_image_search(connection, batch_size=250):
             "AND p.sale_status = 'available' ORDER BY p.id"
         )
         while rows := cursor.fetchmany(batch_size):
-            yield from rows
+            yield from _attach_reference_photos_batch(connection, rows)
     finally:
         cursor.close()
 
@@ -52,8 +86,10 @@ def iter_available_for_image_search(connection, batch_size=250):
 def has_available_reference_photos(connection):
     return fetch_one(
         connection,
-        "SELECT 1 found FROM pets WHERE tenant_id = @petcare_tenant_id "
-        "AND sale_status = 'available' AND photo_filename IS NOT NULL LIMIT 1",
+        "SELECT 1 found FROM pets p WHERE p.tenant_id = @petcare_tenant_id "
+        "AND p.sale_status = 'available' AND (p.photo_filename IS NOT NULL OR "
+        "EXISTS (SELECT 1 FROM pet_reference_photos rp "
+        "WHERE rp.tenant_id = p.tenant_id AND rp.pet_id = p.id)) LIMIT 1",
     ) is not None
 
 
@@ -129,7 +165,8 @@ def find_available_image_search_candidates(
             "WHERE p.tenant_id = @petcare_tenant_id AND p.sale_status = 'available' ORDER BY p.id",
             (pet_ids_json,),
         )
-    return sorted((*legacy, *indexed), key=lambda pet: int(pet["id"]))
+    combined = sorted((*legacy, *indexed), key=lambda pet: int(pet["id"]))
+    return _attach_reference_photos_batch(connection, combined)
 
 
 def replace_photo_search_index(connection, tenant_id, pet_id, descriptor_json):
@@ -140,7 +177,7 @@ def replace_photo_search_index(connection, tenant_id, pet_id, descriptor_json):
 
 
 def replace_photo_search_indexes(connection, pet_descriptors):
-    """Batch-replace derived bands after descriptor backfills."""
+    """Batch-replace derived bands after primary or gallery descriptor updates."""
     pet_descriptors = tuple(pet_descriptors)
     if not pet_descriptors:
         return
@@ -150,15 +187,22 @@ def replace_photo_search_indexes(connection, pet_descriptors):
             "DELETE FROM pet_photo_lsh WHERE tenant_id = %s AND pet_id = %s",
             [(tenant_id, pet_id) for tenant_id, pet_id, _ in pet_descriptors],
         )
+        seen_buckets: set[tuple[int, int, int, int, int]] = set()
         buckets = []
-        for tenant_id, pet_id, descriptor_json in pet_descriptors:
-            descriptor = descriptor_from_json(descriptor_json)
-            bands = visual_hash_bands(descriptor.visual_hash) if descriptor else None
-            if bands and len(bands) == PHOTO_HASH_BAND_COUNT:
-                buckets.extend(
-                    (tenant_id, pet_id, PHOTO_HASH_VERSION, band, bucket)
-                    for band, bucket in enumerate(bands)
-                )
+        for tenant_id, pet_id, descriptor_payload in pet_descriptors:
+            if isinstance(descriptor_payload, (list, tuple)):
+                raw_list = descriptor_payload
+            else:
+                raw_list = (descriptor_payload,) if descriptor_payload else ()
+            for raw_json in raw_list:
+                descriptor = descriptor_from_json(raw_json)
+                bands = visual_hash_bands(descriptor.visual_hash) if descriptor else None
+                if bands and len(bands) == PHOTO_HASH_BAND_COUNT:
+                    for band, bucket in enumerate(bands):
+                        entry = (int(tenant_id), int(pet_id), PHOTO_HASH_VERSION, band, bucket)
+                        if entry not in seen_buckets:
+                            seen_buckets.add(entry)
+                            buckets.append(entry)
         if buckets:
             cursor.executemany(
                 "INSERT INTO pet_photo_lsh "
@@ -168,6 +212,30 @@ def replace_photo_search_indexes(connection, pet_descriptors):
             )
     finally:
         cursor.close()
+
+
+def sync_pet_gallery_search_index(connection, pet_id):
+    """Rebuild LSH buckets across a pet's primary photo and all verified reference photos."""
+    tenant_row = fetch_one(connection, "SELECT @petcare_tenant_id tenant_id")
+    if not tenant_row or not tenant_row["tenant_id"]:
+        return
+    tenant_id = int(tenant_row["tenant_id"])
+    pet_row = fetch_one(
+        connection,
+        "SELECT photo_descriptor FROM pets WHERE id = %s AND tenant_id = @petcare_tenant_id",
+        (pet_id,),
+    )
+    ref_rows = fetch_all(
+        connection,
+        "SELECT photo_descriptor FROM pet_reference_photos "
+        "WHERE tenant_id = @petcare_tenant_id AND pet_id = %s ORDER BY sort_order, id",
+        (pet_id,),
+    )
+    descriptors = []
+    if pet_row and pet_row.get("photo_descriptor"):
+        descriptors.append(pet_row["photo_descriptor"])
+    descriptors.extend(r["photo_descriptor"] for r in ref_rows if r.get("photo_descriptor"))
+    replace_photo_search_indexes(connection, ((tenant_id, pet_id, descriptors),))
 
 
 def count_pets(connection, search="", status=""):
@@ -243,19 +311,140 @@ def mark_sold(connection, pet_id, customer_id):
 def has_photo(connection, filename):
     return fetch_one(
         connection,
-        "SELECT 1 found FROM pets WHERE tenant_id = @petcare_tenant_id "
-        "AND photo_filename = %s LIMIT 1",
-        (filename,),
+        "SELECT 1 found FROM pets WHERE tenant_id = @petcare_tenant_id AND photo_filename = %s "
+        "UNION ALL "
+        "SELECT 1 found FROM pet_reference_photos WHERE tenant_id = @petcare_tenant_id AND photo_filename = %s "
+        "LIMIT 1",
+        (filename, filename),
     ) is not None
 
 
 def count_photo_references(connection, filename):
-    """Count all tenant references before removing a shared legacy object."""
+    """Count all primary and gallery references before removing a stored media object."""
+    return int(
+        fetch_one(
+            connection,
+            "SELECT (SELECT COUNT(*) FROM pets WHERE photo_filename = %s) + "
+            "(SELECT COUNT(*) FROM pet_reference_photos WHERE photo_filename = %s) AS total",
+            (filename, filename),
+        )["total"]
+    )
+
+
+def list_reference_photos(connection, pet_id):
+    return fetch_all(
+        connection,
+        "SELECT id, tenant_id, pet_id, photo_filename, photo_descriptor, image_role, "
+        "sort_order, created_at, updated_at FROM pet_reference_photos "
+        "WHERE tenant_id = @petcare_tenant_id AND pet_id = %s ORDER BY sort_order, id",
+        (pet_id,),
+    )
+
+
+def get_reference_photo(connection, pet_id, photo_id, lock=False):
+    suffix = " FOR UPDATE" if lock else ""
     return fetch_one(
         connection,
-        "SELECT COUNT(*) total FROM pets WHERE photo_filename = %s",
-        (filename,),
-    )["total"]
+        "SELECT id, tenant_id, pet_id, photo_filename, photo_descriptor, image_role, sort_order "
+        "FROM pet_reference_photos WHERE tenant_id = @petcare_tenant_id AND pet_id = %s AND id = %s"
+        + suffix,
+        (pet_id, photo_id),
+    )
+
+
+def count_reference_photos(connection, pet_id):
+    row = fetch_one(
+        connection,
+        "SELECT COUNT(*) AS cnt FROM pet_reference_photos "
+        "WHERE tenant_id = @petcare_tenant_id AND pet_id = %s",
+        (pet_id,),
+    )
+    return int(row["cnt"]) if row else 0
+
+
+def add_reference_photo(connection, pet_id, photo_filename, photo_descriptor, image_role, sort_order):
+    ref_id = execute(
+        connection,
+        "INSERT INTO pet_reference_photos "
+        "(tenant_id, pet_id, photo_filename, photo_descriptor, image_role, sort_order) "
+        "VALUES (@petcare_tenant_id, %s, %s, %s, %s, %s)",
+        (pet_id, photo_filename, photo_descriptor, image_role, sort_order),
+    )[0]
+    sync_pet_gallery_search_index(connection, pet_id)
+    return ref_id
+
+
+def resequence_reference_photos(connection, pet_id, ordered_ids):
+    cursor = connection.cursor()
+    try:
+        for idx, ref_id in enumerate(ordered_ids, start=1):
+            cursor.execute(
+                "UPDATE pet_reference_photos SET sort_order = %s "
+                "WHERE tenant_id = @petcare_tenant_id AND pet_id = %s AND id = %s",
+                (idx, pet_id, ref_id),
+            )
+    finally:
+        cursor.close()
+
+
+def delete_reference_photo(connection, pet_id, photo_id):
+    deleted = execute(
+        connection,
+        "DELETE FROM pet_reference_photos "
+        "WHERE tenant_id = @petcare_tenant_id AND pet_id = %s AND id = %s",
+        (pet_id, photo_id),
+    )[1]
+    if deleted:
+        remaining = list_reference_photos(connection, pet_id)
+        resequence_reference_photos(connection, pet_id, [r["id"] for r in remaining])
+        sync_pet_gallery_search_index(connection, pet_id)
+    return deleted
+
+
+def swap_primary_with_reference_photo(connection, pet_id, photo_id, current_primary_filename, current_primary_descriptor):
+    ref_row = get_reference_photo(connection, pet_id, photo_id, lock=True)
+    if not ref_row:
+        return False
+    updated = execute(
+        connection,
+        "UPDATE pets SET photo_filename = %s, photo_descriptor = %s "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND sale_status IN ('available', 'inactive')",
+        (ref_row["photo_filename"], ref_row["photo_descriptor"], pet_id),
+    )[1]
+    if not updated:
+        return False
+    if current_primary_filename and current_primary_descriptor:
+        execute(
+            connection,
+            "UPDATE pet_reference_photos SET photo_filename = %s, photo_descriptor = %s "
+            "WHERE id = %s AND pet_id = %s AND tenant_id = @petcare_tenant_id",
+            (current_primary_filename, current_primary_descriptor, photo_id, pet_id),
+        )
+    else:
+        execute(
+            connection,
+            "DELETE FROM pet_reference_photos WHERE id = %s AND pet_id = %s AND tenant_id = @petcare_tenant_id",
+            (photo_id, pet_id),
+        )
+        remaining = list_reference_photos(connection, pet_id)
+        resequence_reference_photos(connection, pet_id, [r["id"] for r in remaining])
+    sync_pet_gallery_search_index(connection, pet_id)
+    return True
+
+
+def set_primary_photo(connection, pet_id, photo_filename, photo_descriptor):
+    """Attach a primary photo to an available or inactive 0-photo pet and sync its gallery index."""
+    changed = execute(
+        connection,
+        "UPDATE pets SET photo_filename = %s, photo_descriptor = %s "
+        "WHERE id = %s AND tenant_id = @petcare_tenant_id "
+        "AND sale_status IN ('available', 'inactive')",
+        (photo_filename, photo_descriptor, pet_id),
+    )[1]
+    if changed:
+        sync_pet_gallery_search_index(connection, pet_id)
+    return changed
 
 
 def create_pet(connection, data):
@@ -295,11 +484,7 @@ def update_pet(connection, pet_id, data):
         ),
     )[1]
     if changed:
-        tenant = fetch_one(connection, "SELECT @petcare_tenant_id tenant_id")
-        if tenant:
-            replace_photo_search_index(
-                connection, tenant["tenant_id"], pet_id, data.get("photo_descriptor")
-            )
+        sync_pet_gallery_search_index(connection, pet_id)
     return changed
 
 
@@ -325,17 +510,17 @@ def return_sold_pet(connection, pet_id, customer_id, sale_status):
 
 
 def iter_filtered_for_image_search(connection, species="", status="available", batch_size=250):
-    aliases = {"mèo": ("Mèo", "cat", "feline"), "cat": ("Mèo", "cat", "feline"),
-               "chó": ("Chó", "dog", "canine"), "dog": ("Chó", "dog", "canine"),
-               "thỏ": ("Thỏ", "rabbit", "bunny"), "rabbit": ("Thỏ", "rabbit", "bunny")}.get(species.casefold(), (species, species, species))
+    from petcare.vision.species_taxonomy import sql_species_aliases
+
+    aliases = sql_species_aliases(species) if species else ("",) * 7
     cursor = connection.cursor(dictionary=True, buffered=False)
     try:
         cursor.execute("SELECT id, code, name, species, breed, coat_color, eye_color, appearance_tags, "
                        "sale_status, photo_filename, photo_descriptor, sale_price FROM pets "
                        "WHERE tenant_id = @petcare_tenant_id "
-                       "AND (%s = '' OR species COLLATE utf8mb4_0900_ai_ci IN (%s, %s, %s)) "
+                       "AND (%s = '' OR species COLLATE utf8mb4_0900_ai_ci IN (%s, %s, %s, %s, %s, %s, %s)) "
                        "AND (%s = '' OR sale_status = %s) ORDER BY id", (species, *aliases, status, status))
         while rows := cursor.fetchmany(max(1, min(batch_size, 1000))):
-            yield from rows
+            yield from _attach_reference_photos_batch(connection, rows)
     finally:
         cursor.close()

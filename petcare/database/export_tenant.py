@@ -42,6 +42,9 @@ TABLE_EXPORTS = (
     ("pets.csv", "SELECT id, code, name, species, breed, sex, birth_date, weight_kg, coat_color, "
      "eye_color, appearance_tags, photo_filename, photo_descriptor, sale_price, sale_status, "
      "buyer_id, sold_at, created_at, updated_at FROM pets WHERE tenant_id = %s ORDER BY id"),
+    ("pet_reference_photos.csv", "SELECT id, pet_id, photo_filename, photo_descriptor, image_role, "
+     "sort_order, created_at, updated_at FROM pet_reference_photos WHERE tenant_id = %s "
+     "ORDER BY pet_id, sort_order, id"),
     ("invoices.csv", "SELECT id, customer_id, created_by, created_at, status, currency_code, paid_at, note "
      "FROM invoices WHERE tenant_id = %s ORDER BY id"),
     ("invoice_items.csv", "SELECT id, invoice_id, item_type, product_id, pet_id, item_code_snapshot, "
@@ -167,13 +170,15 @@ def _media_files(connection, tenant_id):
     cursor = connection.cursor()
     try:
         files = []
+        seen_archive_names: set[str] = set()
         for table, category, prefix in (
             ("products", "products", "media/products"),
             ("pets", "pets", "media/pets"),
+            ("pet_reference_photos", "pets", "media/pets"),
         ):
             storage = get_media_storage(Config, category)
             cursor.execute(
-                f"SELECT DISTINCT photo_filename FROM {table} "
+                f"SELECT DISTINCT photo_filename FROM {table} "  # nosec B608
                 "WHERE tenant_id = %s AND photo_filename IS NOT NULL ORDER BY photo_filename",
                 (tenant_id,),
             )
@@ -183,7 +188,10 @@ def _media_files(connection, tenant_id):
                 scoped_tenant_id = media_tenant_id(filename)
                 if scoped_tenant_id is not None and scoped_tenant_id != tenant_id:
                     raise ValueError(f"Tenant-scoped media reference mismatch in {table}.")
-                files.append((storage, filename, f"{prefix}/{filename}"))
+                archive_name = f"{prefix}/{filename}"
+                if archive_name not in seen_archive_names:
+                    seen_archive_names.add(archive_name)
+                    files.append((storage, filename, archive_name))
         return files
     finally:
         cursor.close()

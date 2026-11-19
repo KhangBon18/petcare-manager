@@ -8,6 +8,7 @@ _EMPTY_TENANT_TABLES = (
     "customers",
     "products",
     "suppliers",
+    "pet_reference_photos",
     "pets",
     "invoices",
     "invoice_items",

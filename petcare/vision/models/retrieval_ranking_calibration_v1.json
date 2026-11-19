@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "calibration_id": "petcare-ai4-0c-retrieval-ranking-calibration-v1",
+  "calibrated_on_split": "calibration",
+  "holdout_touched_during_tuning": false,
+  "embedding_version": "mnv2_op12_fg1280_f16_v1",
+  "fg_lab_version": "cielab_wb_sog_fg16_v1",
+  "white_balance_mode": "achromatic_shades_of_gray",
+  "parameters": {
+    "embedding_weight": 0.58,
+    "lab_coat_weight": 0.34,
+    "structure_weight": 0.08,
+    "min_combined_similarity": 0.67,
+    "min_embedding_cosine": 0.54,
+    "min_lab_coat_similarity": 0.45,
+    "max_similar_candidates": 5
+  }
+}
+

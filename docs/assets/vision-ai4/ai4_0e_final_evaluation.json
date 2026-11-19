@@ -1,0 +1,280 @@
+{
+  "milestone": "AI-4.0e",
+  "benchmark_id": "petcare-ai4-0e-final-release-readiness",
+  "version": "4.1.0",
+  "release_scope_verdict": "SAFE_FOR_RELEASE_AS_SPECIES_AND_VISUAL_SIMILARITY_ONLY",
+  "confirmed_individual_identity_claim_allowed": false,
+  "dataset_intake_validation": {
+    "valid": true,
+    "errors": [],
+    "warnings": [
+      "0 verified multi-view real pet identities are registered (target: 24 identities = 12 cats + 12 dogs x >= 3 independent captures). Same-pet multi-view Recall@1, Recall@5, and mAP are marked MULTI_VIEW_IDENTITY_NOT_EVALUATED."
+    ],
+    "multi_view_evaluation_status": "MULTI_VIEW_IDENTITY_NOT_EVALUATED",
+    "counts": {
+      "enrolled_multi_view_identities": 0,
+      "enrolled_cats": 0,
+      "enrolled_dogs": 0,
+      "enrolled_multi_view_photos": 0,
+      "absent_open_set_identities": 16,
+      "real_negative_photographs": 18
+    }
+  },
+  "onnx_integrity": {
+    "all_verified": true,
+    "runtime_provider": "CPUExecutionProvider",
+    "dual_output_1280d_active": true,
+    "files": [
+      {
+        "filename": "yolox_nano.onnx",
+        "exists": true,
+        "size_bytes": 3659407,
+        "expected_size_bytes": 3659407,
+        "sha256": "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
+        "sha256_match": true,
+        "verified": true
+      },
+      {
+        "filename": "mobilenetv2-12.onnx",
+        "exists": true,
+        "size_bytes": 13964571,
+        "expected_size_bytes": 13964571,
+        "sha256": "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5",
+        "sha256_match": true,
+        "verified": true
+      },
+      {
+        "filename": "mobilenetv2-12-features.onnx",
+        "exists": true,
+        "size_bytes": 13964674,
+        "expected_size_bytes": 13964674,
+        "sha256": "0a15a2be5af52322c7b00bfc62b10fce4e10270c3bd60feb6f9268fcb2820f88",
+        "sha256_match": true,
+        "verified": true
+      }
+    ]
+  },
+  "identity_decision_audit": {
+    "allowed_labels": [
+      "exact_stored_image_match",
+      "near_duplicate_image",
+      "no_confident_match",
+      "potential_same_pet_candidate",
+      "visually_similar_pet"
+    ],
+    "total_queries_audited": 473,
+    "illegal_labels_emitted": 0
+  },
+  "scenario_matrix_cases_a_to_j": {
+    "CASE_A_exact_primary_photo": {
+      "status": "PASS",
+      "data_nature": "enrolled_and_seeded_store_photos",
+      "rank1_hits": "68/68",
+      "accuracy": 1.0,
+      "wilson_95_ci": [
+        0.9465,
+        1.0
+      ]
+    },
+    "CASE_B_exact_secondary_photo": {
+      "status": "PASS",
+      "data_nature": "stored_secondary_gallery_photos_synthetic_views",
+      "rank1_hits": "112/112",
+      "accuracy": 1.0,
+      "wilson_95_ci": [
+        0.9668,
+        1.0
+      ]
+    },
+    "CASE_C_different_photo_of_enrolled_pet": {
+      "status": "MULTI_VIEW_IDENTITY_NOT_EVALUATED",
+      "reason": "No verified real multi-view pet identities are available in this partition. Edited/cropped variants and single-photo Wikimedia images are strictly excluded.",
+      "identities_evaluated": 0,
+      "independent_queries_evaluated": 0,
+      "recall_at_1": null,
+      "recall_at_5": null,
+      "map": null,
+      "false_confirmed_identity_claims": 0
+    },
+    "CASE_D_different_orange_cat_never_confirmed_identity": {
+      "status": "PASS",
+      "data_nature": "4_real_wikimedia_orange_cats_plus_2_absent_seeded_orange_cats",
+      "safe_non_confirmed_same_species_hits": "6/6",
+      "false_confirmed_identity_rate": 0.0,
+      "orange_coat_precision_at_5": 0.8333
+    },
+    "CASE_E_golden_dog_returns_only_dogs": {
+      "status": "PASS",
+      "data_nature": "4_real_wikimedia_golden_dogs_plus_13_seeded_golden_cream_dogs",
+      "zero_cat_leakage_hits": "17/17",
+      "cross_species_error_rate": 0.0
+    },
+    "CASE_F_absent_pet_never_claims_exact_identity": {
+      "status": "PASS",
+      "data_nature": "16_real_wikimedia_pets_plus_12_absent_catalog_pets",
+      "safe_open_set_hits": "28/28",
+      "false_exact_or_neardup_claims": 0,
+      "wilson_95_ci": [
+        0.8794,
+        1.0
+      ]
+    },
+    "CASE_G_non_animal_rejected": {
+      "status": "PASS",
+      "real_wikimedia_non_animals_rejected": "8/8",
+      "ui_and_procedural_negatives_rejected": "16/16",
+      "total_rejected": "24/24",
+      "accuracy": 1.0,
+      "wilson_95_ci": [
+        0.862,
+        1.0
+      ]
+    },
+    "CASE_H_multiple_animals_rejected": {
+      "status": "PASS",
+      "data_nature": "real_wikimedia_multi_animal_photographs",
+      "rejected": "6/6",
+      "accuracy": 1.0,
+      "wilson_95_ci": [
+        0.6097,
+        1.0
+      ]
+    },
+    "CASE_I_no_similar_candidate_returns_empty": {
+      "status": "PASS",
+      "data_nature": "real_orange_cats_vs_black_cat_shop_and_real_black_dogs_vs_white_dog_shop",
+      "empty_returned": "6/6",
+      "accuracy": 1.0,
+      "wilson_95_ci": [
+        0.6097,
+        1.0
+      ]
+    },
+    "CASE_J_five_gallery_photos_single_card_per_pet": {
+      "status": "PASS",
+      "queries_tested_against_5photo_galleries": 72,
+      "duplicate_pet_card_occurrences": 0,
+      "duplicate_rate": 0.0
+    }
+  },
+  "final_metrics_a_to_k": {
+    "A_exact_image_retrieval": {
+      "primary_rank1": "68/68 (100.0%)",
+      "secondary_gallery_rank1": "112/112 (100.0%)",
+      "combined_hits": "180/180",
+      "combined_accuracy": 1.0,
+      "wilson_95_ci": [
+        0.9791,
+        1.0
+      ]
+    },
+    "B_near_duplicate_retrieval_synthetic_transforms_only": {
+      "note": "Synthetic image transformations (resize/JPEG q=70 and 4% crop + 6% brightness); never counted as independent multi-view photos.",
+      "resize_480_q70_recall": 1.0,
+      "resize_480_q70_hits": "56/56",
+      "crop4_bright106_q82_recall": 0.9464,
+      "crop4_bright106_q82_hits": "53/56",
+      "combined_recall": 0.9732,
+      "combined_hits": "109/112",
+      "precision": 1.0,
+      "false_positives": 0,
+      "wilson_95_ci_recall": [
+        0.9242,
+        0.9908
+      ]
+    },
+    "C_species_recognition_accuracy_when_accepted": {
+      "real_independent_photos": {
+        "correct_over_accepted": "12/12",
+        "accuracy": 1.0,
+        "wilson_95_ci": [
+          0.7575,
+          1.0
+        ]
+      },
+      "all_84_pet_queries_historical": {
+        "correct_over_accepted": "79/79",
+        "accuracy": 1.0,
+        "wilson_95_ci": [
+          0.9536,
+          1.0
+        ]
+      }
+    },
+    "D_species_recognition_coverage": {
+      "real_independent_photos": {
+        "accepted_over_total": "12/16",
+        "coverage": 0.75,
+        "abstention_rate": 0.25,
+        "wilson_95_ci": [
+          0.505,
+          0.8982
+        ]
+      },
+      "all_84_pet_queries_historical": {
+        "accepted_over_total": "79/84",
+        "coverage": 0.9405,
+        "wilson_95_ci": [
+          0.8681,
+          0.9743
+        ]
+      }
+    },
+    "E_cross_species_retrieval_errors": {
+      "real_independent_photos_errors": "0/16",
+      "all_pet_queries_errors": "0/84",
+      "error_rate": 0.0
+    },
+    "F_similarity_ranking_coat_precision_at_5": {
+      "real_independent_photos": {
+        "queries_with_results": 12,
+        "mean_coat_precision_at_5": 0.7694
+      },
+      "all_queries_historical_benchmark": {
+        "queries_with_results": 77,
+        "mean_coat_precision_at_5": 0.8981
+      }
+    },
+    "G_open_set_rejection_accuracy": {
+      "nomatch_adversarial_rejected": "46/46",
+      "nomatch_rejection_accuracy": 1.0,
+      "nomatch_wilson_95_ci": [
+        0.9229,
+        1.0
+      ],
+      "absent_pets_without_false_identity_claim": "28/28 (100.0%)"
+    },
+    "H_multi_photo_pet_level_duplicate_rate": {
+      "three_photo_gallery_duplicates": "0/473",
+      "five_photo_gallery_duplicates": "0/72",
+      "duplicate_rate": 0.0
+    },
+    "I_same_pet_independent_photo_reidentification": {
+      "status": "MULTI_VIEW_IDENTITY_NOT_EVALUATED",
+      "recall_at_1": null,
+      "recall_at_5": null,
+      "map": null,
+      "verified_identities_count": 0,
+      "target_identities_required": 24
+    },
+    "J_search_latency_ms_real_photos_3photo_gallery": {
+      "sample_size": 16,
+      "p50_ms": 86.294,
+      "p95_ms": 92.315
+    },
+    "K_model_memory_and_storage_overhead": {
+      "active_onnx_models_ram_mb": 16.81,
+      "total_onnx_models_disk_mb": 30.13,
+      "peak_process_rss_mb": 256.03,
+      "rss_delta_mb": 156.28,
+      "avg_descriptor_json_bytes_per_photo": 6106.2,
+      "descriptor_kb_1_photo": 5.96,
+      "descriptor_kb_3_photos": 17.89,
+      "descriptor_kb_5_photos": 29.82,
+      "embedding_spec": "mnv2_op12_fg1280_f16_v1",
+      "embedding_dim": 1280,
+      "fg_lab_spec": "cielab_wb_sog_fg16_v1",
+      "fg_lab_bins": 16
+    }
+  }
+}

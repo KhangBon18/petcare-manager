@@ -1,10 +1,14 @@
 (() => {
   const petInput = document.querySelector("[data-photo-input]");
   const searchInput = document.querySelector("[data-search-photo]");
+  const galleryInput = document.querySelector("[data-gallery-photo]");
   const URLStore = new Map();
   const english = document.documentElement.lang === "en";
 
   function statusFor(input) {
+    if (input.matches("[data-gallery-photo]")) {
+      return document.querySelector("[data-gallery-upload-status]");
+    }
     return document.querySelector(
       input.matches("[data-photo-input]") ? "[data-photo-upload-status]" : "[data-search-upload-status]"
     );
@@ -56,6 +60,9 @@
   });
   searchInput?.addEventListener("change", () => {
     preview(searchInput, "[data-search-preview]", "[data-search-preview-image]");
+  });
+  galleryInput?.addEventListener("change", () => {
+    preview(galleryInput, "[data-gallery-preview]", "[data-gallery-preview-image]");
   });
   window.addEventListener("pagehide", () => URLStore.forEach(url => URL.revokeObjectURL(url)));
 })();

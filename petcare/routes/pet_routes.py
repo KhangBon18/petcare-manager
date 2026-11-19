@@ -240,3 +240,51 @@ def active(pet_id):
     except ServiceError as exc:
         flash(str(exc), "error")
     return redirect(url_for("pets.index"))
+
+
+@bp.post("/<int:pet_id>/photos")
+@admin_required
+def add_reference_photo(pet_id):
+    try:
+        pet_service.add_reference_photo(
+            g.user["id"],
+            pet_id,
+            request.files.get("photo"),
+            image_role=request.form.get("image_role", "additional"),
+            verified_same_pet=(request.form.get("verified_same_pet") == "1"),
+            tenant_id=g.actor_context.tenant_id,
+        )
+        flash("Đã thêm ảnh tham chiếu đã xác minh vào bộ sưu tập cá thể.", "success")
+    except ServiceError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("pets.detail", pet_id=pet_id))
+
+
+@bp.post("/<int:pet_id>/photos/<int:photo_id>/delete")
+@admin_required
+def delete_reference_photo(pet_id, photo_id):
+    try:
+        pet_service.remove_reference_photo(
+            g.user["id"], pet_id, photo_id, tenant_id=g.actor_context.tenant_id
+        )
+        flash("Đã xóa ảnh tham chiếu khỏi bộ sưu tập cá thể.", "success")
+    except ServiceError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("pets.detail", pet_id=pet_id))
+
+
+@bp.post("/<int:pet_id>/photos/<int:photo_id>/reorder")
+@admin_required
+def reorder_reference_photo(pet_id, photo_id):
+    try:
+        pet_service.reorder_reference_photo(
+            g.user["id"],
+            pet_id,
+            photo_id,
+            request.form.get("direction", ""),
+            tenant_id=g.actor_context.tenant_id,
+        )
+        flash("Đã cập nhật thứ tự ảnh trong bộ sưu tập.", "success")
+    except ServiceError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("pets.detail", pet_id=pet_id))

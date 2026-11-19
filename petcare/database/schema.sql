@@ -296,12 +296,33 @@ CREATE TABLE IF NOT EXISTS pet_photo_lsh (
     hash_version TINYINT UNSIGNED NOT NULL,
     band TINYINT UNSIGNED NOT NULL,
     bucket_value TINYINT UNSIGNED NOT NULL,
-    PRIMARY KEY (tenant_id, pet_id, hash_version, band),
+    PRIMARY KEY (tenant_id, pet_id, hash_version, band, bucket_value),
     INDEX idx_pet_photo_lsh_bucket (tenant_id, hash_version, band, bucket_value, pet_id),
     CONSTRAINT fk_pet_photo_lsh_tenant_pet
         FOREIGN KEY (tenant_id, pet_id) REFERENCES pets(tenant_id, id) ON DELETE CASCADE,
     CONSTRAINT chk_pet_photo_lsh_band CHECK (band < 8),
     CONSTRAINT chk_pet_photo_lsh_bucket CHECK (bucket_value < 256)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Verified additional reference photographs (up to 5 total photos per pet including pets.photo_filename).
+CREATE TABLE IF NOT EXISTS pet_reference_photos (
+    id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    tenant_id BIGINT UNSIGNED NOT NULL,
+    pet_id BIGINT UNSIGNED NOT NULL,
+    photo_filename VARCHAR(64) NOT NULL,
+    photo_descriptor JSON NOT NULL,
+    image_role ENUM('additional', 'front_view', 'side_view', 'coat_detail', 'lighting_variant', 'face_closeup', 'full_body') NOT NULL DEFAULT 'additional',
+    sort_order TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_pet_reference_photos_tenant_id (tenant_id, id),
+    UNIQUE KEY uq_pet_reference_photos_tenant_filename (tenant_id, photo_filename),
+    INDEX idx_pet_reference_photos_gallery (tenant_id, pet_id, sort_order, id),
+    CONSTRAINT fk_pet_reference_photos_tenant
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_pet_reference_photos_tenant_pet
+        FOREIGN KEY (tenant_id, pet_id) REFERENCES pets(tenant_id, id) ON DELETE CASCADE,
+    CONSTRAINT chk_pet_reference_photos_sort_order CHECK (sort_order BETWEEN 1 AND 5)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS invoices (
