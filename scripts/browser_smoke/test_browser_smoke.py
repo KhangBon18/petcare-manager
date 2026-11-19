@@ -1425,6 +1425,7 @@ class BrowserSmokeTests(unittest.TestCase):
             self.page.goto(BASE_URL + "/pets/", wait_until="domcontentloaded")
             self.page.locator('.search-form input[name="q"]').fill(pet_code)
             self.page.locator('.search-form button[type="submit"]').click()
+            self.page.wait_for_load_state("load")
             self.assertEqual(
                 self.page.evaluate("document.documentElement.scrollWidth"), width,
                 f"Pet list overflows at {width}px.",

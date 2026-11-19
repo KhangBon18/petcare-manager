@@ -40,6 +40,23 @@
         </button>
       </div>
 
+      <span
+        class="ai-engine-badge"
+        id="ai-engine-badge"
+        data-engine-state="{{ workspace_meta.provider.diagnostic_state }}"
+      >
+        {{ icon('sparkle') }}
+        <span id="ai-engine-badge-text">
+          {% if workspace_meta.provider.active_mode == 'real_llm' and workspace_meta.provider.tool_calling_enabled %}
+            {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi trực tiếp) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (unverified until live reply) · MySQL Grounded' }}
+          {% elif workspace_meta.provider.active_mode == 'real_llm' %}
+            {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (awaiting live reply) · MySQL Grounded' }}
+          {% else %}
+            {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}
+          {% endif %}
+        </span>
+      </span>
+
       <details class="ai-info-disclosure">
         <summary class="button button-light button-small ai-info-summary">
           <span class="ai-info-dot" aria-hidden="true"></span>
@@ -47,22 +64,6 @@
         </summary>
         <div class="ai-info-popover">
           <div class="ai-info-badges">
-            <span
-              class="ai-engine-badge"
-              id="ai-engine-badge"
-              data-engine-state="{{ workspace_meta.provider.diagnostic_state }}"
-            >
-              {{ icon('sparkle') }}
-              <span id="ai-engine-badge-text">
-                {% if workspace_meta.provider.active_mode == 'real_llm' and workspace_meta.provider.tool_calling_enabled %}
-                  {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi trực tiếp) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (unverified until live reply) · MySQL Grounded' }}
-                {% elif workspace_meta.provider.active_mode == 'real_llm' %}
-                  {{ 'Đã cấu hình LLM ngoài (chờ xác nhận phản hồi) · Kiểm chứng MySQL' if locale == 'vi' else 'External LLM Configured (awaiting live reply) · MySQL Grounded' }}
-                {% else %}
-                  {{ t('Chế độ Offline Python · Dữ liệu MySQL xác thực') }}
-                {% endif %}
-              </span>
-            </span>
             <span class="ai-readonly-badge">{{ icon('check') }} {{ 'Chỉ đọc · An toàn theo cửa hàng' if locale == 'vi' else 'Read-only · Tenant isolated' }}</span>
           </div>
           <ul class="ai-guardrail-list">
