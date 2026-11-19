@@ -257,6 +257,14 @@ class BrowserSmokeTests(unittest.TestCase):
         self.page.locator('.login-card form button[type="submit"]').click()
         self.page.wait_for_url(BASE_URL + "/dashboard", timeout=10_000)
 
+    def _switch_language(self, locale: str):
+        select = self.page.locator("[data-language-select]")
+        if not select.is_visible():
+            self.page.locator("[data-account-menu] > summary").click()
+            expect(select).to_be_visible()
+        with self.page.expect_navigation(wait_until="domcontentloaded"):
+            select.select_option(locale)
+
     def _assert_browser_diagnostics(self, *, expected_forbidden_users=False):
         allowed_http = {("GET", "/favicon.ico", 404)}
         if expected_forbidden_users:
@@ -541,7 +549,7 @@ class BrowserSmokeTests(unittest.TestCase):
         # Verify direct language change, navigation persistence, and keyboard
         # operation of the account menu without submitting the logout form.
         self.page.goto(BASE_URL + "/dashboard?period=30d", wait_until="domcontentloaded")
-        self.page.locator("[data-language-select]").select_option("en")
+        self._switch_language("en")
         expect(self.page.locator("html")).to_have_attribute("lang", "en")
         expect(self.page.get_by_role("heading", name="Daily revenue")).to_be_visible()
         self.page.goto(BASE_URL + "/customers/", wait_until="domcontentloaded")
@@ -570,12 +578,14 @@ class BrowserSmokeTests(unittest.TestCase):
                 self.assertRegex(en_period, r"[A-Z][a-z]{2} \d{1,2}, \d{4}")
                 self.assertIn("VND", en_revenue)
                 self.assertRegex(en_revenue, r"\d,\d{3}")
-        self.page.locator("[data-language-select]").select_option("vi")
+        self._switch_language("vi")
         expect(self.page.locator("html")).to_have_attribute("lang", "vi")
         account_summary = self.page.locator("[data-account-menu] > summary")
         account_summary.focus()
         self.page.keyboard.press("Enter")
         self.assertTrue(self.page.locator("[data-account-menu]").evaluate("menu => menu.open"))
+        self.page.keyboard.press("Tab")
+        expect(self.page.locator("[data-account-menu] [data-language-select]")).to_be_focused()
         self.page.keyboard.press("Tab")
         expect(self.page.locator("[data-account-menu] .account-menu-action").first).to_be_focused()
         self.page.keyboard.press("Escape")
@@ -1424,8 +1434,8 @@ class BrowserSmokeTests(unittest.TestCase):
 
             self.page.goto(BASE_URL + "/pets/", wait_until="domcontentloaded")
             self.page.locator('.search-form input[name="q"]').fill(pet_code)
-            self.page.locator('.search-form button[type="submit"]').click()
-            self.page.wait_for_load_state("load")
+            with self.page.expect_navigation(wait_until="load"):
+                self.page.locator('.search-form button[type="submit"]').click()
             self.assertEqual(
                 self.page.evaluate("document.documentElement.scrollWidth"), width,
                 f"Pet list overflows at {width}px.",

@@ -82,7 +82,6 @@
         <button class="button button-light button-small" type="submit">{{ t('Đổi') }}</button>
       </form>
       {% endif %}
-      {% include "partials/language_picker.html" %}
       {% include "partials/account_menu.html" %}
       {% if g.user.role == 'admin' %}<details class="mobile-admin-link mobile-admin-menu" data-mobile-menu><summary>{{ icon('team') }}<span>{{ 'Quản trị' if locale == 'vi' else 'Admin' }}</span></summary><nav aria-label="{{ 'Quản trị' if locale == 'vi' else 'Administration' }}"><a href="{{ url_for('store.settings') }}">{{ t('Cài đặt cửa hàng') }}</a><a href="{{ url_for('users.index') }}">{{ t('Tài khoản') }}</a><a href="{{ url_for('purchasing.index') }}">{{ t('Nhập hàng') }}</a><a href="{{ url_for('purchasing.suppliers_index') }}">{{ t('Nhà cung cấp') }}</a><a href="{{ url_for('audit.index') }}">{{ t('Nhật ký hoạt động') }}</a></nav></details>{% endif %}
     </header>

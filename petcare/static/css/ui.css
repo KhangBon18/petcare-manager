@@ -172,32 +172,24 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
 .account-menu-action:hover { background: var(--color-surface-hover); }
 
 /* Auth shell discreet globe picker */
-.auth-shell > .language-picker,
-.topbar > .language-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 6px 3px 10px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  box-shadow: var(--shadow-xs);
-  flex-shrink: 0;
-}
 .auth-shell > .language-picker {
   position: fixed;
   top: 16px;
   right: 20px;
   z-index: 30;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px 3px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.88);
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-xs);
 }
-.auth-shell > .language-picker .language-picker-title,
-.topbar > .language-picker .language-picker-title { display: none; }
-.auth-shell > .language-picker select,
-.topbar > .language-picker select {
-  width: auto;
+.auth-shell > .language-picker .language-picker-title { display: none; }
+.auth-shell > .language-picker select {
   min-height: 26px;
   min-width: 0;
   padding: 0 22px 0 2px;
@@ -1149,22 +1141,6 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   }
   .topbar:not(.topbar-multi-store) .mobile-brand { gap: 8px; }
   .topbar:not(.topbar-multi-store) .mobile-brand strong { display: block; font-size: 14px; }
-  .topbar:not(.topbar-multi-store) > .language-picker {
-    gap: 2px;
-    height: 34px;
-    padding: 0 4px 0 7px;
-    margin: 0;
-    grid-column: auto;
-    grid-row: auto;
-  }
-  .topbar:not(.topbar-multi-store) > .language-picker .language-picker-label { width: auto; }
-  .topbar:not(.topbar-multi-store) > .language-picker select {
-    width: auto;
-    min-width: 0;
-    min-height: 28px;
-    padding: 0 18px 0 2px;
-    font-size: 11.5px;
-  }
   .topbar-mobile-admin:not(.topbar-multi-store) .account-menu { margin-left: 0; }
   .topbar:not(.topbar-multi-store) .mobile-admin-link,
   .topbar-mobile-admin:not(.topbar-multi-store) .mobile-admin-link { min-height: 36px; padding: 0; border: 0; border-radius: 0; background: transparent; }
@@ -1211,10 +1187,7 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .page-wrap { padding: 14px 12px 76px; }
   .pos-catalog-grid, .pos-skeleton { grid-template-columns: 1fr; padding: 0 10px 12px; }
   .login-panel { padding: 24px 14px; }
-  .topbar,
-  .topbar:not(.topbar-multi-store).topbar-mobile-admin { padding: 0 10px; gap: 5px; }
-  .topbar:not(.topbar-multi-store) .mobile-brand strong { display: none; }
-  .mobile-admin-link > summary { padding: 0 8px; font-size: 11.5px; }
+  .topbar { padding: 0 10px; }
 }
 @media print {
   .topbar { display: none !important; }
