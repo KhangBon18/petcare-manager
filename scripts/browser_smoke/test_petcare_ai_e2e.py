@@ -155,6 +155,15 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
         page.wait_for_url(f"{self.base_url}/dashboard")
         return context, page, console_errors
 
+    @staticmethod
+    def _switch_language(page, locale: str):
+        select = page.locator("#language-select")
+        if not select.is_visible():
+            page.locator("[data-account-menu] > summary").click()
+            expect(select).to_be_visible()
+        with page.expect_navigation(wait_until="domcontentloaded"):
+            select.select_option(locale)
+
     def test_navigation_multiturn_apartment_cat_and_desktop_screenshot(self):
         context, page, console_errors = self._new_logged_in_page("admin", DEMO_ADMIN_PASSWORD)
         try:
@@ -203,8 +212,7 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
         try:
             # Switch UI language to English via topbar locale selector
             page.goto(f"{self.base_url}/assistant/chat", wait_until="domcontentloaded")
-            with page.expect_navigation(wait_until="domcontentloaded"):
-                page.select_option("#language-select", "en")
+            self._switch_language(page, "en")
 
             expect(page.locator("html")).to_have_attribute("lang", "en")
             page.fill("#ai-workspace-input", "Which food should I consider for my adult cat?")
@@ -388,8 +396,7 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
         )
         try:
             staff_page.goto(f"{self.base_url}/assistant/chat", wait_until="domcontentloaded")
-            with staff_page.expect_navigation(wait_until="domcontentloaded"):
-                staff_page.select_option("#language-select", "en")
+            self._switch_language(staff_page, "en")
             expect(staff_page.locator("html")).to_have_attribute("lang", "en")
 
             # 1. Descriptive urinary obstruction in English must render emergency alert + KB citation, NEVER cat litter cards
@@ -502,6 +509,9 @@ class PetCareAIBrowserE2ETests(unittest.TestCase):
         )
         try:
             page.goto(f"{self.base_url}/assistant/chat?scope=shopper_preview", wait_until="domcontentloaded")
+            info_summary = page.locator(".ai-info-disclosure > summary")
+            expect(info_summary).to_be_visible()
+            info_summary.click()
             badge = page.locator("#ai-engine-badge")
             expect(badge).to_be_visible()
             self.assertEqual(badge.get_attribute("data-engine-state"), "offline_disabled")

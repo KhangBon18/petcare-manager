@@ -2,7 +2,7 @@
 <section class="panel business-panel">
   <div class="panel-heading">
     <div>
-      <span class="eyebrow">{{ 'BẢN TIN KINH DOANH' if locale == 'vi' else 'BUSINESS BRIEF' }}</span>
+      
       <h2>{{ 'Doanh thu theo ngày' if locale == 'vi' else 'Daily revenue' }}</h2>
       <small class="business-chart-freshness">{{ 'Cập nhật' if locale == 'vi' else 'Updated' }} {{ format_datetime(report.captured_at) }}</small>
     </div>
@@ -31,7 +31,7 @@
       {% endfor %}
       <line x1="64" y1="162" x2="690" y2="162" class="chart-axis"/>
       {% for bar in report.chart_bars %}
-      <rect x="{{ bar.x + 60 }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="2" class="revenue-bar">
+      <rect x="{{ bar.x + 60 }}" y="{{ bar.y }}" width="{{ bar.width }}" height="{{ bar.height }}" rx="5" class="revenue-bar {% if bar.revenue|float == report.peak.revenue|float and bar.revenue|float > 0 %}is-peak{% endif %}">
         <title>{{ format_date(bar.date) }}: {{ format_money(bar.revenue, report.currency_code) }}</title>
       </rect>
       {% endfor %}

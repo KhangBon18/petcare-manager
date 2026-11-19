@@ -3,7 +3,7 @@
 {% block title %}{{ t('Đơn nhập hàng') }}{% endblock %}
 {% block content %}
 <div class="page-heading purchasing-heading">
-  <div><span class="eyebrow">{{ t('QUẢN LÝ KHO HÀNG') }}</span><h1>{{ t('Đơn nhập hàng') }}</h1><p>{{ t('Theo dõi đơn đặt với nhà cung cấp và xác nhận số hàng nhận vào kho.') }}</p></div>
+  <div><h1>{{ t('Đơn nhập hàng') }}</h1><p>{{ t('Theo dõi đơn đặt với nhà cung cấp và xác nhận số hàng nhận vào kho.') }}</p></div>
   <div class="heading-actions"><a class="button button-light" href="{{ url_for('purchasing.suppliers_index') }}">{{ icon('team') }} {{ t('Nhà cung cấp') }}</a><a class="button button-primary" href="{{ url_for('purchasing.create') }}">{{ icon('plus') }} {{ t('Lập đơn nhập') }}</a></div>
 </div>
 <section class="panel purchase-list-panel">
@@ -52,7 +52,7 @@
       <a class="button button-light button-small" href="{{ url_for('purchasing.detail', purchase_order_id=order.id) }}">{{ t('Chi tiết') }} →</a>
     </li>
     {% else %}
-    <li class="purchase-mobile-order purchase-mobile-empty"><span class="eyebrow">{{ t('ĐƠN NHẬP') }}</span><strong>{{ t('Chưa có đơn nhập nào') }}</strong><small>{{ t('Lập đơn đầu tiên để theo dõi hàng đặt và nhận vào kho.') }}</small><a class="button button-primary button-small" href="{{ url_for('purchasing.create') }}">{{ t('Lập đơn nhập') }}</a></li>
+    <li class="purchase-mobile-order purchase-mobile-empty"><strong>{{ t('Chưa có đơn nhập nào') }}</strong><small>{{ t('Lập đơn đầu tiên để theo dõi hàng đặt và nhận vào kho.') }}</small><a class="button button-primary button-small" href="{{ url_for('purchasing.create') }}">{{ t('Lập đơn nhập') }}</a></li>
     {% endfor %}
   </ul>
   {% include "pagination.html" %}

@@ -1,33 +1,65 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% block title %}{{ t('Đăng nhập') }}{% endblock %}
 {% block auth_content %}
 <div class="login-layout">
-  <section class="login-art">
-    <a class="brand brand-light" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
+  <section class="login-art" aria-label="PetCare Manager">
+    <a class="brand brand-light" href="{{ url_for('auth.login') }}">
+      <span class="brand-mark">{{ icon('brand') }}</span>
+      <span><strong>PetCare</strong><small>SHOP MANAGER</small></span>
+    </a>
+
+    <div class="login-mosaic" aria-hidden="true">
+      <figure><img src="{{ url_for('static', filename='img/login/login-cat.webp') }}" alt="" width="720" height="900"></figure>
+      <figure><img src="{{ url_for('static', filename='img/login/login-dog.webp') }}" alt="" width="560" height="420"></figure>
+      <figure><img src="{{ url_for('static', filename='img/login/login-cat-2.webp') }}" alt="" width="560" height="420"></figure>
+      <span class="login-mosaic-tag"><i></i>{{ t('Nhận diện ảnh chạy cục bộ') }}</span>
+    </div>
+
     <div class="login-art-copy">
-      <span class="eyebrow">{{ t('CỬA HÀNG THÚ CƯNG CỦA BẠN') }}</span>
-      <h1>{{ t('Chăm sóc tốt.') }}<br><em>{{ t('Quản lý nhẹ nhàng.') }}</em></h1>
+      <h1>{{ 'Chăm sóc chuẩn mực.' if locale == 'vi' else 'Thoughtful care.' }}<br>{{ 'Vận hành tinh gọn.' if locale == 'vi' else 'Effortless operations.' }}</h1>
       <p>{{ t('Mọi khách hàng, sản phẩm và giao dịch trong một không gian gọn gàng.') }}</p>
     </div>
-    <div class="art-pet" aria-hidden="true"><span class="sun"></span><span class="plant plant-one"></span><span class="plant plant-two"></span><span class="cat-body"></span><span class="cat-head"><i></i><b></b></span><span class="cat-tail"></span></div>
-    <div class="login-art-footer">{{ t('BẢN QUẢN TRỊ NỘI BỘ') }} <span>•</span> PETCARE MANAGER</div>
   </section>
+
   <section class="login-panel">
     <div class="login-card">
-      <a class="brand login-mobile-brand" href="{{ url_for('auth.login') }}"><span class="brand-mark">P</span><span><strong>petcare</strong><small>SHOP MANAGER</small></span></a>
-      <span class="eyebrow">{{ t('CHÀO MỪNG TRỞ LẠI') }}</span>
+      <a class="brand login-mobile-brand" href="{{ url_for('auth.login') }}">
+        <span class="brand-mark">{{ icon('brand') }}</span>
+        <span><strong>PetCare</strong><small>SHOP MANAGER</small></span>
+      </a>
+
       <h2>{{ t('Đăng nhập') }}</h2>
-      <p class="muted">{{ t('Nhập cửa hàng và tài khoản của bạn để tiếp tục.') }}</p>
+      <p class="muted">{{ 'Đăng nhập bằng tài khoản nhân sự để bắt đầu ca làm việc.' if locale == 'vi' else 'Sign in with your staff account to access your store workspace.' }}</p>
+
       <form method="post" class="form-stack">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <label>{{ t('Mã cửa hàng') }}<input type="text" name="store_slug" value="{{ request.form.get('store_slug', 'main') }}" autocomplete="organization" required placeholder="{{ t('Ví dụ: main') }}"></label>
-        <label>{{ t('Tên đăng nhập') }}<input type="text" name="username" autocomplete="username" required placeholder="{{ t('Ví dụ: admin') }}"></label>
-        <label>{{ t('Mật khẩu') }}<input type="password" name="password" autocomplete="current-password" required placeholder="{{ t('Nhập mật khẩu') }}"></label>
-        <button class="button button-primary button-wide" type="submit">{{ t('Đăng nhập') }} <span>→</span></button>
+
+        <label class="login-field">
+          <span>{{ t('Tên đăng nhập') }}</span>
+          <input type="text" name="username" autocomplete="username" required placeholder="{{ t('Ví dụ: admin') }}">
+        </label>
+
+        <label class="login-field">
+          <span class="login-field-head">
+            <span>{{ t('Mật khẩu') }}</span>
+            <a class="login-forgot-inline" href="{{ url_for('account.forgot_password') }}">{{ t('Quên mật khẩu?') }}</a>
+          </span>
+          <input type="password" name="password" autocomplete="current-password" required placeholder="{{ t('Nhập mật khẩu') }}">
+        </label>
+
+        <label class="login-store-context">
+          <span class="login-store-meta">{{ icon('store', 'login-store-ico') }} {{ 'Mã cửa hàng' if locale == 'vi' else 'Store workspace' }}</span>
+          <input type="text" name="store_slug" value="{{ request.form.get('store_slug', 'main') }}" autocomplete="organization" required aria-label="{{ t('Mã cửa hàng') }}">
+        </label>
+
+        <button class="button button-primary button-wide" type="submit">{{ t('Đăng nhập') }}</button>
       </form>
-      <p class="login-recovery"><a href="{{ url_for('account.forgot_password') }}">{{ t('Quên mật khẩu?') }}</a></p>
-      {% if public_signup_enabled %}<p class="login-recovery">{{ t('Mở cửa hàng mới?') }} <a href="{{ url_for('auth.signup') }}">{{ t('Tạo tài khoản cửa hàng') }}</a></p>{% endif %}
-      <div class="login-help"><span class="help-icon">i</span><span>{{ t('Ứng dụng dành cho nhân viên cửa hàng. Liên hệ quản trị viên nếu bạn cần tài khoản.') }}</span></div>
+
+      {% if public_signup_enabled %}
+      <p class="login-recovery">{{ t('Mở cửa hàng mới?') }} <a href="{{ url_for('auth.signup') }}">{{ t('Tạo tài khoản cửa hàng') }}</a></p>
+      {% endif %}
+      <p class="login-help-quiet">{{ 'Liên hệ quản trị viên cửa hàng nếu bạn chưa có tài khoản.' if locale == 'vi' else 'Contact your store administrator if you need an account.' }}</p>
     </div>
   </section>
 </div>

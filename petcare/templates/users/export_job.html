@@ -4,7 +4,7 @@
 <div class="page-heading compact-heading">
   <div>
     <a class="back-link" href="{{ url_for('users.export_current_store') }}">← {{ t('Xuất dữ liệu') }}</a>
-    <span class="eyebrow">{{ t('BẢN XUẤT RIÊNG TƯ') }}</span>
+    
     <h1>
       {% if job.expired %}{{ t('Bản xuất đã hết hạn') }}
       {% elif job.status == 'pending' %}{{ t('Yêu cầu đang chờ') }}

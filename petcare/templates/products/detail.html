@@ -1,5 +1,42 @@
 {% extends "base.html" %}
+{% from "partials/icons.html" import icon %}
 {% from "partials/restock.html" import explanation with context %}
 {% block title %}{{ product.name }}{% endblock %}
-{% block content %}<div class="page-heading"><div><a class="back-link" href="{{ url_for('products.index') }}">← {{ t('Sản phẩm') }}</a><span class="eyebrow">{{ product.code }}</span><h1>{{ product.name }}</h1><p>{{ product.category }}</p></div>{% if g.user.role == 'admin' %}<a class="button button-primary" href="{{ url_for('products.edit', product_id=product.id) }}">{{ t('Quản lý') }}</a>{% endif %}</div>
-<section class="panel product-profile">{% if product.photo_filename %}<img class="profile-product-photo" src="{{ url_for('products.photo',filename=product.photo_filename) }}" alt="{{ product.name }}" width="440" height="440">{% endif %}<div><span class="status-pill {{ 'status-active' if product.active else 'status-muted' }}">{{ t('Đang bán') if product.active else t('Đã ngừng') }}</span><h2>{{ format_money(product.unit_price) }}</h2><p>{{ product.description }}</p><p>{{ t('Tồn kho') }}: <strong>{{ format_number(product.stock_qty) }}</strong></p>{% if suggestion %}{{ explanation(suggestion) }}{% endif %}</div></section>{% endblock %}
+{% set pvis = product_visual(product) %}
+{% block content %}
+<div class="page-heading">
+  <div>
+    <a class="back-link" href="{{ url_for('products.index') }}">← {{ t('Sản phẩm') }}</a>
+    <span class="eyebrow">{{ product.code }}</span>
+    <h1>{{ product.name }}</h1>
+    <p>{{ product.category }}</p>
+  </div>
+  {% if g.user.role == 'admin' %}
+  <div class="heading-actions">
+    <a class="button button-primary" href="{{ url_for('products.edit', product_id=product.id) }}">{{ t('Quản lý') }}</a>
+  </div>
+  {% endif %}
+</div>
+
+<section class="panel product-profile">
+  <div class="product-profile-media">
+    <img class="profile-product-photo" src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ product.name }}" width="440" height="440">
+    {% if pvis.is_illustrative %}
+    <span class="illustrative-badge">{{ 'Ảnh minh họa sản phẩm' if locale == 'vi' else 'Illustrative product image' }}</span>
+    {% endif %}
+  </div>
+  <div class="product-profile-meta">
+    <div class="product-profile-status-row">
+      <span class="status-pill {{ 'status-active' if product.active else 'status-muted' }}">{{ t('Đang bán') if product.active else t('Đã ngừng') }}</span>
+      <span class="category-tag">{{ product.category }}</span>
+    </div>
+    <h2 class="product-detail-price">{{ format_money(product.unit_price) }}</h2>
+    {% if product.description %}<p class="product-detail-desc">{{ product.description }}</p>{% endif %}
+    <dl class="detail-list product-detail-specs">
+      <div><dt>{{ t('Mã mặt hàng') }}</dt><dd class="pv-mono">{{ product.code }}</dd></div>
+      <div><dt>{{ t('Tồn kho') }}</dt><dd><strong>{{ format_number(product.stock_qty) }}</strong>{% if product.reorder_level is defined and product.reorder_level is not none %} <small class="cell-hint">({{ t('cảnh báo') }} ≤ {{ format_number(product.reorder_level) }})</small>{% endif %}</dd></div>
+    </dl>
+    {% if suggestion %}{{ explanation(suggestion) }}{% endif %}
+  </div>
+</section>
+{% endblock %}

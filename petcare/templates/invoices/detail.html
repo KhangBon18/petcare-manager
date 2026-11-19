@@ -5,7 +5,7 @@
 <div class="page-heading compact-heading">
   <div>
     <a class="back-link" href="{{ url_for('invoices.index') }}">← {{ t('Hóa đơn') }}</a>
-    <span class="eyebrow">{{ t('CHI TIẾT GIAO DỊCH') }}</span>
+    
     <h1>{{ t('Hóa đơn') }} <span class="invoice-number">#{{ '%06d'|format(invoice.id) }}</span></h1>
     <p>{{ t('Khách hàng') }}: <a class="customer-record-link" href="{{ url_for('customers.detail', customer_id=invoice.customer_id) }}">{{ invoice.customer_name }}</a> · {{ invoice.customer_phone }}</p>
   </div>
@@ -17,7 +17,7 @@
 <div class="invoice-detail-layout">
   <section class="panel invoice-lines-panel">
     <div class="panel-heading">
-      <div><span class="eyebrow">{{ t('MẶT HÀNG') }}</span><h2>{{ t('Chi tiết hóa đơn') }}</h2></div>
+      <div><h2>{{ t('Chi tiết hóa đơn') }}</h2></div>
       <span class="soft-badge">{{ format_datetime(invoice.created_at) if invoice.created_at else '' }}</span>
     </div>
     <div class="table-scroll">
@@ -27,7 +27,7 @@
           {% for item in invoice['items'] %}
           <tr>
             <td><div class="product-cell"><span class="product-symbol">{{ icon('pets' if item.item_type == 'pet' else 'products') }}</span><div><strong>{{ item.name_snapshot }}</strong><small>{{ item.item_code_snapshot }}</small></div></div></td>
-            <td>{{ t('PET') if item.item_type == 'pet' else t('PRODUCT') }}</td>
+            <td><span class="category-tag">{{ t('Thú cưng') if item.item_type == 'pet' else t('Sản phẩm') }}</span></td>
             <td>{{ format_money(item.unit_price, invoice.currency_code) }}</td>
             <td>{{ format_number(item.quantity) }}</td>
             <td>{% if item.refunded_quantity %}<span class="refund-quantity">{{ format_number(item.refunded_quantity) }} / {{ format_number(item.quantity) }}</span>{% else %}—{% endif %}</td>
@@ -43,7 +43,7 @@
   </section>
 
   <aside class="panel invoice-action-card">
-    <span class="eyebrow">{{ t('THANH TOÁN') }}</span>
+    
     <div class="action-total">{{ format_money(invoice.total_amount, invoice.currency_code) }}</div>
     <p class="muted">
       {% if invoice.status == 'unpaid' %}{{ t('Tồn kho và thú cưng chỉ cập nhật khi xác nhận thu tiền.') }}
@@ -107,7 +107,7 @@
 {% if invoice.refunds %}
 <section class="panel refund-history-panel" aria-labelledby="refund-history-title">
   <div class="panel-heading">
-    <div><span class="eyebrow">{{ t('ĐIỀU CHỈNH SAU THANH TOÁN') }}</span><h2 id="refund-history-title">{{ t('Lịch sử trả hàng và hoàn tiền') }}</h2></div>
+    <div><h2 id="refund-history-title">{{ t('Lịch sử trả hàng và hoàn tiền') }}</h2></div>
     <span class="soft-badge">{{ format_number(invoice.refunds|length) }} {{ t('lần hoàn') }}</span>
   </div>
   {% for refund in invoice.refunds %}

@@ -1,8 +1,13 @@
+{% from "partials/icons.html" import icon %}
+{% set picker_id = 'language-select' ~ ('-' ~ language_picker_id if language_picker_id else '') %}
 <form class="language-picker" action="{{ url_for('auth.set_language') }}" method="post" data-language-form>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
-  <label class="visually-hidden" for="language-select">{{ t('Language') }}</label>
-  <select id="language-select" name="locale" aria-label="{{ t('Language') }}" data-language-select>
+  <label class="language-picker-label" for="{{ picker_id }}">
+    {{ icon('globe', 'ui-icon language-globe') }}
+    <span class="language-picker-title">{{ 'Ngôn ngữ' if locale == 'vi' else 'Language' }}</span>
+  </label>
+  <select id="{{ picker_id }}" name="locale" aria-label="{{ t('Language') }}" data-language-select>
     {% for code, label in locale_labels.items() %}<option value="{{ code }}" {% if locale == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
   </select>
   <noscript><button class="button button-light button-small" type="submit">{{ t('Áp dụng') }}</button></noscript>
