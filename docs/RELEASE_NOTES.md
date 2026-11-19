@@ -1,7 +1,7 @@
 # Release Notes — PetCare Manager `v2.0.0` (Proposed)
 
 - **Proposed Semantic Version**: `v2.0.0` (Major generation upgrade over historical `v1.0.0` & `v1.0-demo-ready`)
-- **Verified Integration Baseline**: `solo/khang-petcare` @ `b95ddd8d48056385367b8d03eb5d4aa95a9a353a` (plus `feature/final-repository-release` docs/audit polish)
+- **Integration Branch**: `main` (synchronized with `solo/khang-petcare`)
 - **Preserved Historical Tags**: `v1.0.0`, `v1.0-demo-ready`
 
 ---
@@ -23,6 +23,10 @@
 - Added `scripts/demo_staging_setup.py` for fail-closed isolated `_test` demo provisioning across all 3 roles (Admin, Staff, Customer).
 - Fixed mobile `/shop/account` card layout (`clippedRight: false` at `320px`/`390px`), docked `#assistant-launcher` into `.topbar` (eliminating all button overlaps), deduplicated internal AI safety banner text, expanded horizontal customer AI cards, compacted mobile Storefront hero, added conditional checkout delivery address toggling, and rendered uploaded query previews with `/100` heuristic score labels.
 - Completed 60-check multi-viewport module acceptance (including `/activity/`) documented in [FINAL_UI_MODULE_ACCEPTANCE.md](FINAL_UI_MODULE_ACCEPTANCE.md).
+
+### 5. Repository Reconciliation, Attribution & Licensing (PR #7 – PR #10 & Licensing)
+- Completed repository audit, clean-clone verification (`SETUP_GUIDE.md`, `REPOSITORY_CLEANUP_AUDIT.md`), and safe Git history reconciliation with `origin/main` without reintroducing legacy desktop SQL fixtures (`docs/archive/README.md`).
+- Added comprehensive third-party attribution ([THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)) covering GSAP Standard License, Apache-2.0 ONNX models, `mysql-connector-python` (GPLv2 + FOSS License Exception), and Wikimedia Commons `CC BY` evaluation fixtures, alongside the canonical first-party [MIT License](../LICENSE).
 
 ---
 

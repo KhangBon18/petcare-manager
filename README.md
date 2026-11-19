@@ -156,7 +156,7 @@ Key security defaults: CSRF protection on mutating routes, PBKDF2-HMAC-SHA256 pa
 | AI & Vision 4.0 | [docs/AI_FEATURES.md](docs/AI_FEATURES.md), [docs/AI4_0E_FINAL_VISION_QA.md](docs/AI4_0E_FINAL_VISION_QA.md) |
 | Demo & Operations | [docs/DEMO_GUIDE.md](docs/DEMO_GUIDE.md), [docs/DEPLOYMENT_GUIDE.md](docs/DEPLOYMENT_GUIDE.md), [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) |
 | QA & Security | [docs/TESTING_GUIDE.md](docs/TESTING_GUIDE.md), [SECURITY.md](SECURITY.md), [docs/SECURITY.md](docs/SECURITY.md), [docs/FINAL_UI_MODULE_ACCEPTANCE.md](docs/FINAL_UI_MODULE_ACCEPTANCE.md) |
-| Audit & Releases | [docs/REPOSITORY_CLEANUP_AUDIT.md](docs/REPOSITORY_CLEANUP_AUDIT.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md), [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Audit & Releases | [docs/REPOSITORY_CLEANUP_AUDIT.md](docs/REPOSITORY_CLEANUP_AUDIT.md), [docs/RELEASE_NOTES.md](docs/RELEASE_NOTES.md), [CHANGELOG.md](CHANGELOG.md), [CONTRIBUTING.md](CONTRIBUTING.md), [LICENSE](LICENSE), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
 
 ---
 
@@ -177,3 +177,10 @@ git archive --format=zip --prefix=petcare-manager/ -o ../PetCare-Manager-<versio
 (cd .. && shasum -a 256 PetCare-Manager-<version>.zip > PetCare-Manager-<version>.sha256)
 (cd .. && shasum -a 256 -c PetCare-Manager-<version>.sha256)
 ```
+
+---
+
+## 10. License & Third-Party Notices
+
+- **First-Party Code**: Licensed under the [MIT License](LICENSE) (`Copyright (c) 2026 Nguyễn Vĩnh Khang (KhangBon18)`).
+- **Third-Party Components & Separate Licenses**: See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for assets **not** covered by the MIT license, including **GSAP `3.15.0`** (GreenSock Standard License), **ONNX Vision models** (`Apache-2.0`), **`mysql-connector-python`** (`GNU GPLv2 with FOSS License Exception`), **Wikimedia Commons `CC BY` evaluation fixtures**, and historical archived contributions.

@@ -6,7 +6,8 @@
 - **PR #4 (Option A UI/UX Redesign)**: Giao diện Precision Cloud SaaS Light đồng bộ trên toàn bộ workspace quản trị/POS, thẻ POS gọn và đủ 22 ảnh sản phẩm, 68 ảnh thú cưng mẫu và 10 SVG minh họa.
 - **PR #5 (Customer Storefront `/shop` & Order Queue `/orders/`)**: Mua sắm công khai, giỏ hàng, đặt đơn nhận tại quầy hoặc COD (`unpaid` cho tới khi thu tiền tường minh), giữ kho/thú cưng qua `customer_order_pet_locks`, tìm thú cưng bằng ảnh và trợ lý mua sắm AI công khai.
 - **PR #6 (Demo/Staging Readiness & UI Acceptance 1.0)**: Script `scripts/demo_staging_setup.py`, neo `#assistant-launcher` vào `.topbar` (0 che nút), card đơn hàng mobile `/shop/account` hết cắt xén ở `320px/390px`, chống lặp văn bản banner/reply AI nội bộ, mở rộng lưới card AI khách hàng, thu gọn hero mobile, ẩn/hiện có điều kiện địa chỉ COD và hiển thị ảnh truy vấn `/100`.
-- Xác minh hậu merge (`b95ddd8`): **6/6** GitHub Actions CI, **567/567** Python/MySQL, **49/49** JS, **35/35** Playwright E2E, **0** lỗ hổng `pip-audit` và **0** phát hiện Bandit mới.
+- **Tích hợp & Pháp lý (`PR #7`–`#10` & MIT Licensing)**: Chuẩn hóa tài liệu cài đặt sạch, đối soát lịch sử `main` an toàn, bổ sung `THIRD_PARTY_NOTICES.md` (GSAP Standard License, ONNX Apache-2.0, `mysql-connector-python` GPLv2 + FOSS License Exception, fixture Wikimedia Commons `CC BY`) và áp dụng `MIT License` cho mã nguồn first-party của PetCare Manager.
+- Xác minh kiểm thử tích hợp: **6/6** GitHub Actions CI, **567/567** Python/MySQL, **49/49** JS, **35/35** Playwright E2E, **0** lỗ hổng `pip-audit` và **0** phát hiện Bandit mới.
 
 ## P1.3 — trả hàng và hoàn tiền — 2026-11-02
 
