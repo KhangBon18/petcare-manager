@@ -311,7 +311,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, input:focus-visibl
   letter-spacing: -0.025em;
   color: var(--color-ink);
 }
-.page-heading p { max-width: 64ch; color: var(--color-faint); font-size: 13.5px; }
+.page-heading p { max-width: 64ch; color: var(--color-muted); font-size: 13.5px; }
 .page-heading .eyebrow { margin-bottom: 2px; }
 .heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; flex-shrink: 0; }
 .heading-actions .button { white-space: nowrap; }

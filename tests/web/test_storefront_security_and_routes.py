@@ -277,3 +277,29 @@ class StorefrontWebSecurityTests(TestCase):
                     payment_confirmed=True, collected_amount="100000",
                 )
 
+    def test_public_ai_clarification_unpacks_pet_and_product_tuples_cleanly(self):
+        from types import SimpleNamespace
+        from contextlib import nullcontext
+        from petcare.services import storefront_ai_service
+
+        fake_conn = SimpleNamespace(cursor=lambda *a, **kw: None)
+        empty_res = SimpleNamespace(cards=[], follow_up_questions=[])
+        with (
+            patch("petcare.services.storefront_ai_service.read_connection", return_value=nullcontext(fake_conn)),
+            patch("petcare.services.storefront_ai_service.set_tenant_context"),
+            patch("petcare.services.storefront_ai_service.match_available_pets", return_value=empty_res),
+            patch("petcare.services.storefront_ai_service.recommend_products", return_value=empty_res),
+        ):
+            for prompt in (
+                "Gợi ý giúp mình một bé",
+                "Gợi ý giống mèo hiền nuôi chung cư",
+                "Gợi ý sản phẩm",
+                "Gợi ý thức ăn hạt cho mèo",
+            ):
+                res = storefront_ai_service.answer_public_question(
+                    dict(STORE_FIXTURE), prompt, locale="vi", force_offline=True
+                )
+                self.assertIn(res["response_type"], {"clarification", "pet_recommendations", "product_recommendations"})
+                self.assertTrue(res["reply"])
+
+
