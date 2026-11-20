@@ -286,5 +286,26 @@
       }
     });
   });
+
+  function isEditableInput(el) {
+    if (!el || el.disabled || el.readOnly) return false;
+    var tag = el.tagName;
+    if (tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (tag !== "INPUT") return false;
+    var type = (el.type || "text").toLowerCase();
+    return ["text", "tel", "email", "search", "password", "number", "url"].indexOf(type) !== -1;
+  }
+  document.addEventListener("focusin", function (e) {
+    if (isEditableInput(e.target)) {
+      document.body.classList.add("sf-keyboard-open");
+    }
+  });
+  document.addEventListener("focusout", function () {
+    window.setTimeout(function () {
+      if (!isEditableInput(document.activeElement)) {
+        document.body.classList.remove("sf-keyboard-open");
+      }
+    }, 60);
+  });
 })();
 

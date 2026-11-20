@@ -9,7 +9,7 @@
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront.css') }}">
 </head>
-<body class="sf-body">
+<body class="sf-body{% if request.endpoint == 'storefront.checkout' %} sf-checkout-page{% endif %}">
 <a class="sf-skip-link" href="#sf-main-content">{{ 'Bỏ qua điều hướng' if locale == 'vi' else 'Skip to content' }}</a>
 
 <header class="sf-header">
@@ -95,7 +95,7 @@
   </div>
 </footer>
 
-<nav class="sf-mobile-dock" aria-label="{{ 'Điều hướng nhanh' if locale == 'vi' else 'Mobile navigation' }}">
+<nav class="sf-mobile-dock" id="sf-mobile-dock" aria-label="{{ 'Điều hướng nhanh' if locale == 'vi' else 'Mobile navigation' }}">
   <a href="{{ url_for('storefront.home') }}" {% if request.endpoint == 'storefront.home' %}aria-current="page"{% endif %}>{{ icon('store') }}<span>{{ 'Trang chủ' if locale == 'vi' else 'Home' }}</span></a>
   <a href="{{ url_for('storefront.products') }}" {% if request.endpoint in ('storefront.products', 'storefront.product_detail') %}aria-current="page"{% endif %}>{{ icon('products') }}<span>{{ 'Sản phẩm' if locale == 'vi' else 'Shop' }}</span></a>
   <a href="{{ url_for('storefront.pets') }}" {% if request.endpoint in ('storefront.pets', 'storefront.pet_detail') %}aria-current="page"{% endif %}>{{ icon('pets') }}<span>{{ 'Thú cưng' if locale == 'vi' else 'Pets' }}</span></a>

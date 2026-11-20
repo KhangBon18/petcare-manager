@@ -38,8 +38,8 @@
 
     <dl class="sf-specs">
       <div><dt>{{ 'Mã sản phẩm' if locale == 'vi' else 'SKU' }}</dt><dd>{{ product.code }}</dd></div>
-      <div><dt>{{ 'Danh mục' if locale == 'vi' else 'Category' }}</dt><dd>{{ product.category }}</dd></div>
-      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ 'Tại cửa hàng hoặc COD khi nhận hàng' if locale == 'vi' else 'Pay at store or Cash on Delivery' }}</dd></div>
+      <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Fulfillment' }}</dt><dd>{{ 'Nhận tại cửa hàng hoặc giao tận nơi' if locale == 'vi' else 'Store pickup or home delivery' }}</dd></div>
+      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ 'Tại quầy hoặc tiền mặt COD' if locale == 'vi' else 'Pay at store or Cash on Delivery' }}</dd></div>
     </dl>
 
     <form class="sf-qty-form" method="post" action="{{ url_for('storefront.cart_add') }}">

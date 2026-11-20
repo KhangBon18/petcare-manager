@@ -69,15 +69,6 @@
       {% endif %}
     </section>
     {% if metrics.restock is defined %}{{ restock_panel(metrics.restock, "Ưu tiên bổ sung tồn kho" if locale == 'vi' else "Restock priorities") }}{% endif %}
-    <section class="panel dashboard-list-panel">
-      <div class="panel-heading"><h2>{{ t('Lối tắt') }}</h2></div>
-      <div class="quick-grid">
-        <a class="quick-card quick-card-ai" href="{{ url_for('assistant.workspace') }}"><span class="quick-icon">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý AI') }}</strong><small>{{ t('Hỏi về tồn kho, doanh thu') }}</small></span></a>
-        <a class="quick-card" href="{{ url_for('pets.find_similar') }}"><span class="quick-icon">{{ icon('search') }}</span><span><strong>{{ t('Tìm bằng ảnh') }}</strong><small>{{ t('Nhận diện mèo, chó') }}</small></span></a>
-        <a class="quick-card" href="{{ url_for('reports.index') }}"><span class="quick-icon">{{ icon('reports') }}</span><span><strong>{{ t('Xem báo cáo') }}</strong><small>{{ t('Doanh thu và hàng bán chạy') }}</small></span></a>
-        {% if metrics.last_seven_days is defined %}<a class="quick-card" href="{{ url_for('reports.index', start=metrics.week_start, end=metrics.week_end) }}"><span class="quick-icon">{{ icon('invoice') }}</span><span><strong>{{ format_money(metrics.last_seven_days) }}</strong><small>{{ 'Doanh thu 7 ngày qua' if locale == 'vi' else 'Revenue, last 7 days' }}</small></span></a>{% endif %}
-      </div>
-    </section>
   </div>
 </div>
 {% endblock %}

@@ -10,6 +10,25 @@
   <span class="sf-status-pill sf-status-{{ order.order_status }}">{{ g.storefront_order_status_labels.get(order.order_status, order.order_status) }}</span>
 </div>
 
+<div class="sf-order-next-step">
+  <div>
+    <strong>{{ 'Bước tiếp theo:' if locale == 'vi' else 'Next step:' }}</strong>
+    {% if order.order_status == 'pending' %}
+      {{ 'Cửa hàng đã giữ hàng theo đơn. Nhân viên sẽ liên hệ qua số ' ~ order.customer_phone ~ ' để xác nhận trước khi chuẩn bị.' if locale == 'vi' else 'Stock has been reserved. Store staff will contact ' ~ order.customer_phone ~ ' to confirm before preparation.' }}
+    {% elif order.order_status in ('confirmed', 'preparing') %}
+      {{ 'Đơn hàng đang được chuẩn bị tại cửa hàng.' if locale == 'vi' else 'Your order is currently being prepared at the store.' }}
+    {% elif order.order_status in ('ready_completed', 'fulfilled') %}
+      {{ 'Đơn hàng đã sẵn sàng / hoàn tất bàn giao.' if locale == 'vi' else 'Your order is ready or completed.' }}
+    {% else %}
+      {{ 'Trạng thái hiện tại: ' ~ g.storefront_order_status_labels.get(order.order_status, order.order_status) if locale == 'vi' else 'Current status: ' ~ g.storefront_order_status_labels.get(order.order_status, order.order_status) }}
+    {% endif %}
+  </div>
+  <div class="sf-order-next-actions">
+    <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_lookup') }}">{{ 'Tra cứu đơn khác' if locale == 'vi' else 'Track order' }}</a>
+    <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.home') }}">{{ 'Tiếp tục xem shop' if locale == 'vi' else 'Back to shop' }}</a>
+  </div>
+</div>
+
 <div class="sf-split-layout">
   <section class="sf-panel">
     <h2>{{ 'Sản phẩm & thú cưng trong đơn' if locale == 'vi' else 'Order items' }}</h2>

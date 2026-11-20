@@ -165,8 +165,10 @@
   });
 
   document.addEventListener("click", event => {
-    document.querySelectorAll("[data-account-menu][open]").forEach(menu => {
-      if (!menu.contains(event.target)) menu.open = false;
+    document.querySelectorAll("[data-mobile-menu][open]").forEach(menu => {
+      if (!menu.contains(event.target) || event.target.closest("nav a")) {
+        menu.open = false;
+      }
     });
   });
 

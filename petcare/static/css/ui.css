@@ -1179,9 +1179,13 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .stat-card { padding: 13px 14px; }
   .stat-card > strong { font-size: clamp(18px, 5vw, 22px); }
   .business-brief { grid-template-columns: 1fr; }
-  .sidebar { background: rgba(255,255,255,.97); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
-  .nav-link { height: 50px; min-height: 50px; font-size: 10px; }
+  .sidebar { background: rgba(255,255,255,.97); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); padding-bottom: env(safe-area-inset-bottom); }
+  .nav-link { height: 48px; min-height: 48px; font-size: 10px; }
   .nav-link.active { background: var(--color-brand-soft); }
+  .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; }
+  .stat-card { border-right: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); }
+  .stat-card:nth-child(2n) { border-right: 0; }
+  .stat-card:nth-last-child(-n+2) { border-bottom: 0; }
   .pet-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; }
   .pet-gallery-panel > :not(.panel-heading) { margin-left: 14px; margin-right: 14px; }
   .search-studio-drop, .search-studio-controls { padding: 14px; }
@@ -1221,13 +1225,12 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .product-profile { grid-template-columns: 1fr; padding: 16px; gap: 18px; }
 }
 @media (max-width: 460px) {
-  .stat-grid { grid-template-columns: 1fr; }
-  .stat-card { border-right: 0; border-bottom: 1px solid var(--color-border); }
-  .stat-card:last-child { border-bottom: 0; }
+  .stat-card { padding: 11px 12px; min-height: 108px; }
+  .stat-card > strong { font-size: clamp(17px, 4.8vw, 21px); }
   .pet-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 360px) {
-  .page-wrap { padding: 14px 12px 76px; }
+  .page-wrap { padding: 14px 12px calc(92px + env(safe-area-inset-bottom)); }
   .pos-catalog-grid, .pos-skeleton { grid-template-columns: 1fr; padding: 0 10px 12px; }
   .login-panel { padding: 24px 14px; }
   .topbar,
@@ -1265,4 +1268,10 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   margin-top: 14px;
   padding-top: 12px;
   border-top: 1px solid var(--color-border-subtle);
+}
+.business-summary-note {
+  margin: 0;
+  padding: 12px 18px 16px;
+  font-size: 13px;
+  color: var(--color-ink-muted);
 }
