@@ -34,11 +34,14 @@ def get_active_store_by_slug(connection, slug: str):
 
 
 def list_public_categories(connection):
+    # Ordered by how much public merchandise each category holds (most stocked first),
+    # then alphabetically, so storefront shortcuts surface the core catalog categories
+    # instead of depending on alphabetical order alone.
     rows = fetch_all(
         connection,
-        "SELECT DISTINCT category FROM products "
-        "WHERE tenant_id = @petcare_tenant_id AND active = 1 "
-        "ORDER BY category",
+        "SELECT category, COUNT(*) AS product_count FROM products "
+        "WHERE tenant_id = @petcare_tenant_id AND active = 1 AND category <> '' "
+        "GROUP BY category ORDER BY product_count DESC, category ASC",
     )
     return [row["category"] for row in rows if row.get("category")]
 

@@ -41,6 +41,10 @@
     var selected = "pickup";
     fulfillmentInputs.forEach(function (inp) {
       if (inp.checked) selected = inp.value;
+      var card = inp.closest ? inp.closest(".sf-radio-card") : null;
+      if (card && card.classList) {
+        card.classList.toggle("is-selected", !!inp.checked);
+      }
     });
     var isCod = selected === "cod_delivery";
     if (addressGroup) {
@@ -60,6 +64,82 @@
     inp.addEventListener("change", syncCheckoutFulfillment);
   });
   syncCheckoutFulfillment();
+
+  // Quantity stepper buttons (+/-) clamped cleanly within [min, max]
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    var btn = target && target.closest ? target.closest("[data-sf-qty-step]") : null;
+    if (!btn || btn.disabled) return;
+    var stepper = btn.closest ? btn.closest(".sf-qty-stepper") : null;
+    if (!stepper) return;
+    var inp = stepper.querySelector('input[type="number"]');
+    if (!inp || inp.disabled) return;
+    var delta = parseInt(btn.getAttribute("data-sf-qty-step"), 10) || 0;
+    var minVal = parseInt(inp.getAttribute("min"), 10);
+    var maxVal = parseInt(inp.getAttribute("max"), 10);
+    if (isNaN(minVal)) minVal = 1;
+    if (isNaN(maxVal)) maxVal = 99;
+    var current = parseInt(inp.value, 10);
+    if (isNaN(current)) current = minVal;
+    var next = Math.min(maxVal, Math.max(minVal, current + delta));
+    if (next !== current) {
+      inp.value = String(next);
+      inp.dispatchEvent(new Event("input", { bubbles: true }));
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  });
+
+  // Inline checkout validation: focus first invalid input and clear error state when edited
+  var firstInvalid = document.querySelector('[aria-invalid="true"]');
+  if (firstInvalid && typeof firstInvalid.focus === "function") {
+    firstInvalid.focus();
+  }
+  function clearInvalidField(event) {
+    var el = event.target;
+    if (!el || !el.getAttribute || el.getAttribute("aria-invalid") !== "true") return;
+    el.removeAttribute("aria-invalid");
+    var field = el.closest ? el.closest(".sf-field") : null;
+    if (field) {
+      field.classList.remove("sf-field-invalid");
+      var err = field.querySelector(".sf-field-error");
+      if (err) err.hidden = true;
+    }
+  }
+  document.addEventListener("input", clearInvalidField, true);
+  document.addEventListener("change", clearInvalidField, true);
+
+  // Dismissible in-flow storefront flash notices
+  var sfLocale = (document.documentElement && document.documentElement.lang) || "vi";
+  document.querySelectorAll("[data-sf-flash]").forEach(function (flashNode) {
+    if (flashNode.querySelector(".sf-flash-close")) return;
+    var closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "sf-flash-close";
+    closeBtn.setAttribute(
+      "aria-label",
+      sfLocale === "en" ? "Dismiss notification" : "Đóng thông báo"
+    );
+    closeBtn.textContent = "×";
+    closeBtn.addEventListener("click", function () {
+      flashNode.remove();
+    });
+    flashNode.append(closeBtn);
+  });
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape") return;
+    var flashes = document.querySelectorAll("[data-sf-flash]");
+    if (!flashes.length) return;
+    var active = document.activeElement;
+    var insideFlash = false;
+    flashes.forEach(function (node) {
+      if (node.contains && node.contains(active)) insideFlash = true;
+      node.remove();
+    });
+    if (insideFlash) {
+      var mainEl = document.getElementById("sf-main-content");
+      if (mainEl && typeof mainEl.focus === "function") mainEl.focus();
+    }
+  });
 
   // Public Image Search preview & 5MB size check
   var imageInput = document.getElementById("sf-image-input");
@@ -273,18 +353,54 @@
 
   document.querySelectorAll("form[data-sf-submit-lock]").forEach(function (lockForm) {
     lockForm.addEventListener("submit", function (e) {
-      if (lockForm.getAttribute("data-sf-submitting") === "1") {
+      if (lockForm.dataset && lockForm.dataset.sfSubmitting === "1") {
         e.preventDefault();
         return;
       }
-      lockForm.setAttribute("data-sf-submitting", "1");
+      if (lockForm.dataset) lockForm.dataset.sfSubmitting = "1";
+      lockForm.setAttribute("aria-busy", "true");
       var btn = lockForm.querySelector('button[type="submit"]');
       if (btn) {
+        if (btn.dataset && !btn.dataset.idleLabel) {
+          btn.dataset.idleLabel = btn.textContent;
+        }
         btn.disabled = true;
         var label = lockForm.getAttribute("data-sf-submit-lock");
         if (label) btn.textContent = label;
       }
     });
   });
-})();
+  window.addEventListener("pageshow", function () {
+    document.querySelectorAll("form[data-sf-submitting]").forEach(function (lockForm) {
+      if (lockForm.dataset) delete lockForm.dataset.sfSubmitting;
+      lockForm.setAttribute("aria-busy", "false");
+      lockForm.querySelectorAll("[data-idle-label]").forEach(function (btn) {
+        if (btn.dataset && btn.dataset.idleLabel) {
+          btn.textContent = btn.dataset.idleLabel;
+        }
+        btn.disabled = false;
+      });
+    });
+  });
 
+  function isEditableInput(el) {
+    if (!el || el.disabled || el.readOnly) return false;
+    var tag = el.tagName;
+    if (tag === "TEXTAREA" || tag === "SELECT") return true;
+    if (tag !== "INPUT") return false;
+    var type = (el.type || "text").toLowerCase();
+    return ["text", "tel", "email", "search", "password", "number", "url"].indexOf(type) !== -1;
+  }
+  document.addEventListener("focusin", function (e) {
+    if (isEditableInput(e.target)) {
+      document.body.classList.add("sf-keyboard-open");
+    }
+  });
+  document.addEventListener("focusout", function () {
+    window.setTimeout(function () {
+      if (!isEditableInput(document.activeElement)) {
+        document.body.classList.remove("sf-keyboard-open");
+      }
+    }, 60);
+  });
+})();

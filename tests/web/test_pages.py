@@ -268,7 +268,8 @@ class WebPageTests(unittest.TestCase):
         self.assertIn("Recent invoices", html)
         self.assertIn("1,250.50\u00a0USD", html)
         self.assertIn("1 product low in stock", html)
-        self.assertIn("Shortcuts", html)
+        self.assertIn("Low stock", html)
+        self.assertNotIn("Shortcuts", html)
         self.assertIn("No transactions yet", html)
         self.assertNotIn("Khách hàng đang hoạt động", html)
 

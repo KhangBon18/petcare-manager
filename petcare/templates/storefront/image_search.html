@@ -1,5 +1,6 @@
 {% extends "storefront/shop_base.html" %}
 {% from "partials/icons.html" import icon %}
+{% from "storefront/_macros.html" import pet_card with context %}
 {% block title %}{{ 'Tìm thú cưng bằng ảnh' if locale == 'vi' else 'Find pets by photo' }}{% endblock %}
 
 {% block content %}
@@ -59,32 +60,7 @@
   {% if matches.results %}
   <div class="sf-grid">
     {% for r in matches.results %}
-    {% set pet = r.pet %}
-    {% set pvis = pet_visual(pet, public=True) %}
-    <article class="sf-card">
-      <div class="sf-card-media">
-        <a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">
-          <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ pet.species }} {{ pet.name }}">
-        </a>
-        <span class="sf-card-badge">{{ format_number(r.score) }}/100</span>
-        {% if pvis.is_illustrative %}<span class="sf-card-illus">{{ 'Minh họa' if locale == 'vi' else 'Illustrative' }}</span>{% endif %}
-      </div>
-      <div class="sf-card-body">
-        <div class="sf-card-meta">{{ pet.code }} · {{ pet.species }}{% if pet.breed %} · {{ pet.breed }}{% endif %}</div>
-        <h3 class="sf-card-title"><a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ pet.name }}</a></h3>
-        <div class="sf-card-price">{{ format_money(pet.sale_price) }}</div>
-        <div class="sf-card-actions">
-          <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ 'Chi tiết' if locale == 'vi' else 'Details' }}</a>
-          <form method="post" action="{{ url_for('storefront.cart_add') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="item_type" value="pet">
-            <input type="hidden" name="item_id" value="{{ pet.id }}">
-            <input type="hidden" name="next" value="{{ url_for('storefront.cart') }}">
-            <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit" {% if pet.is_reserved %}disabled{% endif %}>{{ 'Đặt đón bé' if locale == 'vi' else 'Add to cart' }}</button>
-          </form>
-        </div>
-      </div>
-    </article>
+      {{ pet_card(r.pet, url_for('storefront.cart'), locale, score=r.score, title_tag='h3') }}
     {% endfor %}
   </div>
   {% else %}

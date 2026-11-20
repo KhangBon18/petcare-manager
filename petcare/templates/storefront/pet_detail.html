@@ -39,7 +39,7 @@
       {% endif %}
     </div>
 
-    <h1>{{ pet.name }} · {{ pet.code }}</h1>
+    <h1>{{ pet.name }}</h1>
     <div class="sf-detail-price">{{ format_money(pet.sale_price) }}</div>
 
     {% if pvis.is_illustrative %}
@@ -47,6 +47,7 @@
     {% endif %}
 
     <dl class="sf-specs">
+      <div><dt>{{ 'Mã hồ sơ' if locale == 'vi' else 'Pet code' }}</dt><dd>{{ pet.code }}</dd></div>
       <div><dt>{{ 'Loài' if locale == 'vi' else 'Species' }}</dt><dd>{{ pet.species }}</dd></div>
       <div><dt>{{ 'Giống' if locale == 'vi' else 'Breed' }}</dt><dd>{{ pet.breed or ('Chưa cập nhật' if locale == 'vi' else 'Unspecified') }}</dd></div>
       <div><dt>{{ 'Giới tính' if locale == 'vi' else 'Sex' }}</dt><dd>{{ 'Đực' if pet.sex == 'male' else ('Cái' if pet.sex == 'female' else ('Chưa rõ' if locale == 'vi' else 'Unknown')) }}</dd></div>
