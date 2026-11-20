@@ -100,11 +100,15 @@ class StorefrontWebSecurityTests(TestCase):
         ):
             r_prod = self.client.get("/shop/products")
             self.assertEqual(r_prod.status_code, 200)
-            self.assertIn("FOOD-001", r_prod.get_data(as_text=True))
+            prod_html = r_prod.get_data(as_text=True)
+            self.assertIn("Thức ăn cho mèo 1kg", prod_html)
+            self.assertIn("Thức ăn", prod_html)
+            self.assertNotIn("FOOD-001", prod_html)
 
         with patch("petcare.services.storefront_service.get_public_product", return_value=dict(PRODUCT_FIXTURE)):
             r_pdet = self.client.get("/shop/products/11")
             self.assertEqual(r_pdet.status_code, 200)
+            self.assertIn("FOOD-001", r_pdet.get_data(as_text=True))
 
         with patch("petcare.services.storefront_service.get_public_pet", return_value=dict(PET_FIXTURE)):
             r_pet = self.client.get("/shop/pets/22")

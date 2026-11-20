@@ -4,6 +4,7 @@
 {% block content %}
 <div class="sf-page-head">
   <div>
+    <a class="sf-back-link" href="{{ url_for('storefront.cart') }}"><span aria-hidden="true">←</span> {{ 'Quay lại giỏ hàng' if locale == 'vi' else 'Back to cart' }}</a>
     <h1>{{ 'Thông tin đặt hàng' if locale == 'vi' else 'Checkout' }}</h1>
     <p>{{ 'Giữ tồn kho ngay khi gửi · nhân viên xác nhận đơn trước khi chuẩn bị.' if locale == 'vi' else 'Stock is reserved on submit and confirmed by store staff before preparation.' }}</p>
   </div>

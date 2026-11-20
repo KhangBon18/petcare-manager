@@ -924,11 +924,12 @@ body.sf-keyboard-open .sf-mobile-dock {
   .sf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .sf-grid .sf-card-body { padding: 10px; gap: 6px; }
   .sf-grid .sf-card-meta { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .sf-grid .sf-card-title { font-size: 13.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .sf-grid .sf-card-title { font-size: 13.5px; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
   .sf-grid .sf-card-price { font-size: 14.5px; }
   .sf-grid .sf-card-actions { display: grid; grid-template-columns: 1fr; gap: 6px; }
   .sf-grid .sf-card-actions form { display: flex; }
-  .sf-grid .sf-card-actions .sf-btn { width: 100%; min-height: 36px; padding: 0 8px; font-size: 12px; }
+  .sf-grid .sf-card-actions .sf-btn { width: 100%; min-height: 44px; padding: 0 8px; font-size: 13px; }
+  .sf-grid .sf-card-actions > a.sf-btn { display: none; }
   .sf-brand-copy small { display: none; }
   .sf-pill-label {
     position: absolute;
@@ -942,3 +943,38 @@ body.sf-keyboard-open .sf-mobile-dock {
   .sf-ai-banner { flex-direction: column; align-items: flex-start; }
 }
 
+
+/* Gate 0.6 hardening: discovery shortcuts, touch targets, checkout exit link */
+.sf-shortcut-chip-pets {
+  gap: 6px;
+  background: var(--sf-brand-soft);
+  border-color: #BFDBFE;
+  color: var(--sf-brand);
+}
+.sf-shortcut-chip .ui-icon { width: 15px; height: 15px; }
+.sf-back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  margin: -8px 0 0 -6px;
+  padding: 0 6px;
+  border-radius: var(--sf-radius-sm);
+  color: var(--sf-muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.sf-back-link:hover { color: var(--sf-brand); text-decoration: none; background: var(--sf-brand-soft); }
+.sf-card-title a { display: block; padding: 2px 0; }
+
+@media (max-width: 720px) {
+  .sf-hero-mosaic { display: none; }
+  .sf-hero-shortcuts { gap: 8px; }
+  .sf-shortcut-chip { min-height: 44px; padding: 0 14px; font-size: 13px; }
+  .sf-btn, .sf-btn-sm { min-height: 44px; }
+  .sf-btn-sm { padding: 0 14px; }
+  .sf-qty-form input[type="number"] { min-height: 44px; }
+  .sf-chip { min-height: 44px; }
+  .sf-check-inline { min-height: 48px; }
+  .sf-field input:not([type="radio"]):not([type="checkbox"]), .sf-field select, .sf-field textarea { min-height: 44px; }
+}

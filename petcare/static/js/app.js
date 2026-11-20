@@ -153,9 +153,11 @@
   document.addEventListener("change", clearFieldError, true);
   document.addEventListener("keydown", event => {
     if (event.key !== "Escape") return;
-    document.querySelectorAll("[data-mobile-menu][open]").forEach(menu => {
+    const openMenus = document.querySelectorAll("[data-mobile-menu][open]");
+    openMenus.forEach(menu => {
       menu.open = false; menu.querySelector("summary").focus();
     });
+    if (!openMenus.length) document.querySelectorAll(".toast-region .toast").forEach(toast => toast.remove());
   });
 
   document.querySelectorAll("[data-language-select]").forEach(select => {

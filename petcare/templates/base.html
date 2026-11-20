@@ -38,21 +38,13 @@
       <details class="mobile-nav-more" data-mobile-menu>
         <summary>{{ icon('menu') }}<span>{{ t('Thêm') }}</span></summary>
         <nav aria-label="{{ t('Điều hướng khác') }}">
-          <span class="mobile-more-section">{{ 'Nghiệp vụ & AI' if locale == 'vi' else 'Operations & AI' }}</span>
+          <a class="mobile-more-primary" href="{{ url_for('invoices.create') }}" {% if request.endpoint == 'invoices.create' %}aria-current="page"{% endif %}>{{ icon('plus') }} {{ 'Lập hóa đơn (POS)' if locale == 'vi' else 'New sale (POS)' }}</a>
+          <div class="mobile-more-divider" aria-hidden="true"></div>
           <a href="{{ url_for('pets.index') }}" {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('pets') }} {{ t('Thú cưng') }}</a>
           <a href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers') }} {{ t('Khách hàng') }}</a>
           <a href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search') }} {{ t('Tìm bằng ảnh') }}</a>
           <a href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports') }} {{ t('Báo cáo') }}</a>
           <a href="{{ url_for('assistant.workspace') }}" {% if request.blueprint == 'assistant' %}aria-current="page"{% endif %}>{{ icon('sparkle') }} {{ t('Trợ lý AI') }}</a>
-          {% if g.user.role == 'admin' %}
-          <div class="mobile-more-divider" aria-hidden="true"></div>
-          <span class="mobile-more-section">{{ 'Quản trị' if locale == 'vi' else 'Administration' }}</span>
-          <a href="{{ url_for('store.settings') }}" {% if request.endpoint == 'store.settings' %}aria-current="page"{% endif %}>{{ icon('store') }} {{ t('Cài đặt cửa hàng') }}</a>
-          <a href="{{ url_for('users.index') }}" {% if request.blueprint == 'users' %}aria-current="page"{% endif %}>{{ icon('team') }} {{ t('Tài khoản') }}</a>
-          <a href="{{ url_for('purchasing.index') }}" {% if request.endpoint == 'purchasing.index' %}aria-current="page"{% endif %}>{{ icon('bag') }} {{ t('Nhập hàng') }}</a>
-          <a href="{{ url_for('purchasing.suppliers_index') }}" {% if request.endpoint == 'purchasing.suppliers_index' %}aria-current="page"{% endif %}>{{ icon('truck') }} {{ t('Nhà cung cấp') }}</a>
-          <a href="{{ url_for('audit.index') }}" {% if request.blueprint == 'audit' %}aria-current="page"{% endif %}>{{ icon('activity') }} {{ t('Nhật ký hoạt động') }}</a>
-          {% endif %}
         </nav>
       </details>
     </nav>

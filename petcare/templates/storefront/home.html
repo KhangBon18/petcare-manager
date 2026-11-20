@@ -12,16 +12,11 @@
       <input type="search" name="q" placeholder="{{ 'Tìm thức ăn, cát vệ sinh, phụ kiện...' if locale == 'vi' else 'Search pet food, litter, accessories...' }}" aria-label="{{ 'Tìm sản phẩm' if locale == 'vi' else 'Search products' }}">
       <button class="sf-btn sf-btn-primary" type="submit">{{ icon('search') }} {{ 'Tìm' if locale == 'vi' else 'Search' }}</button>
     </form>
-    <div class="sf-hero-shortcuts" aria-label="{{ 'Danh mục nhanh' if locale == 'vi' else 'Quick categories' }}">
-      <a class="sf-shortcut-chip" href="{{ url_for('storefront.products') }}">{{ 'Tất cả sản phẩm' if locale == 'vi' else 'All products' }}</a>
-      {% for cat in categories[:3] %}
+    <div class="sf-hero-shortcuts" role="group" aria-label="{{ 'Danh mục nhanh' if locale == 'vi' else 'Quick categories' }}">
+      {% for cat in categories[:4] %}
       <a class="sf-shortcut-chip" href="{{ url_for('storefront.products', category=cat) }}">{{ cat }}</a>
       {% endfor %}
-      <a class="sf-shortcut-chip" href="{{ url_for('storefront.pets') }}">{{ 'Thú cưng' if locale == 'vi' else 'Pets' }}</a>
-    </div>
-    <div class="sf-hero-cta">
-      <a class="sf-btn sf-btn-primary" href="{{ url_for('storefront.products') }}">{{ icon('products') }} {{ 'Mua sắm sản phẩm' if locale == 'vi' else 'Shop essentials' }}</a>
-      <a class="sf-btn" href="{{ url_for('storefront.pets') }}">{{ icon('pets') }} {{ 'Xem thú cưng' if locale == 'vi' else 'Explore pets' }}</a>
+      <a class="sf-shortcut-chip sf-shortcut-chip-pets" href="{{ url_for('storefront.pets') }}">{{ icon('pets') }} {{ 'Thú cưng' if locale == 'vi' else 'Pets' }}</a>
     </div>
   </div>
 
@@ -40,13 +35,6 @@
       <p>{{ 'Thức ăn và đồ dùng thiết yếu sẵn có tại cửa hàng.' if locale == 'vi' else 'Essential nutrition and accessories ready for order.' }}</p>
     </div>
     <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.products') }}">{{ 'Xem tất cả' if locale == 'vi' else 'View all' }} {{ icon('arrow') }}</a>
-  </div>
-
-  <div class="sf-chip-row">
-    <a class="sf-chip is-active" href="{{ url_for('storefront.products') }}">{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
-    {% for cat in categories %}
-    <a class="sf-chip" href="{{ url_for('storefront.products', category=cat) }}">{{ cat }}</a>
-    {% endfor %}
   </div>
 
   <div class="sf-grid">

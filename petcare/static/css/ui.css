@@ -1275,3 +1275,41 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   font-size: 13px;
   color: var(--color-ink-muted);
 }
+
+/* Gate 0.6 hardening: KPI money fit, mobile POS entry, non-obstructing toasts */
+.stat-card-money { container-type: inline-size; }
+.stat-card-money > strong {
+  font-size: clamp(16px, 8.8cqi, 25px);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.mobile-more-primary { font-weight: 700; }
+.toast-region { top: calc(var(--topbar-h, 54px) + 12px); right: 20px; }
+.toast-close { width: 40px; height: 40px; top: 4px; right: 4px; }
+.toast { padding-right: 48px; }
+@media (max-width: 980px) {
+  .toast-region { top: 128px; right: 16px; }
+}
+@media (max-width: 680px) {
+  .stat-grid-dashboard .stat-card-money { grid-column: 1 / -1; min-height: 0; border-right: 0; border-bottom: 1px solid var(--color-border-subtle); }
+  .stat-grid-dashboard .stat-card:nth-child(2) { border-right: 1px solid var(--color-border-subtle); border-bottom: 1px solid var(--color-border-subtle); }
+  .stat-grid-dashboard .stat-card:nth-child(3) { border-right: 0; border-bottom: 1px solid var(--color-border-subtle); }
+  .stat-grid-dashboard .stat-card:last-child { grid-column: 1 / -1; min-height: 0; border-right: 0; border-bottom: 0; }
+  .mobile-nav-more nav { overscroll-behavior: contain; }
+  .mobile-nav-more nav > a.mobile-more-primary { color: #fff; background: var(--color-brand, #2563EB); }
+  .mobile-nav-more nav > a.mobile-more-primary:hover,
+  .mobile-nav-more nav > a.mobile-more-primary[aria-current="page"] { color: #fff; background: var(--color-brand-hover, #1D4ED8); }
+  .toast-region {
+    top: auto;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    z-index: 55;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+  .toast-close { width: 44px; height: 44px; top: 2px; right: 2px; }
+  .toast { padding-right: 52px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}
