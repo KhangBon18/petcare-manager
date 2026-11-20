@@ -94,6 +94,10 @@
       <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Fulfillment' }}</dt><dd>{{ 'Giao tận nơi (COD)' if order.fulfillment_method == 'cod_delivery' else ('Nhận tại cửa hàng' if locale == 'vi' else 'Store pickup') }}</dd></div>
       <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ order_payment_pill(order.payment_status, locale) }} <span class="sf-muted-inline">({{ 'COD khi nhận hàng' if order.payment_method == 'cod' else ('Tại cửa hàng' if locale == 'vi' else 'Pay at store') }})</span></dd></div>
       {% if order.staff_note %}<div><dt>{{ 'Phản hồi shop' if locale == 'vi' else 'Store note' }}</dt><dd>{{ order.staff_note }}</dd></div>{% endif %}
+      {% set policies = g.public_policies|default({}) %}
+      {% if order.fulfillment_method == 'pickup' and policies.get('pickup_address') %}<div><dt>{{ 'Địa chỉ nhận quầy' if locale == 'vi' else 'Store address' }}</dt><dd>{{ policies['pickup_address'] }}{% if policies.get('opening_hours') %} ({{ policies['opening_hours'] }}){% endif %}</dd></div>{% endif %}
+      {% if policies.get('support_hotline') %}<div><dt>{{ 'Hotline hỗ trợ' if locale == 'vi' else 'Support hotline' }}</dt><dd>{{ policies['support_hotline'] }}</dd></div>{% endif %}
+      {% if policies.get('cancellation_instructions') %}<div><dt>{{ 'Đổi / hủy đơn' if locale == 'vi' else 'Modify / cancel' }}</dt><dd>{{ policies['cancellation_instructions'] }}</dd></div>{% endif %}
     </dl>
 
     <div class="sf-notice sf-support-note">

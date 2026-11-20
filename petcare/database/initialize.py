@@ -17,6 +17,7 @@ PURCHASE_RECEIPTS_MIGRATION = "purchase_receipt_idempotency_v1"
 PET_REFERENCE_PHOTOS_MIGRATION = "pet_reference_photos_v1"
 STOREFRONT_MIGRATION = "storefront_orders_v1"
 STOREFRONT_V1_1_MIGRATION = "storefront_orders_v1_1"
+STOREFRONT_PUBLIC_POLICIES_MIGRATION = "storefront_public_policies_v1"
 
 
 def migrate_datetime_storage_to_utc(cursor):
@@ -607,6 +608,11 @@ def initialize_database():
                 "INSERT INTO schema_migrations (version) VALUES (%s) "
                 "ON DUPLICATE KEY UPDATE version = VALUES(version)",
                 (STOREFRONT_V1_1_MIGRATION,),
+            )
+            cursor.execute(
+                "INSERT INTO schema_migrations (version) VALUES (%s) "
+                "ON DUPLICATE KEY UPDATE version = VALUES(version)",
+                (STOREFRONT_PUBLIC_POLICIES_MIGRATION,),
             )
         finally:
             cursor.close()

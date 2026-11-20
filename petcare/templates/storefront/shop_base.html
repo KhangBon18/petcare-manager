@@ -84,10 +84,24 @@
 </main>
 
 <footer class="sf-footer">
+  {% set policies = g.public_policies|default({}) %}
   <div class="sf-container sf-footer-inner">
     <div class="sf-footer-brand">
       <div><strong>{{ store.name }}</strong> · {{ 'Thanh toán khi nhận hàng (COD) hoặc tại cửa hàng · Giá cập nhật trực tiếp' if locale == 'vi' else 'Cash on delivery or pay in-store · Live catalog pricing' }}</div>
+      {% if policies.get('has_contact_info') or policies.get('pickup_address') or policies.get('privacy_terms_summary') %}
+      <div class="sf-footer-policies">
+        {% if policies.get('pickup_address') %}<span>{{ 'Địa chỉ:' if locale == 'vi' else 'Address:' }} {{ policies['pickup_address'] }}</span>{% endif %}
+        {% if policies.get('opening_hours') %}<span>{{ 'Giờ mở cửa:' if locale == 'vi' else 'Hours:' }} {{ policies['opening_hours'] }}</span>{% endif %}
+        {% if policies.get('support_hotline') %}<span>Hotline: {{ policies['support_hotline'] }}</span>{% endif %}
+        {% if policies.get('support_zalo') %}
+          <span>Zalo: {% if policies.get('support_zalo_href') %}<a href="{{ policies['support_zalo_href'] }}" target="_blank" rel="noopener noreferrer">{{ policies['support_zalo'] }}</a>{% else %}{{ policies['support_zalo'] }}{% endif %}</span>
+        {% endif %}
+        {% if policies.get('support_email') %}<span>Email: <a href="mailto:{{ policies['support_email'] }}">{{ policies['support_email'] }}</a></span>{% endif %}
+        {% if policies.get('privacy_terms_summary') %}<span>{{ policies['privacy_terms_summary'] }}</span>{% endif %}
+      </div>
+      {% else %}
       <small class="sf-footer-preview-note">{{ 'Bản xem thử · Địa chỉ nhận quầy, hotline và điều khoản giao nhận chính thức đang chờ chủ cửa hàng xác nhận.' if locale == 'vi' else 'Preview build · Verified pickup address, store contact, and delivery terms await owner sign-off.' }}</small>
+      {% endif %}
     </div>
     <div class="sf-footer-links">
       <a href="{{ url_for('storefront.products') }}">{{ 'Sản phẩm' if locale == 'vi' else 'Products' }}</a>
@@ -97,6 +111,10 @@
       <a href="{{ url_for('storefront.order_lookup') }}">{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Track order' }}</a>
       <span aria-hidden="true">·</span>
       <a href="{{ url_for('storefront.orders') if g.customer else url_for('storefront.customer_login') }}">{{ 'Đơn hàng của tôi' if locale == 'vi' else 'My orders' }}</a>
+      {% if policies.get('privacy_terms_href') %}
+      <span aria-hidden="true">·</span>
+      <a href="{{ policies['privacy_terms_href'] }}" target="_blank" rel="noopener noreferrer">{{ 'Điều khoản & Bảo mật' if locale == 'vi' else 'Terms & Privacy' }}</a>
+      {% endif %}
       <span aria-hidden="true">·</span>
       <a href="{{ url_for('auth.login') }}">{{ 'Cổng nhân viên' if locale == 'vi' else 'Staff portal' }}</a>
     </div>

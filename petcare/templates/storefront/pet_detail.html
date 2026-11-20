@@ -45,6 +45,10 @@
     {% if pvis.is_illustrative %}
     <p class="sf-notice">{{ 'Cửa hàng chưa tải ảnh chụp cá thể cho bé này nên đang hiển thị ảnh minh họa. Nhân viên sẽ xác nhận hình ảnh thực tế khi liên hệ đơn hàng.' if locale == 'vi' else 'No individual store photograph is uploaded yet; this portrait is illustrative. Store staff will confirm the individual pet before handover.' }}</p>
     {% endif %}
+    {% set policies = g.public_policies|default({}) %}
+    {% if policies.get('pet_handover_policy') %}
+    <p class="sf-notice"><strong>{{ 'Chính sách đón bé:' if locale == 'vi' else 'Handover policy:' }}</strong> {{ policies['pet_handover_policy'] }}</p>
+    {% endif %}
 
     <dl class="sf-specs">
       <div><dt>{{ 'Mã hồ sơ' if locale == 'vi' else 'Pet code' }}</dt><dd>{{ pet.code }}</dd></div>

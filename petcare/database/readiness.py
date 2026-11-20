@@ -105,6 +105,23 @@ REQUIRED_COLUMNS = {
     "purchase_order_receipt_requests": {
         "id", "tenant_id", "purchase_order_id", "request_key", "payload_hash", "created_at",
     },
+    "tenant_public_policies": {
+        "tenant_id",
+        "pickup_address",
+        "opening_hours",
+        "cod_service_area_fees",
+        "order_confirmation_sla",
+        "return_refund_policy",
+        "cancellation_instructions",
+        "pet_handover_policy",
+        "support_hotline",
+        "support_zalo",
+        "support_email",
+        "privacy_terms_url",
+        "privacy_terms_summary",
+        "updated_by",
+        "updated_at",
+    },
 }
 
 
@@ -150,6 +167,8 @@ REQUIRED_TENANT_FOREIGN_KEYS = {
     ("purchase_order_items", "fk_purchase_order_items_product"),
     ("purchase_order_receipt_requests", "fk_purchase_receipt_requests_tenant"),
     ("purchase_order_receipt_requests", "fk_purchase_receipt_requests_order"),
+    ("tenant_public_policies", "fk_tenant_public_policies_tenant"),
+    ("tenant_public_policies", "fk_tenant_public_policies_updater"),
 }
 
 

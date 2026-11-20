@@ -1,19 +1,139 @@
 {% extends "base.html" %}
+{% from "partials/form_errors.html" import invalid, field_error, error_summary with context %}
+{% from "partials/icons.html" import icon %}
 {% block title %}{{ t('Cài đặt cửa hàng') }}{% endblock %}
 {% block content %}
+{% set pdata = policy_form_data|default({}) %}
+{% set perrors = policy_errors|default({}) %}
+{% set pstate = public_policies|default({}) %}
 <div class="page-heading compact-heading">
-  <div><h1>{{ t('Cài đặt cửa hàng') }}</h1><p>{{ t('Thông tin và múi giờ áp dụng cho cửa hàng đang chọn.') }}</p></div>
+  <div>
+    <h1>{{ t('Cài đặt cửa hàng') }}</h1>
+    <p>{{ t('Quản lý hồ sơ vận hành nội bộ và thông tin, chính sách công khai hiển thị trên Storefront.') }}</p>
+  </div>
+  <div class="heading-actions">
+    <a class="button button-light" href="{{ url_for('storefront.home') }}">{{ icon('store') }} {{ 'Xem Storefront' if locale == 'vi' else 'Open Storefront' }}</a>
+  </div>
 </div>
-<div class="account-settings-stack">
-  <section class="panel form-card account-email-card">
-    <div class="section-heading"><div><h2>{{ t('Thông tin chung') }}</h2><p>{{ t('Chỉ chủ cửa hàng và quản trị viên mới có thể thay đổi.') }}</p></div></div>
-    <form method="post" class="form-stack" autocomplete="on">
+
+<div class="store-settings-grid">
+  <section class="panel form-card">
+    <div class="section-heading">
+      <div>
+        <h2>{{ t('Thông tin chung') }}</h2>
+        <p>{{ t('Chỉ chủ cửa hàng và quản trị viên mới có thể thay đổi.') }}</p>
+      </div>
+    </div>
+    <form method="post" action="{{ url_for('store.settings') }}" class="form-stack" autocomplete="on">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <label for="store-name">{{ t('Tên cửa hàng') }}<input id="store-name" name="name" maxlength="160" value="{{ tenant.name }}" autocomplete="organization" required></label>
       <label for="store-slug">{{ t('Mã cửa hàng') }}<input id="store-slug" value="{{ tenant.slug }}" readonly aria-describedby="store-slug-help"><small id="store-slug-help">{{ t('Mã này dùng khi đăng nhập và trong liên kết cửa hàng nên không thể đổi tại đây.') }}</small></label>
       <label for="store-currency">{{ t('Tiền tệ') }}<input id="store-currency" value="{{ tenant.default_currency }}" readonly aria-describedby="store-currency-help"><small id="store-currency-help">{{ t('Tiền tệ được cố định sau khi tạo cửa hàng để bảo toàn giá và lịch sử hóa đơn.') }}</small></label>
       <label for="store-timezone">{{ t('Múi giờ IANA') }}<input id="store-timezone" name="timezone" list="store-timezone-options" maxlength="64" value="{{ tenant.timezone }}" autocomplete="off" required><datalist id="store-timezone-options">{% for timezone_name in common_timezones %}<option value="{{ timezone_name }}">{% endfor %}</datalist><small>{{ t('Múi giờ ảnh hưởng cách hiển thị thời gian và ranh giới ngày báo cáo. Thời gian đã lưu vẫn giữ theo UTC.') }}</small></label>
       <div class="form-actions"><button class="button button-primary" type="submit">{{ t('Lưu cài đặt') }}</button></div>
+    </form>
+  </section>
+
+  <section class="panel form-card" aria-labelledby="public-policy-heading">
+    <div class="section-heading">
+      <div>
+        <h2 id="public-policy-heading">{{ 'Thông tin & chính sách công khai Storefront' if locale == 'vi' else 'Public Storefront Info & Policies' }}</h2>
+        <p>{{ 'Bỏ trống bất kỳ mục nào chưa chốt — Storefront chỉ hiển thị nội dung đã xác nhận và không tự tạo phí giao hàng hay cam kết giả.' if locale == 'vi' else 'Leave any unapproved item blank — Storefront displays only verified entries and never fabricates fees or guarantees.' }}</p>
+      </div>
+      <span class="status-pill {{ 'status-active' if pstate.get('has_any_policy') else 'status-pending' }}">
+        {% if pstate.get('has_any_policy') %}
+          {{ pstate.get('configured_count', 0) }} / {{ pstate.get('total_fields', 12) }} {{ 'mục đã cấu hình' if locale == 'vi' else 'configured' }}
+        {% else %}
+          {{ 'Chưa cấu hình (đang hiện nhãn bản xem thử)' if locale == 'vi' else 'Unconfigured (preview notice active)' }}
+        {% endif %}
+      </span>
+    </div>
+
+    <form method="post" action="{{ url_for('store.update_public_policies') }}" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ error_summary(policy_form_error|default(None)) }}
+
+      <fieldset class="policy-fieldset">
+        <legend>{{ '1. Nhận tại quầy & Giao hàng COD' if locale == 'vi' else '1. Store Pickup & COD Delivery' }}</legend>
+        <div class="form-grid">
+          <label class="field-wide" for="policy-pickup-address">
+            {{ 'Địa chỉ nhận tại quầy' if locale == 'vi' else 'Store pickup address' }}
+            <input id="policy-pickup-address" name="pickup_address" maxlength="300" value="{{ pdata.get('pickup_address', '') }}" {{ invalid('pickup_address', perrors) }} placeholder="{{ 'Ví dụ: Số 18 đường..., Quận..., TP.HCM (bỏ trống nếu chưa chốt)' if locale == 'vi' else 'Verified pickup street address (leave blank if unconfirmed)' }}">
+            {{ field_error('pickup_address', perrors) }}
+          </label>
+          <label for="policy-opening-hours">
+            {{ 'Khung giờ mở cửa' if locale == 'vi' else 'Opening hours' }}
+            <input id="policy-opening-hours" name="opening_hours" maxlength="200" value="{{ pdata.get('opening_hours', '') }}" {{ invalid('opening_hours', perrors) }} placeholder="{{ 'VD: 08:30 – 20:30 hằng ngày' if locale == 'vi' else 'e.g. 08:30 – 20:30 daily' }}">
+            {{ field_error('opening_hours', perrors) }}
+          </label>
+          <label for="policy-order-sla">
+            {{ 'Thời gian xác nhận & giao dự kiến (SLA)' if locale == 'vi' else 'Confirmation & delivery SLA' }}
+            <input id="policy-order-sla" name="order_confirmation_sla" maxlength="200" value="{{ pdata.get('order_confirmation_sla', '') }}" {{ invalid('order_confirmation_sla', perrors) }} placeholder="{{ 'VD: Xác nhận trong 30 phút giờ mở cửa' if locale == 'vi' else 'e.g. Confirmed within 30 minutes' }}">
+            {{ field_error('order_confirmation_sla', perrors) }}
+          </label>
+          <label class="field-wide" for="policy-cod-fees">
+            {{ 'Khu vực & quy tắc phí giao COD' if locale == 'vi' else 'COD service area & delivery fees' }}
+            <textarea id="policy-cod-fees" name="cod_service_area_fees" maxlength="400" rows="2" {{ invalid('cod_service_area_fees', perrors) }} placeholder="{{ 'Ghi rõ phạm vi giao và mức phí thật hoặc ghi nhân viên báo phí theo địa chỉ (hệ thống không tự mặc định miễn phí ship).' if locale == 'vi' else 'Specify coverage and exact COD fee rules (the app never claims free shipping without owner approval).' }}">{{ pdata.get('cod_service_area_fees', '') }}</textarea>
+            {{ field_error('cod_service_area_fees', perrors) }}
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="policy-fieldset">
+        <legend>{{ '2. Đổi trả, Hủy đơn & Thú cưng' if locale == 'vi' else '2. Returns, Cancellations & Pets' }}</legend>
+        <div class="form-grid">
+          <label class="field-wide" for="policy-return-refund">
+            {{ 'Chính sách đổi trả & hoàn tiền' if locale == 'vi' else 'Return & refund summary' }}
+            <textarea id="policy-return-refund" name="return_refund_policy" maxlength="600" rows="2" {{ invalid('return_refund_policy', perrors) }} placeholder="{{ 'Số ngày đổi trả, điều kiện nguyên tem/bao bì và nhóm hàng không áp dụng...' if locale == 'vi' else 'Eligible days, packaging conditions, and exclusions...' }}">{{ pdata.get('return_refund_policy', '') }}</textarea>
+            {{ field_error('return_refund_policy', perrors) }}
+          </label>
+          <label class="field-wide" for="policy-cancel">
+            {{ 'Hướng dẫn hủy hoặc đổi thông tin đơn' if locale == 'vi' else 'Cancellation & order modification instructions' }}
+            <textarea id="policy-cancel" name="cancellation_instructions" maxlength="400" rows="2" {{ invalid('cancellation_instructions', perrors) }} placeholder="{{ 'Cách khách liên hệ hủy/chỉnh đơn trước khi xuất hàng...' if locale == 'vi' else 'How shoppers can request cancellation before dispatch...' }}">{{ pdata.get('cancellation_instructions', '') }}</textarea>
+            {{ field_error('cancellation_instructions', perrors) }}
+          </label>
+          <label class="field-wide" for="policy-pet-handover">
+            {{ 'Chính sách xem bé, bàn giao & theo dõi sức khỏe thú cưng' if locale == 'vi' else 'Pet viewing, handover & health policy' }}
+            <textarea id="policy-pet-handover" name="pet_handover_policy" maxlength="600" rows="2" {{ invalid('pet_handover_policy', perrors) }} placeholder="{{ 'Quy định xem trực tiếp, sổ tiêm ngừa bàn giao và điều kiện hỗ trợ sau đón bé...' if locale == 'vi' else 'In-store viewing, vaccination record handover, and post-adoption terms...' }}">{{ pdata.get('pet_handover_policy', '') }}</textarea>
+            {{ field_error('pet_handover_policy', perrors) }}
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="policy-fieldset">
+        <legend>{{ '3. Liên hệ hỗ trợ & Pháp lý công khai' if locale == 'vi' else '3. Public Support & Legal Links' }}</legend>
+        <div class="form-grid">
+          <label for="policy-hotline">
+            {{ 'Hotline hỗ trợ đơn' if locale == 'vi' else 'Support hotline' }}
+            <input id="policy-hotline" name="support_hotline" maxlength="60" value="{{ pdata.get('support_hotline', '') }}" {{ invalid('support_hotline', perrors) }} placeholder="{{ 'VD: 0909 000 000' if locale == 'vi' else 'Official store phone' }}">
+            {{ field_error('support_hotline', perrors) }}
+          </label>
+          <label for="policy-zalo">
+            {{ 'Zalo hỗ trợ' if locale == 'vi' else 'Support Zalo' }}
+            <input id="policy-zalo" name="support_zalo" maxlength="160" value="{{ pdata.get('support_zalo', '') }}" {{ invalid('support_zalo', perrors) }} placeholder="{{ 'Số Zalo hoặc https://zalo.me/...' if locale == 'vi' else 'Zalo ID or https://zalo.me/...' }}">
+            {{ field_error('support_zalo', perrors) }}
+          </label>
+          <label for="policy-email">
+            {{ 'Email CSKH công khai' if locale == 'vi' else 'Public support email' }}
+            <input id="policy-email" type="email" name="support_email" maxlength="254" value="{{ pdata.get('support_email', '') }}" {{ invalid('support_email', perrors) }} placeholder="support@example.com">
+            {{ field_error('support_email', perrors) }}
+          </label>
+          <label for="policy-terms-url">
+            {{ 'Liên kết điều khoản / bảo mật (http/https)' if locale == 'vi' else 'Privacy / terms URL (http/https)' }}
+            <input id="policy-terms-url" name="privacy_terms_url" maxlength="300" value="{{ pdata.get('privacy_terms_url', '') }}" {{ invalid('privacy_terms_url', perrors) }} placeholder="https://...">
+            {{ field_error('privacy_terms_url', perrors) }}
+          </label>
+          <label class="field-wide" for="policy-terms-summary">
+            {{ 'Tóm tắt điều khoản / quyền riêng tư' if locale == 'vi' else 'Privacy / terms summary note' }}
+            <textarea id="policy-terms-summary" name="privacy_terms_summary" maxlength="400" rows="2" {{ invalid('privacy_terms_summary', perrors) }} placeholder="{{ 'Ghi chú ngắn được chủ cửa hàng phê duyệt hiển thị ở footer...' if locale == 'vi' else 'Short owner-approved summary displayed in storefront footer...' }}">{{ pdata.get('privacy_terms_summary', '') }}</textarea>
+            {{ field_error('privacy_terms_summary', perrors) }}
+          </label>
+        </div>
+      </fieldset>
+
+      <div class="form-actions">
+        <button class="button button-primary" type="submit">{{ 'Lưu chính sách công khai' if locale == 'vi' else 'Save public policies' }}</button>
+      </div>
     </form>
   </section>
 </div>
