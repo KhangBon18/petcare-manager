@@ -1,61 +1,13 @@
 /* ==========================================================================
-   PetCare Manager — Design System v3 ("Option A · Precision Cloud SaaS Light")
-   Loaded after tokens.css -> app.css -> motion.css.
-   Overrides visual tokens while preserving base layout mechanics & selectors.
+   PetCare Manager — Design System v3 ("Precision Cloud SaaS Light")
+   Loaded after shared_tokens.css -> tokens.css -> app.css -> motion.css.
+   Visual tokens are consolidated in shared_tokens.css + tokens.css.
    ========================================================================== */
-
-:root {
-  --color-canvas: var(--pc-canvas);
-  --color-surface: var(--pc-surface);
-  --color-surface-subtle: var(--pc-canvas);
-  --color-surface-hover: var(--pc-surface-subtle);
-  --color-ink: var(--pc-ink);
-  --color-ink-strong: var(--pc-ink-strong);
-  --color-muted: var(--pc-muted);
-  --color-faint: var(--pc-faint);
-  --color-brand: var(--pc-brand);
-  --color-brand-strong: var(--pc-brand-hover);
-  --color-brand-soft: var(--pc-brand-soft);
-  --color-brand-faint: var(--pc-brand-faint);
-  --color-accent: var(--pc-brand);
-  --color-accent-ink: #FFFFFF;
-  --color-border: var(--pc-border);
-  --color-border-strong: var(--pc-border-strong);
-  --color-border-subtle: var(--pc-surface-subtle);
-  --color-focus-ring: var(--pc-focus-ring);
-  --color-positive: var(--pc-ok);
-  --color-positive-soft: var(--pc-ok-soft);
-  --color-warning: var(--pc-warn);
-  --color-warning-soft: var(--pc-warn-soft);
-  --color-danger: var(--pc-danger);
-  --color-danger-soft: var(--pc-danger-soft);
-  --color-info: var(--pc-info);
-  --color-info-soft: var(--pc-info-soft);
-
-  --nav-bg: var(--pc-canvas);
-  --nav-bg-raised: rgba(15, 23, 42, 0.04);
-  --nav-bg-active: var(--pc-surface);
-  --nav-text: var(--pc-muted);
-  --nav-text-strong: var(--pc-ink);
-  --nav-text-faint: #94A3B8;
-  --nav-icon: var(--pc-faint);
-  --nav-border: var(--pc-border);
-
-  --sidebar-w: 228px;
-  --topbar-h: 54px;
-  --radius-xs: 5px;
-  --radius-sm: 7px;
-  --radius-md: 8px;
-  --radius-lg: 10px;
-  --shadow-xs: var(--pc-shadow-xs);
-  --shadow-sm: var(--pc-shadow-sm);
-  --shadow-float: var(--pc-shadow-float);
-}
 
 /* ---------- 1. Base & typography ---------- */
 html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  font-family: var(--font-ui);
   font-size: var(--text-md);
   line-height: var(--leading-normal);
   color: var(--color-ink);

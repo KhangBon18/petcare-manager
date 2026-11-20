@@ -1,7 +1,7 @@
-/* Shared Refined Precision Cloud Light design primitives (PetCare Manager v2.1).
+/* Authoritative Refined Precision Cloud Light Design Primitives (PetCare Manager v2.1).
  * Single source of truth for neutral surfaces, slate inks, Precision Blue brand (#2563EB),
- * WCAG AA semantic status colors, and shared touch/focus geometry across Storefront and SaaS.
- * Loaded before ui.css (internal workspace) and storefront.css (public shop).
+ * WCAG AA semantic status colors, type/space/motion primitives, and touch ergonomics
+ * shared by both Admin/Staff SaaS (tokens.css + ui.css) and Customer Storefront (storefront.css).
  */
 :root {
   /* Surfaces & hairline borders */
@@ -10,6 +10,7 @@
   --pc-surface-subtle: #F1F5F9;
   --pc-border: #E2E8F0;
   --pc-border-strong: #CBD5E1;
+  --pc-separator: #CBD5E1;
 
   /* Slate ink scale */
   --pc-ink: #0F172A;
@@ -23,9 +24,10 @@
   --pc-brand-soft: #EFF6FF;
   --pc-brand-faint: #F8FAFF;
   --pc-brand-border: #BFDBFE;
+  --pc-brand-ink: #FFFFFF;
   --pc-focus-ring: rgba(37, 99, 235, 0.28);
 
-  /* Semantic status (WCAG AA on soft fills) */
+  /* Semantic status (WCAG AA contrast >= 4.5:1 on soft fills) */
   --pc-ok: #047857;
   --pc-ok-strong: #065F46;
   --pc-ok-soft: #ECFDF5;
@@ -40,16 +42,45 @@
   --pc-danger-strong: #991B1B;
   --pc-danger-soft: #FEF2F2;
   --pc-danger-border: #FECACA;
+  --pc-danger-border-strong: #FCA5A5;
 
   --pc-info: #0369A1;
   --pc-info-soft: #F0F9FF;
   --pc-info-border: #BAE6FD;
 
-  /* Shared ergonomics & elevation */
-  --pc-tap-min: 44px;
+  /* Typography & rhythm */
   --pc-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --pc-font-display: ui-rounded, "SF Pro Rounded", "Nunito", "Segoe UI Variable Display", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --pc-text-xs: 11.5px;
+  --pc-text-sm: 12.5px;
+  --pc-text-md: 14px;
+  --pc-text-lg: 16px;
+  --pc-text-xl: 19px;
+  --pc-weight-regular: 400;
+  --pc-weight-medium: 550;
+  --pc-weight-semibold: 620;
+  --pc-weight-bold: 700;
+  --pc-leading-tight: 1.2;
+  --pc-leading-normal: 1.5;
+
+  /* 4px spacing grid & ergonomics */
+  --pc-space-1: 4px;
+  --pc-space-2: 8px;
+  --pc-space-3: 12px;
+  --pc-space-4: 16px;
+  --pc-space-5: 24px;
+  --pc-space-6: 32px;
+  --pc-tap-min: 44px;
+
+  /* Elevation & motion */
   --pc-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
   --pc-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
   --pc-shadow-md: 0 12px 30px rgba(15, 23, 42, 0.08);
   --pc-shadow-float: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --pc-shadow-lift: 0 12px 28px rgba(15, 23, 42, 0.09);
+  --pc-motion-fast: 120ms;
+  --pc-motion-standard: 180ms;
+  --pc-motion-slow: 260ms;
+  --pc-ease-standard: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --pc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
 }
