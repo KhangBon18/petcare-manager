@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#FFFFFF">
   <title>{% block title %}{{ store.name }}{% endblock %} · PetCare Shop</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/storefront.css') }}">
 </head>
 <body class="sf-body{% if request.endpoint == 'storefront.checkout' %} sf-checkout-page{% endif %}">
@@ -68,9 +69,11 @@
   <div class="sf-container">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-      <div class="sf-flashes">
+      <div class="sf-flashes" data-sf-flashes>
         {% for category, message in messages %}
-        <div class="sf-flash sf-flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>
+        <div class="sf-flash sf-flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}" data-sf-flash>
+          <span>{{ t(message) }}</span>
+        </div>
         {% endfor %}
       </div>
       {% endif %}
@@ -82,14 +85,19 @@
 
 <footer class="sf-footer">
   <div class="sf-container sf-footer-inner">
-    <div>
-      <strong>{{ store.name }}</strong> · {{ 'Thanh toán khi nhận hàng (COD) hoặc tại cửa hàng · Giá cập nhật trực tiếp' if locale == 'vi' else 'Cash on delivery or pay in-store · Live catalog pricing' }}
+    <div class="sf-footer-brand">
+      <div><strong>{{ store.name }}</strong> · {{ 'Thanh toán khi nhận hàng (COD) hoặc tại cửa hàng · Giá cập nhật trực tiếp' if locale == 'vi' else 'Cash on delivery or pay in-store · Live catalog pricing' }}</div>
+      <small class="sf-footer-preview-note">{{ 'Bản xem thử · Địa chỉ nhận quầy, hotline và điều khoản giao nhận chính thức đang chờ chủ cửa hàng xác nhận.' if locale == 'vi' else 'Preview build · Verified pickup address, store contact, and delivery terms await owner sign-off.' }}</small>
     </div>
-    <div>
+    <div class="sf-footer-links">
+      <a href="{{ url_for('storefront.products') }}">{{ 'Sản phẩm' if locale == 'vi' else 'Products' }}</a>
+      <span aria-hidden="true">·</span>
+      <a href="{{ url_for('storefront.pets') }}">{{ 'Thú cưng' if locale == 'vi' else 'Pets' }}</a>
+      <span aria-hidden="true">·</span>
       <a href="{{ url_for('storefront.order_lookup') }}">{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Track order' }}</a>
-      ·
+      <span aria-hidden="true">·</span>
       <a href="{{ url_for('storefront.orders') if g.customer else url_for('storefront.customer_login') }}">{{ 'Đơn hàng của tôi' if locale == 'vi' else 'My orders' }}</a>
-      ·
+      <span aria-hidden="true">·</span>
       <a href="{{ url_for('auth.login') }}">{{ 'Cổng nhân viên' if locale == 'vi' else 'Staff portal' }}</a>
     </div>
   </div>

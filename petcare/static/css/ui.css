@@ -5,40 +5,41 @@
    ========================================================================== */
 
 :root {
-  --color-canvas: #F8FAFC;
-  --color-surface: #FFFFFF;
-  --color-surface-subtle: #F8FAFC;
-  --color-surface-hover: #F1F5F9;
-  --color-ink: #0F172A;
-  --color-ink-strong: #1E293B;
-  --color-muted: #475569;
-  --color-faint: #64748B;
-  --color-brand: #2563EB;
-  --color-brand-strong: #1D4ED8;
-  --color-brand-soft: #EFF6FF;
-  --color-brand-faint: #F8FAFF;
-  --color-accent: #2563EB;
+  --color-canvas: var(--pc-canvas);
+  --color-surface: var(--pc-surface);
+  --color-surface-subtle: var(--pc-canvas);
+  --color-surface-hover: var(--pc-surface-subtle);
+  --color-ink: var(--pc-ink);
+  --color-ink-strong: var(--pc-ink-strong);
+  --color-muted: var(--pc-muted);
+  --color-faint: var(--pc-faint);
+  --color-brand: var(--pc-brand);
+  --color-brand-strong: var(--pc-brand-hover);
+  --color-brand-soft: var(--pc-brand-soft);
+  --color-brand-faint: var(--pc-brand-faint);
+  --color-accent: var(--pc-brand);
   --color-accent-ink: #FFFFFF;
-  --color-border: #E2E8F0;
-  --color-border-strong: #CBD5E1;
-  --color-border-subtle: #F1F5F9;
-  --color-positive: #047857;
-  --color-positive-soft: #ECFDF5;
-  --color-warning: #B45309;
-  --color-warning-soft: #FFFBEB;
-  --color-danger: #B91C1C;
-  --color-danger-soft: #FEF2F2;
-  --color-info: #0369A1;
-  --color-info-soft: #F0F9FF;
+  --color-border: var(--pc-border);
+  --color-border-strong: var(--pc-border-strong);
+  --color-border-subtle: var(--pc-surface-subtle);
+  --color-focus-ring: var(--pc-focus-ring);
+  --color-positive: var(--pc-ok);
+  --color-positive-soft: var(--pc-ok-soft);
+  --color-warning: var(--pc-warn);
+  --color-warning-soft: var(--pc-warn-soft);
+  --color-danger: var(--pc-danger);
+  --color-danger-soft: var(--pc-danger-soft);
+  --color-info: var(--pc-info);
+  --color-info-soft: var(--pc-info-soft);
 
-  --nav-bg: #F8FAFC;
+  --nav-bg: var(--pc-canvas);
   --nav-bg-raised: rgba(15, 23, 42, 0.04);
-  --nav-bg-active: #FFFFFF;
-  --nav-text: #475569;
-  --nav-text-strong: #0F172A;
+  --nav-bg-active: var(--pc-surface);
+  --nav-text: var(--pc-muted);
+  --nav-text-strong: var(--pc-ink);
   --nav-text-faint: #94A3B8;
-  --nav-icon: #64748B;
-  --nav-border: #E2E8F0;
+  --nav-icon: var(--pc-faint);
+  --nav-border: var(--pc-border);
 
   --sidebar-w: 228px;
   --topbar-h: 54px;
@@ -46,9 +47,9 @@
   --radius-sm: 7px;
   --radius-md: 8px;
   --radius-lg: 10px;
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
-  --shadow-float: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+  --shadow-xs: var(--pc-shadow-xs);
+  --shadow-sm: var(--pc-shadow-sm);
+  --shadow-float: var(--pc-shadow-float);
 }
 
 /* ---------- 1. Base & typography ---------- */
@@ -1273,10 +1274,10 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   margin: 0;
   padding: 12px 18px 16px;
   font-size: 13px;
-  color: var(--color-ink-muted);
+  color: var(--color-muted);
 }
 
-/* Gate 0.6 hardening: KPI money fit, mobile POS entry, non-obstructing toasts */
+/* Gate 0.6 + Sprint 1 hardening: KPI money fit, mobile POS entry, non-blocking in-flow notices */
 .stat-card-money { container-type: inline-size; }
 .stat-card-money > strong {
   font-size: clamp(16px, 8.8cqi, 25px);
@@ -1284,11 +1285,50 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   overflow-wrap: anywhere;
 }
 .mobile-more-primary { font-weight: 700; }
-.toast-region { top: calc(var(--topbar-h, 54px) + 12px); right: 20px; }
-.toast-close { width: 40px; height: 40px; top: 4px; right: 4px; }
-.toast { padding-right: 48px; }
-@media (max-width: 980px) {
-  .toast-region { top: 128px; right: 16px; }
+.toast-region {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  left: auto;
+  z-index: auto;
+  width: 100%;
+  max-width: none;
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+  pointer-events: auto;
+}
+.toast-region:empty { display: none; margin: 0; }
+.auth-shell > .toast-region,
+.auth-flashes {
+  position: static;
+  top: auto;
+  right: auto;
+  width: min(440px, 100%);
+  margin: 10px auto 14px;
+}
+.toast {
+  position: relative;
+  margin: 0;
+  padding: 11px 48px 11px 14px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  overflow-wrap: anywhere;
+}
+.toast-close {
+  width: 40px;
+  height: 40px;
+  top: 3px;
+  right: 4px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+@media (max-width: 1024px) {
+  .toast-region { position: static; top: auto; right: auto; bottom: auto; left: auto; }
+  .toast-close { width: 44px; height: 44px; top: 2px; right: 2px; }
+  .toast { padding-right: 52px; }
 }
 @media (max-width: 680px) {
   .stat-grid-dashboard .stat-card-money { grid-column: 1 / -1; min-height: 0; border-right: 0; border-bottom: 1px solid var(--color-border-subtle); }
@@ -1298,18 +1338,16 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .mobile-nav-more nav { overscroll-behavior: contain; }
   .mobile-nav-more nav > a.mobile-more-primary { color: #fff; background: var(--color-brand, #2563EB); }
   .mobile-nav-more nav > a.mobile-more-primary:hover,
-  .mobile-nav-more nav > a.mobile-more-primary[aria-current="page"] { color: #fff; background: var(--color-brand-hover, #1D4ED8); }
+  .mobile-nav-more nav > a.mobile-more-primary[aria-current="page"] { color: #fff; background: var(--color-brand-strong, #1D4ED8); }
   .toast-region {
+    position: static;
     top: auto;
-    left: 12px;
-    right: 12px;
-    width: auto;
-    z-index: 55;
-    bottom: calc(76px + env(safe-area-inset-bottom));
+    right: auto;
+    bottom: auto;
+    left: auto;
+    width: 100%;
   }
-  .toast-close { width: 44px; height: 44px; top: 2px; right: 2px; }
-  .toast { padding-right: 52px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .toast { animation: none; }
+  .toast { animation: none; transition: none; }
 }

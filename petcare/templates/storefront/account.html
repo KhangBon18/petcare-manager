@@ -1,4 +1,5 @@
 {% extends "storefront/shop_base.html" %}
+{% from "storefront/_macros.html" import empty_state, order_payment_pill with context %}
 {% block title %}{{ 'Tài khoản của tôi' if locale == 'vi' else 'My account' }}{% endblock %}
 
 {% block content %}
@@ -23,6 +24,7 @@
           <tr>
             <th>{{ 'Mã đơn' if locale == 'vi' else 'Order #' }}</th>
             <th>{{ 'Trạng thái' if locale == 'vi' else 'Status' }}</th>
+            <th>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</th>
             <th>{{ 'Tổng tiền' if locale == 'vi' else 'Total' }}</th>
             <th></th>
           </tr>
@@ -32,6 +34,7 @@
           <tr>
             <td><strong>{{ ord.order_code }}</strong></td>
             <td><span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span></td>
+            <td>{{ order_payment_pill(ord.payment_status, locale) }}</td>
             <td>{{ format_money(ord.total_amount, ord.currency_code) }}</td>
             <td><a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Chi tiết' if locale == 'vi' else 'View' }}</a></td>
           </tr>
@@ -46,6 +49,10 @@
           <strong>{{ ord.order_code }}</strong>
           <span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span>
         </div>
+        <div class="sf-order-card-meta">
+          <span>{{ 'Giao COD' if ord.fulfillment_method == 'cod_delivery' else ('Nhận quầy' if locale == 'vi' else 'Pickup') }}</span>
+          {{ order_payment_pill(ord.payment_status, locale) }}
+        </div>
         <div class="sf-order-card-foot">
           <span class="sf-order-card-total">{{ format_money(ord.total_amount, ord.currency_code) }}</span>
           <a class="sf-btn sf-btn-sm sf-order-card-action" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Chi tiết' if locale == 'vi' else 'View' }}</a>
@@ -54,7 +61,13 @@
       {% endfor %}
     </div>
     {% else %}
-    <p>{{ 'Chưa có đơn hàng nào.' if locale == 'vi' else 'No orders placed yet.' }}</p>
+      {{ empty_state(
+        'bag',
+        'Chưa có đơn hàng nào' if locale == 'vi' else 'No orders placed yet',
+        'Bắt đầu chọn sản phẩm hoặc thú cưng phù hợp tại cửa hàng.' if locale == 'vi' else 'Browse our products and pets to place your first order.',
+        url_for('storefront.products'),
+        'Mua sắm ngay' if locale == 'vi' else 'Shop now'
+      ) }}
     {% endif %}
   </section>
 

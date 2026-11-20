@@ -1,30 +1,62 @@
 {% extends "storefront/shop_base.html" %}
+{% from "storefront/_macros.html" import order_payment_pill with context %}
 {% block title %}{{ order.order_code }}{% endblock %}
 
+{% set step_index = 1 if order.order_status == 'pending' else (2 if order.order_status == 'confirmed' else (3 if order.order_status in ('preparing', 'fulfilled') else (4 if order.order_status == 'ready_completed' else 0))) %}
 {% block content %}
 <div class="sf-page-head">
   <div>
     <h1>{{ 'Đơn hàng' if locale == 'vi' else 'Order' }} {{ order.order_code }}</h1>
     <p>{{ 'Đặt lúc' if locale == 'vi' else 'Placed at' }} {{ format_datetime(order.created_at) }}</p>
   </div>
-  <span class="sf-status-pill sf-status-{{ order.order_status }}">{{ g.storefront_order_status_labels.get(order.order_status, order.order_status) }}</span>
+  <div class="sf-order-badges">
+    <span class="sf-status-pill sf-status-{{ order.order_status }}">{{ g.storefront_order_status_labels.get(order.order_status, order.order_status) }}</span>
+    {{ order_payment_pill(order.payment_status, locale) }}
+  </div>
 </div>
 
-<div class="sf-order-next-step">
+{% if step_index > 0 %}
+<ol class="sf-progress" aria-label="{{ 'Tiến trình xử lý đơn hàng' if locale == 'vi' else 'Order progress' }}">
+  <li class="sf-progress-step {% if step_index >= 1 %}is-done{% endif %} {% if step_index == 1 %}is-current{% endif %}">
+    <span class="sf-progress-dot" aria-hidden="true">1</span>
+    <span>{{ 'Tiếp nhận' if locale == 'vi' else 'Received' }}</span>
+  </li>
+  <li class="sf-progress-step {% if step_index >= 2 %}is-done{% endif %} {% if step_index == 2 %}is-current{% endif %}">
+    <span class="sf-progress-dot" aria-hidden="true">2</span>
+    <span>{{ 'Xác nhận' if locale == 'vi' else 'Confirmed' }}</span>
+  </li>
+  <li class="sf-progress-step {% if step_index >= 3 %}is-done{% endif %} {% if step_index == 3 %}is-current{% endif %}">
+    <span class="sf-progress-dot" aria-hidden="true">3</span>
+    <span>{{ 'Chuẩn bị / Giao' if locale == 'vi' else 'Preparing' }}</span>
+  </li>
+  <li class="sf-progress-step {% if step_index >= 4 %}is-done{% endif %} {% if step_index == 4 %}is-current{% endif %}">
+    <span class="sf-progress-dot" aria-hidden="true">4</span>
+    <span>{{ 'Hoàn tất' if locale == 'vi' else 'Completed' }}</span>
+  </li>
+</ol>
+{% endif %}
+
+<div class="sf-order-next-step {% if order.order_status in ('cancelled', 'rejected') %}sf-order-next-muted{% endif %}">
   <div>
     <strong>{{ 'Bước tiếp theo:' if locale == 'vi' else 'Next step:' }}</strong>
     {% if order.order_status == 'pending' %}
-      {{ 'Cửa hàng đã giữ hàng theo đơn. Nhân viên sẽ liên hệ qua số ' ~ order.customer_phone ~ ' để xác nhận trước khi chuẩn bị.' if locale == 'vi' else 'Stock has been reserved. Store staff will contact ' ~ order.customer_phone ~ ' to confirm before preparation.' }}
+      {% if order.fulfillment_method == 'cod_delivery' %}
+        {{ 'Cửa hàng đã giữ hàng theo đơn. Nhân viên sẽ liên hệ qua số ' ~ order.customer_phone ~ ' để xác nhận địa chỉ & điều kiện giao COD trước khi xuất đơn.' if locale == 'vi' else 'Stock has been reserved. Store staff will contact ' ~ order.customer_phone ~ ' to confirm COD delivery terms before dispatch.' }}
+      {% else %}
+        {{ 'Cửa hàng đã giữ hàng theo đơn. Nhân viên sẽ liên hệ qua số ' ~ order.customer_phone ~ ' để xác nhận trước khi bạn đến nhận tại quầy.' if locale == 'vi' else 'Stock has been reserved. Store staff will contact ' ~ order.customer_phone ~ ' to confirm before store pickup.' }}
+      {% endif %}
     {% elif order.order_status in ('confirmed', 'preparing') %}
       {{ 'Đơn hàng đang được chuẩn bị tại cửa hàng.' if locale == 'vi' else 'Your order is currently being prepared at the store.' }}
-    {% elif order.order_status in ('ready_completed', 'fulfilled') %}
-      {{ 'Đơn hàng đã sẵn sàng / hoàn tất bàn giao.' if locale == 'vi' else 'Your order is ready or completed.' }}
+    {% elif order.order_status == 'fulfilled' %}
+      {{ 'Đơn hàng đang chờ xác nhận hoàn tất thanh toán.' if locale == 'vi' else 'Order delivered and awaiting payment confirmation.' }}
+    {% elif order.order_status == 'ready_completed' %}
+      {{ 'Đơn hàng đã hoàn tất bàn giao.' if locale == 'vi' else 'Your order has been completed.' }}
     {% else %}
-      {{ 'Trạng thái hiện tại: ' ~ g.storefront_order_status_labels.get(order.order_status, order.order_status) if locale == 'vi' else 'Current status: ' ~ g.storefront_order_status_labels.get(order.order_status, order.order_status) }}
+      {{ 'Đơn hàng hiện đã đóng (' ~ g.storefront_order_status_labels.get(order.order_status, order.order_status) ~ '). Hàng giữ tạm đã được trả lại kho.' if locale == 'vi' else 'This order is closed (' ~ g.storefront_order_status_labels.get(order.order_status, order.order_status) ~ ') and any reserved stock has been released.' }}
     {% endif %}
   </div>
   <div class="sf-order-next-actions">
-    <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_lookup') }}">{{ 'Tra cứu đơn khác' if locale == 'vi' else 'Track order' }}</a>
+    <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_lookup') }}">{{ 'Tra cứu đơn khác' if locale == 'vi' else 'Track another order' }}</a>
     <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.home') }}">{{ 'Tiếp tục xem shop' if locale == 'vi' else 'Back to shop' }}</a>
   </div>
 </div>
@@ -38,7 +70,7 @@
       <div class="sf-cart-row">
         <img class="sf-cart-thumb" src="{{ vis.url }}" data-fallback-src="{{ vis.fallback_url }}" alt="{{ item.name_snapshot }}">
         <div>
-          <div class="sf-card-meta">{{ 'Thú cưng' if item.item_type == 'pet' else ('Sản phẩm' if locale == 'vi' else 'Product') }} · {{ item.item_code_snapshot }}</div>
+          <div class="sf-card-meta">{{ 'Thú cưng' if item.item_type == 'pet' else ('Sản phẩm' if locale == 'vi' else 'Product') }}</div>
           <strong>{{ item.name_snapshot }}</strong>
           <div class="sf-card-meta">{{ format_money(item.unit_price, order.currency_code) }} × {{ format_number(item.quantity) }}</div>
         </div>
@@ -55,16 +87,21 @@
   <aside class="sf-panel">
     <h2>{{ 'Thông tin nhận hàng & thanh toán' if locale == 'vi' else 'Fulfillment & payment' }}</h2>
     <dl class="sf-specs">
+      <div><dt>{{ 'Mã đơn hàng' if locale == 'vi' else 'Order code' }}</dt><dd><strong>{{ order.order_code }}</strong></dd></div>
       <div><dt>{{ 'Người nhận' if locale == 'vi' else 'Recipient' }}</dt><dd>{{ order.customer_name }}</dd></div>
       <div><dt>{{ 'Điện thoại' if locale == 'vi' else 'Phone' }}</dt><dd>{{ order.customer_phone }}</dd></div>
       {% if order.delivery_address %}<div><dt>{{ 'Địa chỉ' if locale == 'vi' else 'Address' }}</dt><dd>{{ order.delivery_address }}</dd></div>{% endif %}
-      <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Delivery' }}</dt><dd>{{ 'Giao tận nơi (COD)' if order.fulfillment_method == 'cod_delivery' else ('Nhận tại cửa hàng' if locale == 'vi' else 'Store pickup') }}</dd></div>
-      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd><strong>{{ 'Đã thanh toán' if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</strong> ({{ 'COD khi nhận hàng' if order.payment_method == 'cod' else ('Tại cửa hàng' if locale == 'vi' else 'Pay at store') }})</dd></div>
+      <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Fulfillment' }}</dt><dd>{{ 'Giao tận nơi (COD)' if order.fulfillment_method == 'cod_delivery' else ('Nhận tại cửa hàng' if locale == 'vi' else 'Store pickup') }}</dd></div>
+      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</dt><dd>{{ order_payment_pill(order.payment_status, locale) }} <span class="sf-muted-inline">({{ 'COD khi nhận hàng' if order.payment_method == 'cod' else ('Tại cửa hàng' if locale == 'vi' else 'Pay at store') }})</span></dd></div>
       {% if order.staff_note %}<div><dt>{{ 'Phản hồi shop' if locale == 'vi' else 'Store note' }}</dt><dd>{{ order.staff_note }}</dd></div>{% endif %}
     </dl>
 
+    <div class="sf-notice sf-support-note">
+      {{ 'Hãy lưu mã đơn' if locale == 'vi' else 'Keep order code' }} <strong>{{ order.order_code }}</strong> {{ 'và số điện thoại' if locale == 'vi' else 'and phone' }} <strong>{{ order.customer_phone }}</strong> {{ 'để kiểm tra trạng thái bất kỳ lúc nào tại trang Tra cứu đơn.' if locale == 'vi' else 'to check order status anytime on Track order.' }}
+    </div>
+
     {% if order.order_status == 'pending' %}
-    <form method="post" action="{{ url_for('storefront.cancel_order', order_code=order.order_code) }}" data-sf-confirm="{{ 'Bạn chắc chắn muốn hủy đơn hàng này?' if locale == 'vi' else 'Are you sure you want to cancel this order?' }}">
+    <form class="sf-order-cancel-form" method="post" action="{{ url_for('storefront.cancel_order', order_code=order.order_code) }}" data-sf-confirm="{{ 'Bạn chắc chắn muốn hủy đơn hàng này?' if locale == 'vi' else 'Are you sure you want to cancel this order?' }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="sf-btn sf-btn-danger" type="submit">{{ 'Hủy đơn hàng' if locale == 'vi' else 'Cancel order' }}</button>
     </form>
@@ -72,4 +109,3 @@
   </aside>
 </div>
 {% endblock %}
-

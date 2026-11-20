@@ -1,5 +1,6 @@
 {% extends "storefront/shop_base.html" %}
 {% from "partials/icons.html" import icon %}
+{% from "storefront/_macros.html" import pet_card, empty_state with context %}
 {% block title %}{{ 'Thú cưng đang mở bán' if locale == 'vi' else 'Available pets' }}{% endblock %}
 
 {% block content %}
@@ -11,7 +12,7 @@
   <a class="sf-btn sf-btn-primary sf-btn-sm" href="{{ url_for('storefront.image_search') }}">{{ icon('camera') }} {{ 'Tìm bé tương tự bằng ảnh' if locale == 'vi' else 'Find by photo' }}</a>
 </div>
 
-<div class="sf-chip-row">
+<div class="sf-chip-row" role="navigation" aria-label="{{ 'Lọc theo loài' if locale == 'vi' else 'Filter by species' }}">
   <a class="sf-chip {% if not selected_species %}is-active{% endif %}" href="{{ url_for('storefront.pets', q=search, sort=sort) }}">{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
   <a class="sf-chip {% if selected_species in ('cat', 'mèo') %}is-active{% endif %}" href="{{ url_for('storefront.pets', species='cat', q=search, sort=sort) }}">{{ 'Mèo' if locale == 'vi' else 'Cats' }}</a>
   <a class="sf-chip {% if selected_species in ('dog', 'chó') %}is-active{% endif %}" href="{{ url_for('storefront.pets', species='dog', q=search, sort=sort) }}">{{ 'Chó' if locale == 'vi' else 'Dogs' }}</a>
@@ -34,46 +35,22 @@
 </form>
 
 {% if pets %}
+{% set next_self = request.full_path if request.query_string else request.path %}
 <div class="sf-grid">
   {% for pet in pets %}
-  {% set pvis = pet_visual(pet, public=True) %}
-  <article class="sf-card">
-    <div class="sf-card-media">
-      <a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">
-        <img src="{{ pvis.url }}" data-fallback-src="{{ pvis.fallback_url }}" alt="{{ pet.species }} {{ pet.name }}">
-      </a>
-      {% if pet.is_reserved %}
-      <span class="sf-card-badge sf-card-badge-warn">{{ 'Tạm giữ' if locale == 'vi' else 'Reserved' }}</span>
-      {% else %}
-      <span class="sf-card-badge">{{ 'Sẵn sàng' if locale == 'vi' else 'Available' }}</span>
-      {% endif %}
-      {% if pvis.is_illustrative %}
-      <span class="sf-card-illus">{{ 'Minh họa' if locale == 'vi' else 'Illustrative' }}</span>
-      {% endif %}
-    </div>
-    <div class="sf-card-body">
-      <div class="sf-card-meta">{{ pet.code }} · {{ pet.species }}{% if pet.breed %} · {{ pet.breed }}{% endif %}</div>
-      <h2 class="sf-card-title"><a href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ pet.name }}</a></h2>
-      <div class="sf-card-meta">{{ pet.coat_color or ('Chưa ghi nhận màu lông' if locale == 'vi' else 'Coat color unlisted') }}</div>
-      <div class="sf-card-price">{{ format_money(pet.sale_price) }}</div>
-      <div class="sf-card-actions">
-        <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.pet_detail', pet_id=pet.id) }}">{{ 'Chi tiết' if locale == 'vi' else 'Details' }}</a>
-        <form method="post" action="{{ url_for('storefront.cart_add') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="item_type" value="pet">
-          <input type="hidden" name="item_id" value="{{ pet.id }}">
-          <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
-          <button class="sf-btn sf-btn-primary sf-btn-sm" type="submit" {% if pet.is_reserved %}disabled{% endif %}>{{ 'Đặt đón bé' if locale == 'vi' else 'Request' }}</button>
-        </form>
-      </div>
-    </div>
-  </article>
+    {{ pet_card(pet, next_self, locale, title_tag='h2', show_coat=True) }}
   {% endfor %}
 </div>
 {% else %}
-<div class="sf-panel">
-  <p>{{ 'Hiện chưa có thú cưng phù hợp tiêu chí bạn chọn.' if locale == 'vi' else 'No pets match the selected filters.' }}</p>
-</div>
+  {{ empty_state(
+    'pets',
+    'Chưa có thú cưng phù hợp tiêu chí' if locale == 'vi' else 'No pets match the selected filters',
+    'Thử xem toàn bộ thú cưng đang mở bán hoặc tìm theo ảnh để AI đối chiếu.' if locale == 'vi' else 'Browse all available pets or try visual image search.',
+    url_for('storefront.pets'),
+    'Xem tất cả thú cưng' if locale == 'vi' else 'View all pets',
+    url_for('storefront.image_search'),
+    'Tìm bằng ảnh' if locale == 'vi' else 'Find by photo'
+  ) }}
 {% endif %}
 
 {% if pagination and pagination.pages > 1 %}
@@ -91,4 +68,3 @@
 </nav>
 {% endif %}
 {% endblock %}
-

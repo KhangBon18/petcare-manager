@@ -31,13 +31,25 @@
     }
     return svg;
   }
+  function focusFallbackAfterToast(removedNode) {
+    const active = document.activeElement;
+    if (!active || (!removedNode.contains(active) && active !== document.body)) return;
+    const nextClose = region?.querySelector(".toast-close");
+    if (nextClose) { nextClose.focus(); return; }
+    document.getElementById("main-content")?.focus();
+  }
   function decorateToast(node, category) {
+    if (!region) return;
     node.classList.add("toast");
     node.setAttribute("role", category === "error" ? "alert" : "status");
     const close = document.createElement("button");
     close.type = "button"; close.className = "toast-close";
     close.setAttribute("aria-label", english ? "Dismiss notification" : "Đóng thông báo");
-    close.textContent = "×"; close.addEventListener("click", () => node.remove());
+    close.textContent = "×";
+    close.addEventListener("click", () => {
+      node.remove();
+      focusFallbackAfterToast(node);
+    });
     node.append(close);
     region.append(node);
     window.PetCare?.motion?.reveal([node]);
@@ -157,7 +169,12 @@
     openMenus.forEach(menu => {
       menu.open = false; menu.querySelector("summary").focus();
     });
-    if (!openMenus.length) document.querySelectorAll(".toast-region .toast").forEach(toast => toast.remove());
+    if (!openMenus.length) {
+      const active = document.activeElement;
+      const wasInToast = !!(active && region && region.contains(active));
+      region?.querySelectorAll(".toast").forEach(toast => toast.remove());
+      if (wasInToast) document.getElementById("main-content")?.focus();
+    }
   });
 
   document.querySelectorAll("[data-language-select]").forEach(select => {

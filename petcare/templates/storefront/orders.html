@@ -1,23 +1,25 @@
 {% extends "storefront/shop_base.html" %}
+{% from "storefront/_macros.html" import empty_state, order_payment_pill with context %}
 {% block title %}{{ 'Đơn hàng của tôi' if locale == 'vi' else 'My orders' }}{% endblock %}
 
 {% block content %}
 <div class="sf-page-head">
   <div>
     <h1>{{ 'Lịch sử đơn hàng' if locale == 'vi' else 'Order history' }}</h1>
-    <p>{{ 'Theo dõi trạng thái xử lý từng đơn đặt mua của bạn.' if locale == 'vi' else 'Track status of your placed orders.' }}</p>
+    <p>{{ 'Theo dõi trạng thái xử lý, thanh toán và hình thức nhận hàng.' if locale == 'vi' else 'Track fulfillment, payment status, and order progress.' }}</p>
   </div>
   <a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.account') }}">{{ 'Hồ sơ tài khoản' if locale == 'vi' else 'Account profile' }}</a>
 </div>
 
 <section class="sf-panel">
   {% if orders %}
-  <div class="sf-table-wrap">
+  <div class="sf-table-wrap sf-orders-table-wrap">
     <table class="sf-table">
       <thead>
         <tr>
           <th>{{ 'Mã đơn' if locale == 'vi' else 'Order #' }}</th>
           <th>{{ 'Ngày đặt' if locale == 'vi' else 'Placed at' }}</th>
+          <th>{{ 'Nhận hàng' if locale == 'vi' else 'Fulfillment' }}</th>
           <th>{{ 'Trạng thái' if locale == 'vi' else 'Status' }}</th>
           <th>{{ 'Thanh toán' if locale == 'vi' else 'Payment' }}</th>
           <th>{{ 'Tổng tiền' if locale == 'vi' else 'Total' }}</th>
@@ -29,8 +31,9 @@
         <tr>
           <td><strong>{{ ord.order_code }}</strong></td>
           <td>{{ format_datetime(ord.created_at) }}</td>
+          <td>{{ 'Giao COD' if ord.fulfillment_method == 'cod_delivery' else ('Nhận quầy' if locale == 'vi' else 'Pickup') }}</td>
           <td><span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span></td>
-          <td>{{ 'Đã thanh toán' if ord.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</td>
+          <td>{{ order_payment_pill(ord.payment_status, locale) }}</td>
           <td><strong>{{ format_money(ord.total_amount, ord.currency_code) }}</strong></td>
           <td><a class="sf-btn sf-btn-sm" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Xem đơn' if locale == 'vi' else 'View' }}</a></td>
         </tr>
@@ -38,10 +41,35 @@
       </tbody>
     </table>
   </div>
+
+  <div class="sf-order-cards" aria-label="{{ 'Lịch sử đơn hàng' if locale == 'vi' else 'Order history' }}">
+    {% for ord in orders %}
+    <article class="sf-order-card">
+      <div class="sf-order-card-head">
+        <strong>{{ ord.order_code }}</strong>
+        <span class="sf-status-pill sf-status-{{ ord.order_status }}">{{ g.storefront_order_status_labels.get(ord.order_status, ord.order_status) }}</span>
+      </div>
+      <div class="sf-order-card-meta">
+        <span>{{ format_datetime(ord.created_at) }}</span>
+        <span>·</span>
+        <span>{{ 'Giao COD' if ord.fulfillment_method == 'cod_delivery' else ('Nhận quầy' if locale == 'vi' else 'Pickup') }}</span>
+        {{ order_payment_pill(ord.payment_status, locale) }}
+      </div>
+      <div class="sf-order-card-foot">
+        <span class="sf-order-card-total">{{ format_money(ord.total_amount, ord.currency_code) }}</span>
+        <a class="sf-btn sf-btn-sm sf-order-card-action" href="{{ url_for('storefront.order_detail', order_code=ord.order_code) }}">{{ 'Xem đơn' if locale == 'vi' else 'View' }}</a>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
   {% else %}
-  <p>{{ 'Bạn chưa có đơn hàng nào.' if locale == 'vi' else 'You have no orders yet.' }}</p>
-  <a class="sf-btn sf-btn-primary" href="{{ url_for('storefront.products') }}">{{ 'Bắt đầu mua sắm' if locale == 'vi' else 'Start shopping' }}</a>
+    {{ empty_state(
+      'bag',
+      'Bạn chưa có đơn hàng nào' if locale == 'vi' else 'You have no orders yet',
+      'Khám phá sản phẩm và thú cưng sẵn có để đặt mua nhanh.' if locale == 'vi' else 'Browse available products and pets to place your first order.',
+      url_for('storefront.products'),
+      'Bắt đầu mua sắm' if locale == 'vi' else 'Start shopping'
+    ) }}
   {% endif %}
 </section>
 {% endblock %}
-

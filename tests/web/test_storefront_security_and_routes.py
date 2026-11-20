@@ -306,4 +306,105 @@ class StorefrontWebSecurityTests(TestCase):
                 self.assertIn(res["response_type"], {"clarification", "pet_recommendations", "product_recommendations"})
                 self.assertTrue(res["reply"])
 
+    def test_sprint1_shared_tokens_inline_checkout_validation_and_order_badges(self):
+        shop_html = self.client.get("/shop").get_data(as_text=True)
+        self.assertLess(
+            shop_html.index("/static/css/shared_tokens.css"),
+            shop_html.index("/static/css/storefront.css"),
+        )
+
+        cart_snap = {
+            "items": [
+                {
+                    "item_type": "product",
+                    "item_id": 11,
+                    "code": "FOOD-001",
+                    "name": "Thức ăn cho mèo 1kg",
+                    "category": "Thức ăn",
+                    "photo_filename": None,
+                    "unit_price": Decimal("100000"),
+                    "quantity": 1,
+                    "available_qty": 8,
+                    "line_total": Decimal("100000"),
+                    "is_available": True,
+                }
+            ],
+            "subtotal": Decimal("100000"),
+            "total_units": 1,
+            "has_unavailable": False,
+            "warnings": [],
+        }
+        with self.client.session_transaction() as sess:
+            sess["storefront_cart"] = [{"item_type": "product", "item_id": 11, "quantity": 1}]
+            sess["checkout_request_key"] = "12345678-1234-1234-1234-123456789012"
+
+        with (
+            patch("petcare.services.request_throttle_service.consume", return_value=(True, 0)),
+            patch("petcare.services.storefront_service.price_cart_snapshot", return_value=cart_snap),
+        ):
+            r_phone = self.client.post(
+                "/shop/checkout",
+                data={
+                    "request_key": "12345678-1234-1234-1234-123456789012",
+                    "customer_name": "Nguyễn An",
+                    "customer_phone": "123",
+                    "fulfillment_method": "pickup",
+                },
+            )
+            self.assertEqual(r_phone.status_code, 200)
+            html_phone = r_phone.get_data(as_text=True)
+            self.assertIn('id="checkout-phone-error"', html_phone)
+            self.assertIn('aria-invalid="true"', html_phone)
+
+            r_addr = self.client.post(
+                "/shop/checkout",
+                data={
+                    "request_key": "12345678-1234-1234-1234-123456789012",
+                    "customer_name": "Nguyễn An",
+                    "customer_phone": "0901234567",
+                    "fulfillment_method": "cod_delivery",
+                    "delivery_address": "",
+                },
+            )
+            self.assertEqual(r_addr.status_code, 200)
+            html_addr = r_addr.get_data(as_text=True)
+            self.assertIn('id="checkout-address-error"', html_addr)
+            self.assertIn('aria-invalid="true"', html_addr)
+
+        order_fixture = {
+            "order_code": "ORD-20261120-ABC123",
+            "created_at": "2026-11-20 19:00:00",
+            "order_status": "pending",
+            "payment_status": "unpaid",
+            "payment_method": "cod",
+            "fulfillment_method": "cod_delivery",
+            "customer_name": "Nguyễn An",
+            "customer_phone": "0901234567",
+            "delivery_address": "18 Nguyễn Huệ, Q1",
+            "currency_code": "VND",
+            "total_amount": Decimal("100000"),
+            "staff_note": "",
+            "items": [
+                {
+                    "item_type": "product",
+                    "item_code_snapshot": "FOOD-001",
+                    "name_snapshot": "Thức ăn cho mèo 1kg",
+                    "product_category": "Thức ăn",
+                    "product_photo_filename": None,
+                    "unit_price": Decimal("100000"),
+                    "quantity": 1,
+                    "line_total": Decimal("100000"),
+                }
+            ],
+        }
+        with patch("petcare.services.storefront_service.get_customer_order", return_value=order_fixture):
+            r_ord = self.client.get("/shop/orders/ORD-20261120-ABC123")
+            self.assertEqual(r_ord.status_code, 200)
+            ord_html = r_ord.get_data(as_text=True)
+            self.assertEqual(ord_html.count("sf-status-pill"), 1)
+            self.assertIn("sf-pay-unpaid", ord_html)
+            self.assertIn("Chưa thanh toán", ord_html)
+            self.assertIn("Tiến trình xử lý đơn hàng", ord_html)
+
+
 

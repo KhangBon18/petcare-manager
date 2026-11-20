@@ -1,0 +1,55 @@
+/* Shared Refined Precision Cloud Light design primitives (PetCare Manager v2.1).
+ * Single source of truth for neutral surfaces, slate inks, Precision Blue brand (#2563EB),
+ * WCAG AA semantic status colors, and shared touch/focus geometry across Storefront and SaaS.
+ * Loaded before ui.css (internal workspace) and storefront.css (public shop).
+ */
+:root {
+  /* Surfaces & hairline borders */
+  --pc-canvas: #F8FAFC;
+  --pc-surface: #FFFFFF;
+  --pc-surface-subtle: #F1F5F9;
+  --pc-border: #E2E8F0;
+  --pc-border-strong: #CBD5E1;
+
+  /* Slate ink scale */
+  --pc-ink: #0F172A;
+  --pc-ink-strong: #1E293B;
+  --pc-muted: #475569;
+  --pc-faint: #64748B;
+
+  /* Brand & interactive focus */
+  --pc-brand: #2563EB;
+  --pc-brand-hover: #1D4ED8;
+  --pc-brand-soft: #EFF6FF;
+  --pc-brand-faint: #F8FAFF;
+  --pc-brand-border: #BFDBFE;
+  --pc-focus-ring: rgba(37, 99, 235, 0.28);
+
+  /* Semantic status (WCAG AA on soft fills) */
+  --pc-ok: #047857;
+  --pc-ok-strong: #065F46;
+  --pc-ok-soft: #ECFDF5;
+  --pc-ok-border: #A7F3D0;
+
+  --pc-warn: #B45309;
+  --pc-warn-strong: #92400E;
+  --pc-warn-soft: #FFFBEB;
+  --pc-warn-border: #FDE68A;
+
+  --pc-danger: #B91C1C;
+  --pc-danger-strong: #991B1B;
+  --pc-danger-soft: #FEF2F2;
+  --pc-danger-border: #FECACA;
+
+  --pc-info: #0369A1;
+  --pc-info-soft: #F0F9FF;
+  --pc-info-border: #BAE6FD;
+
+  /* Shared ergonomics & elevation */
+  --pc-tap-min: 44px;
+  --pc-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --pc-shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --pc-shadow-sm: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --pc-shadow-md: 0 12px 30px rgba(15, 23, 42, 0.08);
+  --pc-shadow-float: 0 12px 32px rgba(15, 23, 42, 0.12), 0 2px 6px rgba(15, 23, 42, 0.06);
+}

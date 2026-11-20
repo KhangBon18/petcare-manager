@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
   {% block head %}{% endblock %}
 </head>
@@ -90,6 +91,7 @@
       {% if g.user.role == 'admin' %}<details class="mobile-admin-link mobile-admin-menu" data-mobile-menu><summary>{{ icon('team') }}<span>{{ 'Quản trị' if locale == 'vi' else 'Admin' }}</span></summary><nav aria-label="{{ 'Quản trị' if locale == 'vi' else 'Administration' }}"><a href="{{ url_for('store.settings') }}">{{ t('Cài đặt cửa hàng') }}</a><a href="{{ url_for('users.index') }}">{{ t('Tài khoản') }}</a><a href="{{ url_for('purchasing.index') }}">{{ t('Nhập hàng') }}</a><a href="{{ url_for('purchasing.suppliers_index') }}">{{ t('Nhà cung cấp') }}</a><a href="{{ url_for('audit.index') }}">{{ t('Nhật ký hoạt động') }}</a></nav></details>{% endif %}
     </header>
     <section class="page-wrap">
+      <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
       {% endwith %}
@@ -126,6 +128,7 @@
 {% else %}
 <main class="auth-shell" id="main-content" tabindex="-1">
   {% with language_picker_id="auth" %}{% include "partials/language_picker.html" %}{% endwith %}
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}<div class="flash-stack auth-flashes">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
   {% endwith %}
@@ -138,7 +141,6 @@
 {% endif %}
 <script src="{{ url_for('static', filename='vendor/gsap/gsap.min.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/motion.js') }}" defer></script>
-<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 {% block scripts %}{% endblock %}
 {% if g.user %}<script src="{{ url_for('static', filename='js/assistant.js') }}" defer></script>{% endif %}
