@@ -19,6 +19,18 @@
     <button class="button button-light" type="submit">{{ t('Lọc') }}</button>
     {% if status %}<a class="text-link" href="{{ url_for('purchasing.index') }}">{{ t('Xóa bộ lọc') }}</a>{% endif %}
   </form>
+  <nav class="ops-filter-chips" aria-label="{{ 'Lọc nhanh theo trạng thái đơn nhập' if locale == 'vi' else 'Quick filter by purchase order status' }}">
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.index') }}" {% if not status %}aria-current="page"{% endif %}>{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.index', status='ordered') }}" {% if status == 'ordered' %}aria-current="page"{% endif %}>{{ t('Đã đặt') }}</a>
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.index', status='partially_received') }}" {% if status == 'partially_received' %}aria-current="page"{% endif %}>{{ t('Đang nhận dở') }}</a>
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.index', status='received') }}" {% if status == 'received' %}aria-current="page"{% endif %}>{{ t('Đã nhận đủ') }}</a>
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.index', status='cancelled') }}" {% if status == 'cancelled' %}aria-current="page"{% endif %}>{{ t('Đã đóng') }}</a>
+  </nav>
+  {% if pagination and pagination.total %}
+  <div class="ops-results-bar">
+    <p class="ops-results-meta">{{ ('Hiển thị ' ~ pagination.first ~ '–' ~ pagination.last ~ ' / ' ~ pagination.total ~ ' đơn nhập') if locale == 'vi' else ('Showing ' ~ pagination.first ~ '–' ~ pagination.last ~ ' of ' ~ pagination.total ~ ' purchase orders') }}</p>
+  </div>
+  {% endif %}
   <div class="table-scroll" role="region" tabindex="0" aria-label="{{ t('Danh sách đơn nhập') }}">
     <table class="purchase-table"><thead><tr><th>{{ t('ĐƠN NHẬP') }}</th><th>{{ t('NHÀ CUNG CẤP') }}</th><th>{{ t('HÀNG ĐÃ NHẬN') }}</th><th>{{ t('GIÁ TRỊ ĐẶT') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th>{{ t('THAO TÁC') }}</th></tr></thead><tbody>
       {% for order in orders %}

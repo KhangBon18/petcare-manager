@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-heading compact-heading customer-profile-heading">
   <div>
-    
+    <a class="back-link" href="{{ url_for('customers.index') }}">← {{ t('Khách hàng') }}</a>
     <h1>{{ customer.full_name }}</h1>
     <p>{{ t('Hồ sơ liên hệ và lịch sử mua hàng của khách.') }}</p>
   </div>

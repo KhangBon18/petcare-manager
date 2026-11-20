@@ -2,9 +2,35 @@
 {% block title %}{{ t('Nhật ký hoạt động') }}{% endblock %}
 {% block content %}
 <div class="page-heading"><div><h1>{{ t('Nhật ký hoạt động') }}</h1><p>{{ t('Theo dõi phiên đăng nhập và các thay đổi quan trọng của cửa hàng hiện tại.') }}</p></div></div>
-<section class="panel"><div class="table-scroll"><table class="audit-table"><thead><tr><th>{{ t('THỜI GIAN') }}</th><th>{{ t('NGƯỜI THỰC HIỆN') }}</th><th>{{ t('HOẠT ĐỘNG') }}</th><th>{{ t('ĐỐI TƯỢNG') }}</th></tr></thead><tbody>
+<section class="panel">
+{% if pagination and pagination.total %}
+<div class="ops-results-bar ops-section-heading-padded">
+  <p class="ops-results-meta">{{ ('Hiển thị ' ~ pagination.first ~ '–' ~ pagination.last ~ ' / ' ~ pagination.total ~ ' sự kiện') if locale == 'vi' else ('Showing ' ~ pagination.first ~ '–' ~ pagination.last ~ ' of ' ~ pagination.total ~ ' events') }}</p>
+</div>
+{% endif %}
+<div class="table-scroll ops-desktop-table"><table class="audit-table"><thead><tr><th>{{ t('THỜI GIAN') }}</th><th>{{ t('NGƯỜI THỰC HIỆN') }}</th><th>{{ t('HOẠT ĐỘNG') }}</th><th>{{ t('ĐỐI TƯỢNG') }}</th></tr></thead><tbody>
 {% for event in events %}<tr><td class="audit-time">{{ format_datetime(event.created_at, '%b %d, %Y %I:%M:%S %p' if locale == 'en' else '%d/%m/%Y %H:%M:%S') }}</td><td><strong>{{ event.actor_name }}</strong><small class="audit-subtext">{{ event.actor_username }}</small></td><td><span class="audit-event-kind">{{ t(event.event_type) if locale == 'en' else event.event_label }}</span><small class="audit-subtext">{{ translate_audit_summary(event.summary) }}</small></td><td>{{ t(event.entity_type) }}{% if event.entity_id %} #{{ event.entity_id }}{% endif %}</td></tr>
 {% else %}<tr><td colspan="4" class="empty-cell">{{ t('Chưa có hoạt động được ghi nhận.') }}</td></tr>{% endfor %}
-</tbody></table></div>{% include "pagination.html" %}</section>
+</tbody></table></div>
+<ul class="ops-mobile-list" aria-label="{{ t('Nhật ký hoạt động') }}">
+{% for event in events %}
+  <li class="ops-mobile-card">
+    <div class="ops-mobile-card-head">
+      <div class="ops-mobile-title">
+        <strong>{{ t(event.event_type) if locale == 'en' else event.event_label }}</strong>
+        <small>{{ format_datetime(event.created_at, '%b %d, %Y %I:%M:%S %p' if locale == 'en' else '%d/%m/%Y %H:%M:%S') }}</small>
+      </div>
+      <span class="soft-badge">{{ t(event.entity_type) }}{% if event.entity_id %} #{{ event.entity_id }}{% endif %}</span>
+    </div>
+    <p class="audit-subtext">{{ translate_audit_summary(event.summary) }}</p>
+    <dl class="ops-mobile-meta">
+      <div><dt>{{ t('NGƯỜI THỰC HIỆN') }}</dt><dd>{{ event.actor_name }} · {{ event.actor_username }}</dd></div>
+    </dl>
+  </li>
+{% else %}
+  <li class="ops-mobile-card"><small class="muted">{{ t('Chưa có hoạt động được ghi nhận.') }}</small></li>
+{% endfor %}
+</ul>
+{% include "pagination.html" %}</section>
 <p class="audit-note">{{ t('Nhật ký chỉ lưu loại thao tác và mã đối tượng cần kiểm tra; không lưu mật khẩu, token, địa chỉ mạng hoặc nội dung ghi chú hóa đơn.') }}</p>
 {% endblock %}
