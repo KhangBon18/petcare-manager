@@ -9,7 +9,7 @@
 <section class="panel purchase-list-panel">
   <div class="table-toolbar supplier-toolbar">
     <form class="search-form" method="get" role="search" aria-label="{{ t('Tìm nhà cung cấp') }}">{{ icon('search') }}<input type="search" name="q" value="{{ search }}" placeholder="{{ t('Tìm tên, email hoặc số điện thoại') }}" aria-label="{{ t('Từ khóa nhà cung cấp') }}">{% if include_inactive %}<input type="hidden" name="all" value="1">{% endif %}<button class="button button-light" type="submit">{{ t('Tìm') }}</button></form>
-    <div class="toolbar-links">{% if search %}<a class="text-link" href="{{ url_for('purchasing.suppliers_index', all=1 if include_inactive else None) }}">{{ t('Xóa tìm kiếm') }}</a>{% endif %}<a class="text-link" href="{{ url_for('purchasing.suppliers_index', all=0 if include_inactive else 1, q=search) }}">{{ t('Chỉ nhà cung cấp đang dùng') if include_inactive else t('Xem cả nhà cung cấp đã ngừng') }}</a></div>
+    {% if search %}<div class="toolbar-links"><a class="text-link" href="{{ url_for('purchasing.suppliers_index', all=1 if include_inactive else None) }}">{{ t('Xóa tìm kiếm') }}</a></div>{% endif %}
   </div>
   <nav class="ops-filter-chips" aria-label="{{ 'Lọc nhanh nhà cung cấp' if locale == 'vi' else 'Quick filter suppliers' }}">
     <a class="ops-filter-chip" href="{{ url_for('purchasing.suppliers_index', q=search or None) }}" {% if not include_inactive %}aria-current="page"{% endif %}>{{ t('Đang dùng') }}</a>

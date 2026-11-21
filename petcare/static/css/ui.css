@@ -1198,6 +1198,14 @@ a.stat-card { display: block; color: inherit; }
 @media (max-width: 1024px), (pointer: coarse) {
   .button,
   .button-small,
+  .search-form .button,
+  .pos-order-bottom .button,
+  .pos-order-bottom .button-light,
+  .customer-mobile-actions .button,
+  .customer-mobile-actions .button-small,
+  .ops-mobile-card .button,
+  .ops-mobile-card .button-small,
+  .ops-mobile-card .table-action,
   .table-action,
   .back-link,
   .ops-filter-chip,
@@ -1213,6 +1221,7 @@ a.stat-card { display: block; color: inherit; }
   .mobile-admin-link > summary {
     min-height: var(--pc-tap-min, 44px);
   }
+  .toolbar-links a { min-height: var(--pc-tap-min, 44px); display: inline-flex; align-items: center; }
   .round-arrow { width: 44px; height: 44px; }
   .topbar .assistant-launcher { height: 44px; }
 }
@@ -1469,6 +1478,7 @@ details[open] > nav, details[open] > .ui-disclosure-body, details[open] > .accou
   .ops-mobile-list { display: grid; gap: 10px; padding: 0 12px 14px; }
   .product-list-table tbody tr:not(.product-empty-row),
   .customer-mobile-card { border-radius: var(--radius-lg); }
+  .customer-mobile-actions { padding-right: 0; }
   .customer-mobile-meta dd a:not(.count-pill) { text-decoration-color: var(--pc-brand-border); }
   .ops-filter-chips { flex-wrap: nowrap; overflow-x: auto; padding: 0 12px 10px; scrollbar-width: none; }
   .ops-filter-chips::-webkit-scrollbar { display: none; }
