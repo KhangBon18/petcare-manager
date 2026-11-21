@@ -9,9 +9,18 @@
 <section class="panel purchase-list-panel">
   <div class="table-toolbar supplier-toolbar">
     <form class="search-form" method="get" role="search" aria-label="{{ t('Tìm nhà cung cấp') }}">{{ icon('search') }}<input type="search" name="q" value="{{ search }}" placeholder="{{ t('Tìm tên, email hoặc số điện thoại') }}" aria-label="{{ t('Từ khóa nhà cung cấp') }}">{% if include_inactive %}<input type="hidden" name="all" value="1">{% endif %}<button class="button button-light" type="submit">{{ t('Tìm') }}</button></form>
-    <div class="toolbar-links">{% if search %}<a class="text-link" href="{{ url_for('purchasing.suppliers_index', all=1 if include_inactive else None) }}">{{ t('Xóa tìm kiếm') }}</a>{% endif %}<a class="text-link" href="{{ url_for('purchasing.suppliers_index', all=0 if include_inactive else 1, q=search) }}">{{ t('Chỉ nhà cung cấp đang dùng') if include_inactive else t('Xem cả nhà cung cấp đã ngừng') }}</a></div>
+    {% if search %}<div class="toolbar-links"><a class="text-link" href="{{ url_for('purchasing.suppliers_index', all=1 if include_inactive else None) }}">{{ t('Xóa tìm kiếm') }}</a></div>{% endif %}
   </div>
-  <div class="table-scroll" tabindex="0" aria-label="{{ t('Danh sách nhà cung cấp') }}"><table class="supplier-table"><thead><tr><th>{{ t('NHÀ CUNG CẤP') }}</th><th>{{ t('NGƯỜI LIÊN HỆ') }}</th><th>{{ t('SỐ ĐIỆN THOẠI') }}</th><th>{{ t('ĐƠN NHẬP') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
+  <nav class="ops-filter-chips" aria-label="{{ 'Lọc nhanh nhà cung cấp' if locale == 'vi' else 'Quick filter suppliers' }}">
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.suppliers_index', q=search or None) }}" {% if not include_inactive %}aria-current="page"{% endif %}>{{ t('Đang dùng') }}</a>
+    <a class="ops-filter-chip" href="{{ url_for('purchasing.suppliers_index', all=1, q=search or None) }}" {% if include_inactive %}aria-current="page"{% endif %}>{{ 'Cả đã ngừng' if locale == 'vi' else 'Include inactive' }}</a>
+  </nav>
+  {% if pagination and pagination.total %}
+  <div class="ops-results-bar">
+    <p class="ops-results-meta">{{ ('Hiển thị ' ~ pagination.first ~ '–' ~ pagination.last ~ ' / ' ~ pagination.total ~ ' nhà cung cấp') if locale == 'vi' else ('Showing ' ~ pagination.first ~ '–' ~ pagination.last ~ ' of ' ~ pagination.total ~ ' suppliers') }}</p>
+  </div>
+  {% endif %}
+  <div class="table-scroll ops-desktop-table" tabindex="0" aria-label="{{ t('Danh sách nhà cung cấp') }}"><table class="supplier-table"><thead><tr><th>{{ t('NHÀ CUNG CẤP') }}</th><th>{{ t('NGƯỜI LIÊN HỆ') }}</th><th>{{ t('SỐ ĐIỆN THOẠI') }}</th><th>{{ t('ĐƠN NHẬP') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
     {% for supplier in suppliers %}<tr>
       <td><a class="purchase-order-link" href="{{ url_for('purchasing.supplier_edit', supplier_id=supplier.id) }}"><strong>{{ supplier.name }}</strong>{% if supplier.email %}<small>{{ supplier.email }}</small>{% endif %}</a></td>
       <td>{{ supplier.contact_name or '—' }}</td><td>{{ supplier.phone or '—' }}</td><td><span class="count-pill">{{ supplier.purchase_order_count }}</span></td>
@@ -19,6 +28,33 @@
       <td class="actions"><a class="table-action" href="{{ url_for('purchasing.supplier_edit', supplier_id=supplier.id) }}">{{ t('Chỉnh sửa') }}</a>{% if supplier.active %}<form method="post" action="{{ url_for('purchasing.supplier_deactivate', supplier_id=supplier.id) }}" data-confirm="{{ t('Ngừng sử dụng nhà cung cấp này?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="table-action danger-link">{{ t('Ngừng') }}</button></form>{% else %}<form method="post" action="{{ url_for('purchasing.supplier_activate', supplier_id=supplier.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="table-action">{{ t('Kích hoạt') }}</button></form>{% endif %}</td>
     </tr>{% else %}<tr><td colspan="6"><div class="table-empty"><span>{{ icon('team') }}</span><strong>{{ t('Chưa có nhà cung cấp phù hợp') }}</strong><small>{{ t('Thêm nhà cung cấp để bắt đầu lập đơn nhập.') }}</small><a class="button button-primary button-small" href="{{ url_for('purchasing.supplier_create') }}">{{ t('Thêm nhà cung cấp') }}</a></div></td></tr>{% endfor %}
   </tbody></table></div>
+  <ul class="ops-mobile-list" aria-label="{{ t('Danh sách nhà cung cấp') }}">
+    {% for supplier in suppliers %}
+    <li class="ops-mobile-card">
+      <div class="ops-mobile-card-head">
+        <div class="ops-mobile-title">
+          <strong>{{ supplier.name }}</strong>
+          <small>{{ supplier.email or (supplier.contact_name or '—') }}</small>
+        </div>
+        <span class="status-pill {{ 'status-active' if supplier.active else 'status-muted' }}">{{ t('Đang dùng') if supplier.active else t('Đã ngừng') }}</span>
+      </div>
+      <dl class="ops-mobile-meta">
+        <div><dt>{{ t('NGƯỜI LIÊN HỆ') }}</dt><dd>{{ supplier.contact_name or '—' }}</dd></div>
+        <div><dt>{{ t('SỐ ĐIỆN THOẠI') }}</dt><dd>{% if supplier.phone %}<a href="tel:{{ supplier.phone|replace(' ', '') }}">{{ supplier.phone }}</a>{% else %}—{% endif %}</dd></div>
+        <div><dt>{{ t('ĐƠN NHẬP') }}</dt><dd><span class="count-pill">{{ supplier.purchase_order_count }}</span></dd></div>
+      </dl>
+      <div class="ops-mobile-card-foot">
+        <a class="button button-light button-small" href="{{ url_for('purchasing.supplier_edit', supplier_id=supplier.id) }}">{{ t('Chỉnh sửa') }}</a>
+        <div class="ops-mobile-card-actions">
+          {% if supplier.active %}<form method="post" action="{{ url_for('purchasing.supplier_deactivate', supplier_id=supplier.id) }}" data-confirm="{{ t('Ngừng sử dụng nhà cung cấp này?') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-danger-outline button-small" type="submit">{{ t('Ngừng') }}</button></form>
+          {% else %}<form method="post" action="{{ url_for('purchasing.supplier_activate', supplier_id=supplier.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-secondary button-small" type="submit">{{ t('Kích hoạt') }}</button></form>{% endif %}
+        </div>
+      </div>
+    </li>
+    {% else %}
+    <li class="ops-mobile-card"><div class="table-empty"><span>{{ icon('team') }}</span><strong>{{ t('Chưa có nhà cung cấp phù hợp') }}</strong><small>{{ t('Thêm nhà cung cấp để bắt đầu lập đơn nhập.') }}</small><a class="button button-primary button-small" href="{{ url_for('purchasing.supplier_create') }}">{{ t('Thêm nhà cung cấp') }}</a></div></li>
+    {% endfor %}
+  </ul>
   {% include "pagination.html" %}
 </section>
 {% endblock %}

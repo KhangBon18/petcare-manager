@@ -7,10 +7,10 @@
   <meta name="theme-color" content="#F8FAFC">
   <title>{% block title %}PetCare Manager{% endblock %} · {{ t('Cửa hàng thú cưng') }}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
   {% block head %}{% endblock %}
 </head>

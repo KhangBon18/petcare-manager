@@ -4,7 +4,7 @@
 {% block content %}
 {% set form_data = form_data or {} %}
 {% set sex_value = form_data.get('sex', pet.sex if pet else 'unknown') %}
-<div class="page-heading compact-heading"><div><h1>{{ t('Chỉnh sửa hồ sơ') if pet else t('Thêm thú cưng mới') }}</h1><p>{{ t('Người mua chỉ được gắn khi hóa đơn thanh toán thành công.') }}</p></div></div>
+<div class="page-heading compact-heading"><div><a class="back-link" href="{{ url_for('pets.index') }}">← {{ t('Thú cưng') }}</a><h1>{{ t('Chỉnh sửa hồ sơ') if pet else t('Thêm thú cưng mới') }}</h1><p>{{ t('Người mua chỉ được gắn khi hóa đơn thanh toán thành công.') }}</p></div></div>
 <section class="form-card panel"><form method="post" enctype="multipart/form-data" class="form-stack"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><div class="form-grid">
 <h2 class="form-section-heading field-wide">{{ t('Thông tin cơ bản') }}</h2>
 <label>{{ t('Mã cá thể') }}<input name="code" maxlength="48" required value="{{ form_data.get('code', pet.code if pet else '') }}" placeholder="PET-002"></label>

@@ -20,7 +20,7 @@
       <div><h2>{{ t('Chi tiết hóa đơn') }}</h2></div>
       <span class="soft-badge">{{ format_datetime(invoice.created_at) if invoice.created_at else '' }}</span>
     </div>
-    <div class="table-scroll">
+    <div class="table-scroll ops-desktop-table">
       <table>
         <thead><tr><th>{{ t('MÃ / TÊN') }}</th><th>{{ t('LOẠI') }}</th><th>{{ t('ĐƠN GIÁ') }}</th><th>{{ t('SỐ LƯỢNG') }}</th><th>{{ t('ĐÃ HOÀN') }}</th><th>{{ t('THÀNH TIỀN') }}</th></tr></thead>
         <tbody>
@@ -38,6 +38,24 @@
         <tfoot><tr><td colspan="5">{{ t('Tổng cộng') }}</td><td class="money-cell total-cell">{{ format_money(invoice.total_amount, invoice.currency_code) }}</td></tr></tfoot>
       </table>
     </div>
+    <ul class="ops-mobile-list" aria-label="{{ t('Chi tiết hóa đơn') }}">
+      {% for item in invoice['items'] %}
+      <li class="ops-mobile-card">
+        <div class="ops-mobile-card-head">
+          <div class="ops-mobile-title">
+            <strong>{{ item.name_snapshot }}</strong>
+            <small>{{ item.item_code_snapshot }} · {{ t('Thú cưng') if item.item_type == 'pet' else t('Sản phẩm') }}</small>
+          </div>
+          <strong class="money-cell">{{ format_money(item.line_total, invoice.currency_code) }}</strong>
+        </div>
+        <dl class="ops-mobile-meta">
+          <div><dt>{{ t('ĐƠN GIÁ') }}</dt><dd>{{ format_money(item.unit_price, invoice.currency_code) }}</dd></div>
+          <div><dt>{{ t('SỐ LƯỢNG') }}</dt><dd>{{ format_number(item.quantity) }}{% if item.refunded_quantity %} · <span class="refund-quantity">{{ t('Đã hoàn') }} {{ format_number(item.refunded_quantity) }}</span>{% endif %}</dd></div>
+        </dl>
+      </li>
+      {% endfor %}
+      <li class="ops-mobile-card ops-mobile-total"><div class="ops-mobile-card-head"><strong>{{ t('Tổng cộng') }}</strong><strong class="money-cell total-cell">{{ format_money(invoice.total_amount, invoice.currency_code) }}</strong></div></li>
+    </ul>
     {% if invoice.note %}<div class="invoice-note"><strong>{{ t('Ghi chú') }}</strong><p>{{ invoice.note }}</p></div>{% endif %}
     <div class="invoice-meta"><span>{{ t('Lập bởi') }} <strong>{{ invoice.created_by_name }}</strong></span>{% if invoice.paid_at %}<span>{{ t('Thanh toán lúc') }} <strong>{{ format_datetime(invoice.paid_at) }}</strong></span>{% endif %}</div>
   </section>

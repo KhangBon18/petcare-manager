@@ -15,7 +15,7 @@
 
 <section class="panel">
   <div class="table-toolbar">
-    <form class="search-form" method="get" role="search">
+    <form class="search-form" method="get" role="search" aria-label="{{ 'Tìm đơn đặt hàng online' if locale == 'vi' else 'Search storefront orders' }}">
       {{ icon('search') }}
       <input type="search" name="q" value="{{ search }}" placeholder="{{ 'Tìm mã đơn, tên khách hoặc số điện thoại' if locale == 'vi' else 'Search order code, customer, or phone' }}">
       <select name="status" aria-label="{{ 'Lọc trạng thái' if locale == 'vi' else 'Order status' }}">
@@ -26,10 +26,28 @@
       </select>
       <button class="button button-light" type="submit">{{ t('Lọc') }}</button>
     </form>
+    {% if search or status %}
+    <div class="toolbar-links">
+      <a class="text-link" href="{{ url_for('orders.index') }}">{{ t('Xóa bộ lọc') }}</a>
+    </div>
+    {% endif %}
   </div>
 
+  <nav class="ops-filter-chips" aria-label="{{ 'Lọc nhanh theo trạng thái đơn' if locale == 'vi' else 'Quick filter by order status' }}">
+    <a class="ops-filter-chip" href="{{ url_for('orders.index', q=search or None) }}" {% if not status %}aria-current="page"{% endif %}>{{ 'Tất cả' if locale == 'vi' else 'All' }}</a>
+    {% for key, label in status_labels.items() %}
+    <a class="ops-filter-chip" href="{{ url_for('orders.index', status=key, q=search or None) }}" {% if status == key %}aria-current="page"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  {% if pagination and pagination.total %}
+  <div class="ops-results-bar">
+    <p class="ops-results-meta">{{ ('Hiển thị ' ~ pagination.first ~ '–' ~ pagination.last ~ ' / ' ~ pagination.total ~ ' đơn') if locale == 'vi' else ('Showing ' ~ pagination.first ~ '–' ~ pagination.last ~ ' of ' ~ pagination.total ~ ' orders') }}</p>
+  </div>
+  {% endif %}
+
   {% if orders %}
-  <div class="table-scroll">
+  <div class="table-scroll ops-desktop-table">
     <table>
       <thead>
         <tr>
@@ -48,24 +66,51 @@
           <td><a href="{{ url_for('orders.detail', order_id=ord.id) }}"><strong>{{ ord.order_code }}</strong></a><small class="cell-hint">{{ format_datetime(ord.created_at) }}</small></td>
           <td><strong>{{ ord.customer_name }}</strong><small class="cell-hint">{{ ord.customer_phone }}</small></td>
           <td>{{ 'Giao COD' if ord.fulfillment_method == 'cod_delivery' else ('Nhận tại quầy' if locale == 'vi' else 'Pickup') }}</td>
-          <td><span class="status-pill {{ 'status-active' if ord.order_status == 'ready_completed' else ('status-muted' if ord.order_status in ('rejected', 'cancelled') else 'status-sold') }}">{{ status_labels.get(ord.order_status, ord.order_status) }}</span></td>
-          <td>{{ 'Đã thu' if ord.payment_status == 'paid' else ('Chưa thu' if locale == 'vi' else 'Unpaid') }}</td>
+          <td><span class="status-pill {{ 'status-active' if ord.order_status == 'ready_completed' else ('status-muted' if ord.order_status in ('rejected', 'cancelled') else ('status-pending' if ord.order_status == 'pending' else 'status-sold')) }}">{{ status_labels.get(ord.order_status, ord.order_status) }}</span></td>
+          <td><span class="pay-pill {{ 'pay-pill-paid' if ord.payment_status == 'paid' else 'pay-pill-unpaid' }}">{{ ('Đã thu' if locale == 'vi' else 'Paid') if ord.payment_status == 'paid' else ('Chưa thu' if locale == 'vi' else 'Unpaid') }}</span></td>
           <td class="money-cell">{{ format_money(ord.total_amount, ord.currency_code) }}</td>
-          <td><a class="table-action" href="{{ url_for('orders.detail', order_id=ord.id) }}">{{ 'Xử lý' if locale == 'vi' else 'Process' }}</a></td>
+          <td><a class="table-action" href="{{ url_for('orders.detail', order_id=ord.id) }}">{{ 'Xử lý' if locale == 'vi' else 'Process' }} →</a></td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+
+  <ul class="ops-mobile-list" aria-label="{{ 'Danh sách đơn đặt hàng online' if locale == 'vi' else 'Online storefront orders' }}">
+    {% for ord in orders %}
+    <li class="ops-mobile-card">
+      <div class="ops-mobile-card-head">
+        <div class="ops-mobile-title">
+          <strong>{{ ord.order_code }}</strong>
+          <small>{{ format_datetime(ord.created_at) }}</small>
+        </div>
+        <div class="ops-mobile-badges">
+          <span class="status-pill {{ 'status-active' if ord.order_status == 'ready_completed' else ('status-muted' if ord.order_status in ('rejected', 'cancelled') else ('status-pending' if ord.order_status == 'pending' else 'status-sold')) }}">{{ status_labels.get(ord.order_status, ord.order_status) }}</span>
+          <span class="pay-pill {{ 'pay-pill-paid' if ord.payment_status == 'paid' else 'pay-pill-unpaid' }}">{{ ('Đã thu' if locale == 'vi' else 'Paid') if ord.payment_status == 'paid' else ('Chưa thu' if locale == 'vi' else 'Unpaid') }}</span>
+        </div>
+      </div>
+      <dl class="ops-mobile-meta">
+        <div><dt>{{ 'Khách hàng' if locale == 'vi' else 'Customer' }}</dt><dd>{{ ord.customer_name }}</dd></div>
+        <div><dt>{{ t('Số điện thoại') }}</dt><dd><a href="tel:{{ ord.customer_phone|replace(' ', '') }}">{{ ord.customer_phone }}</a></dd></div>
+        <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Fulfillment' }}</dt><dd>{{ 'Giao COD' if ord.fulfillment_method == 'cod_delivery' else ('Nhận tại quầy' if locale == 'vi' else 'Pickup') }}</dd></div>
+        <div><dt>{{ 'Tổng tiền' if locale == 'vi' else 'Total' }}</dt><dd class="money-cell"><strong>{{ format_money(ord.total_amount, ord.currency_code) }}</strong></dd></div>
+      </dl>
+      <div class="ops-mobile-card-foot">
+        <span class="cell-hint">{{ ('COD khi giao' if ord.payment_method == 'cod' else 'Thanh toán tại quầy') if locale == 'vi' else ('COD on delivery' if ord.payment_method == 'cod' else 'Pay at store') }}</span>
+        <a class="button button-primary button-small" href="{{ url_for('orders.detail', order_id=ord.id) }}">{{ 'Xử lý' if locale == 'vi' else 'Process' }} →</a>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
   {% else %}
   <div class="empty-state">
     <span class="empty-icon">{{ icon('bag') }}</span>
-    <h2>{{ 'Chưa có đơn hàng online nào' if locale == 'vi' else 'No storefront orders yet' }}</h2>
-    <p>{{ 'Đơn hàng khách đặt tại /shop sẽ xuất hiện tại đây để nhân viên xác nhận và xử lý.' if locale == 'vi' else 'Customer orders submitted on /shop will appear here for staff processing.' }}</p>
+    <h2>{{ 'Chưa có đơn hàng phù hợp' if (search or status) else ('Chưa có đơn hàng online nào' if locale == 'vi' else 'No storefront orders yet') }}</h2>
+    <p>{{ 'Thử đổi từ khóa hoặc xóa bộ lọc trạng thái để xem lại tất cả đơn.' if (search or status) else ('Đơn hàng khách đặt tại /shop sẽ xuất hiện tại đây để nhân viên xác nhận và xử lý.' if locale == 'vi' else 'Customer orders submitted on /shop will appear here for staff processing.') }}</p>
+    {% if search or status %}<a class="button button-light button-small" href="{{ url_for('orders.index') }}">{{ t('Xóa bộ lọc') }}</a>{% endif %}
   </div>
   {% endif %}
 
   {% include "pagination.html" %}
 </section>
 {% endblock %}
-

@@ -10,11 +10,35 @@
     <p>{{ 'Khách hàng' if locale == 'vi' else 'Customer' }}: <strong>{{ order.customer_name }}</strong> · {{ order.customer_phone }}</p>
   </div>
   <div class="heading-actions">
-    <span class="status-pill {{ 'status-active' if order.order_status == 'ready_completed' else ('status-muted' if order.order_status in ('rejected', 'cancelled') else 'status-sold') }}">{{ status_labels.get(order.order_status, order.order_status) }}</span>
+    <span class="status-pill {{ 'status-active' if order.order_status == 'ready_completed' else ('status-muted' if order.order_status in ('rejected', 'cancelled') else ('status-pending' if order.order_status == 'pending' else 'status-sold')) }}">{{ status_labels.get(order.order_status, order.order_status) }}</span>
+    <span class="pay-pill {{ 'pay-pill-paid' if order.payment_status == 'paid' else 'pay-pill-unpaid' }}">{{ ('Đã thanh toán' if locale == 'vi' else 'Paid') if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</span>
     {% if order.invoice_id %}
     <a class="button button-light" href="{{ url_for('invoices.detail', invoice_id=order.invoice_id) }}">{{ icon('invoice') }} {{ 'Xem hóa đơn #' ~ order.invoice_id }}</a>
     {% endif %}
   </div>
+</div>
+
+{% if order.order_status not in ('rejected', 'cancelled') %}
+{% set step_idx = {'pending': 1, 'confirmed': 2, 'preparing': 3, 'fulfilled': 3, 'ready_completed': 4}.get(order.order_status, 1) %}
+<ol class="ops-progress" aria-label="{{ 'Tiến trình xử lý đơn hàng' if locale == 'vi' else 'Order fulfillment progress' }}">
+  <li class="{{ 'is-done' if step_idx > 1 else 'is-current' }}"><span class="ops-progress-num">1</span><span>{{ 'Tiếp nhận' if locale == 'vi' else 'Received' }}</span></li>
+  <li class="{{ 'is-done' if step_idx > 2 else ('is-current' if step_idx == 2 else '') }}"><span class="ops-progress-num">2</span><span>{{ 'Xác nhận giữ hàng' if locale == 'vi' else 'Confirmed' }}</span></li>
+  <li class="{{ 'is-done' if step_idx > 3 else ('is-current' if step_idx == 3 else '') }}"><span class="ops-progress-num">3</span><span>{{ 'Chuẩn bị / Giao' if locale == 'vi' else 'Prepare / Deliver' }}</span></li>
+  <li class="{{ 'is-done' if step_idx >= 4 else '' }}"><span class="ops-progress-num">4</span><span>{{ 'Thu tiền & Hóa đơn' if locale == 'vi' else 'Paid & Invoiced' }}</span></li>
+</ol>
+{% endif %}
+
+<div class="ops-next-action" role="note">
+  <strong>{{ 'Bước tiếp theo cho nhân viên:' if locale == 'vi' else 'Next step for staff:' }}</strong>
+  {% if order.order_status == 'pending' %}
+    <span>{{ ('Gọi ' ~ order.customer_phone ~ ' để xác nhận mặt hàng' ~ (' & địa chỉ/phí giao COD' if order.fulfillment_method == 'cod_delivery' else ' & thời gian nhận tại quầy') ~ ', sau đó bấm Xác nhận đơn để giữ cá thể thú cưng.') if locale == 'vi' else ('Call ' ~ order.customer_phone ~ ' to verify items' ~ (' & COD delivery details' if order.fulfillment_method == 'cod_delivery' else ' & store pickup timing') ~ ', then Confirm order.') }}</span>
+  {% elif order.order_status in ('confirmed', 'preparing', 'fulfilled') %}
+    <span>{{ ('Đơn đang ở trạng thái chưa thu tiền. Chỉ bấm "Xác nhận đã thu tiền & Xuất hóa đơn" ở cột phải sau khi đã nhận đủ tiền ' ~ ('từ shipper COD.' if order.fulfillment_method == 'cod_delivery' else 'tại quầy.')) if locale == 'vi' else ('Payment remains unpaid until staff explicitly verify cash collected ' ~ ('from COD delivery.' if order.fulfillment_method == 'cod_delivery' else 'at the store counter.')) }}</span>
+  {% elif order.order_status == 'ready_completed' %}
+    <span>{{ 'Đơn đã hoàn tất thanh toán và đồng bộ sang hóa đơn bán hàng & sổ tồn kho.' if locale == 'vi' else 'Order is settled and linked to an official sales invoice and inventory record.' }}</span>
+  {% else %}
+    <span>{{ 'Đơn đã đóng; mọi giữ hàng tạm (nếu có) đã được hoàn trả về kho.' if locale == 'vi' else 'This closed order has released any temporarily reserved items.' }}</span>
+  {% endif %}
 </div>
 
 <div class="detail-grid">
@@ -39,7 +63,7 @@
   <section class="panel invoice-action-card">
     <h2>{{ 'Xử lý đơn hàng' if locale == 'vi' else 'Fulfillment actions' }}</h2>
     <dl class="detail-list">
-      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment status' }}</dt><dd><strong>{{ 'Đã thanh toán' if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</strong> ({{ 'COD' if order.payment_method == 'cod' else ('Tại quầy' if order.payment_method in ('store', 'cash') else order.payment_method|upper) }})</dd></div>
+      <div><dt>{{ 'Thanh toán' if locale == 'vi' else 'Payment status' }}</dt><dd><span class="pay-pill {{ 'pay-pill-paid' if order.payment_status == 'paid' else 'pay-pill-unpaid' }}">{{ ('Đã thanh toán' if locale == 'vi' else 'Paid') if order.payment_status == 'paid' else ('Chưa thanh toán' if locale == 'vi' else 'Unpaid') }}</span> <small class="cell-hint">({{ 'COD' if order.payment_method == 'cod' else ('Tại quầy' if order.payment_method in ('store', 'cash', 'pay_at_store') else order.payment_method|upper) }})</small></dd></div>
       <div><dt>{{ 'Nhận hàng' if locale == 'vi' else 'Fulfillment' }}</dt><dd>{{ 'Giao hàng COD' if order.fulfillment_method == 'cod_delivery' else ('Nhận tại cửa hàng' if locale == 'vi' else 'Store pickup') }}</dd></div>
       {% if order.delivery_address %}<div><dt>{{ 'Địa chỉ' if locale == 'vi' else 'Address' }}</dt><dd>{{ order.delivery_address }}</dd></div>{% endif %}
       {% if order.customer_note %}<div><dt>{{ 'Ghi chú khách' if locale == 'vi' else 'Customer note' }}</dt><dd>{{ order.customer_note }}</dd></div>{% endif %}
@@ -95,4 +119,3 @@
   </section>
 </div>
 {% endblock %}
-

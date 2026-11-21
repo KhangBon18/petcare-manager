@@ -1053,10 +1053,23 @@ body.sf-keyboard-open .sf-mobile-dock {
 }
 .sf-trust-item strong { display: block; font-size: 14px; color: var(--sf-ink); }
 .sf-trust-item p { margin: 2px 0 0; font-size: 12.5px; color: var(--sf-muted); line-height: 1.45; }
-.sf-footer-brand { display: grid; gap: 4px; }
+.sf-footer-brand { display: grid; gap: 6px; min-width: 0; }
 .sf-footer-preview-note { font-size: 12px; color: var(--sf-faint); }
+.sf-footer-policies { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--sf-muted); }
 .sf-footer-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .sf-auth-alt { margin: 16px 0 0; font-size: 13.5px; color: var(--sf-muted); }
+
+.sf-policy-box {
+  border: 1px solid var(--sf-border);
+  border-radius: var(--sf-radius-md);
+  background: var(--sf-subtle);
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+}
+.sf-policy-box-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.sf-policy-specs { margin: 0; font-size: 13.5px; }
+.sf-policy-footnote { margin: 0; font-size: 12.5px; color: var(--sf-muted); }
 
 /* Responsive layout & touch targets (always ordered after base components) */
 @media (max-width: 1080px) {
