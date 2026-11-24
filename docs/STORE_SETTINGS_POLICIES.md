@@ -43,7 +43,12 @@ Defined in [`petcare/database/storefront.sql`](../petcare/database/storefront.sq
 - **RBAC & CSRF:** Both `GET /store/settings` and `POST /store/settings/public-policies` require `@login_required` + `@admin_required` (`Staff` receives HTTP `403`) and valid CSRF tokens.
 - **URL Validation (`_validated_http_url` in `petcare/services/tenant_settings_service.py`):**
   - Wraps `urlsplit` and `.port` parsing to catch `ValueError` / `UnicodeError` cleanly and return `ValidationError` (HTTP `200` with field error, never HTTP `500`).
-  - Allows only `http://` or `https://` schemes; rejects whitespace, embedded credentials (`username`/`password`), missing/invalid hostnames (supports IPv4/IPv6 literals and valid DNS/IDN labels), and ports outside `1–65535`.
+  - Allows only `http://` or `https://` schemes with a non-empty authority, valid ports (`1–65535` when specified), no whitespace, no embedded credentials (`username`, `password`, or `@` in `netloc`), and no backslashes (`\`) in `netloc`.
+  - **Host compatibility & rejection policy (`_is_valid_url_hostname`):**
+    - Accepts canonical dotted-quad IPv4 literals (`192.0.2.10`) via strict `ipaddress.IPv4Address` parsing.
+    - Accepts bracketed IPv6 literals (`[2001:db8::1]`) via strict `ipaddress.IPv6Address` parsing, explicitly rejecting IPv6 zone/scope identifiers (e.g., `[fe80::1%eth0]`, `[fe80::1%25eth0]`) as non-routable/unsuitable for public storefront links.
+    - Accepts valid DNS and IDN hostnames including an optional single trailing DNS root dot (e.g., `https://example.com.`, `https://example.com./terms`, `https://cửahàng.vn./chinh-sach`), validated via IDNA with `1–63` char labels, max `253` chars (without the trailing dot), and a non-numeric / non-hex rightmost label.
+    - Explicitly rejects malformed/non-canonical IPv4-like and numeric hosts (e.g., `999.999.999.999`, `256.0.0.1`, `1.2.3.4.5`, `127.1`, `0177.0.0.1`, `0x7f.0.0.1`, `192.0.2.10.`, `example.123`) as well as leading/consecutive/double-trailing dots (`.example.com`, `bad..example.com`, `example.com..`, `.`).
   - `_is_safe_http_href()` re-validates on read so unsafe stored values never become clickable links.
 - **Audit Log:** Emits `tenant.public_policies_updated` with `{"changed_fields": [...]}` (field names only, no raw policy values).
 

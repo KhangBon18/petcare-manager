@@ -26,17 +26,36 @@ class StorePublicPolicyUnitContractTests(unittest.TestCase):
             "https://[broken",
             "http://[::1",
             "https://[2001:db8::1/terms",
+            "https://[fe80::1%25eth0]",
+            "https://[fe80::1%eth0]/terms",
+            "https://[192.0.2.1]/terms",
+            "https://999.999.999.999",
+            "https://999.999.999.999/terms",
+            "https://999.999.999.999.",
+            "https://256.0.0.1/terms",
+            "https://1.2.3.4.5/terms",
+            "https://127.1/terms",
+            "https://0177.0.0.1/terms",
+            "https://0x7f.0.0.1/terms",
+            "https://192.0.2.10./terms",
+            "https://example.123/terms",
             "https://example.test:99999",
             "https://example.test:0",
             "https://example.test:65536",
             "https://example.test:abc",
             "https://:443/terms",
             "https://[]:443/terms",
+            "https://./terms",
+            "https://../terms",
             "https://bad..example.com/terms",
             "https://.example.com/terms",
-            "https://example.com./terms",
+            "https://example.com../terms",
             "https://foo[bar]/terms",
             "https://-bad.example.com/terms",
+            "https://@example.com/terms",
+            "https://user:pass@example.com/terms",
+            "https://example.com\\@evil.com/terms",
+            "https://example.com\\path",
         ]
         for raw in invalid_urls:
             with self.subTest(url=raw):
@@ -48,15 +67,26 @@ class StorePublicPolicyUnitContractTests(unittest.TestCase):
 
         valid_urls = [
             "https://example.com/terms",
+            "https://example.com.",
+            "https://example.com./terms",
+            "https://example.com.:8443/terms",
             "https://example.com:8443/terms",
             "http://zalo.me/petcare",
             "https://[2001:db8::1]/terms",
             "https://192.0.2.10/privacy",
+            "https://münchen.de/terms",
+            "https://cửahàng.vn./chinh-sach",
         ]
         for raw in valid_urls:
             with self.subTest(valid_url=raw):
                 self.assertEqual(tenant_settings_service._validated_http_url(raw, "Liên kết Zalo"), raw)
                 self.assertEqual(tenant_settings_service._is_safe_http_href(raw), raw)
+
+        self.assertFalse(tenant_settings_service._is_valid_url_hostname("999.999.999.999"))
+        self.assertFalse(tenant_settings_service._is_valid_url_hostname("fe80::1%eth0", bracketed=True))
+        self.assertFalse(tenant_settings_service._is_valid_url_hostname("2001:db8::1", bracketed=False))
+        self.assertTrue(tenant_settings_service._is_valid_url_hostname("2001:db8::1", bracketed=True))
+        self.assertTrue(tenant_settings_service._is_valid_url_hostname("example.com.", bracketed=False))
 
     def test_schema_service_template_and_docs_contract_stay_in_sync(self):
         sql_text = (REPO_ROOT / "petcare/database/storefront.sql").read_text(encoding="utf-8")
@@ -180,11 +210,14 @@ class StorePublicPolicyTests(unittest.TestCase):
                 403,
             )
 
-            # 2. Validation rejects javascript:, malformed IPv6, out-of-range port, invalid email/hotline with HTTP 200 (never 500).
+            # 2. Validation rejects javascript:, malformed IPv6/IPv4 lookalikes, zone IDs, embedded creds, out-of-range port with HTTP 200 (never 500).
             for bad_terms_url, bad_zalo in (
                 ("javascript:alert(1)", "https://zalo.me/ok"),
                 ("https://[broken", "https://example.test:99999/zalo"),
                 ("https://:443/terms", "https://bad..example.com/zalo"),
+                ("https://999.999.999.999", "https://[fe80::1%25eth0]"),
+                ("https://[fe80::1%eth0]/terms", "https://256.0.0.1/zalo"),
+                ("https://@example.com/terms", "https://example.com\\@evil.com"),
             ):
                 bad_resp = admin_client.post(
                     "/store/settings/public-policies",
@@ -205,6 +238,22 @@ class StorePublicPolicyTests(unittest.TestCase):
                     self.assertIn("support_zalo-error", bad_html)
                 self.assertIn("support_email-error", bad_html)
                 self.assertIn("support_hotline-error", bad_html)
+
+            # 2b. Valid trailing-dot DNS and IDN URLs persist cleanly via POST and render on /shop.
+            trailing_dot_resp = admin_client.post(
+                "/store/settings/public-policies",
+                data={
+                    "csrf_token": self._csrf(admin_client, "/store/settings"),
+                    "support_zalo": "https://cửahàng.vn./zalo",
+                    "privacy_terms_url": "https://example.com.",
+                },
+                follow_redirects=False,
+            )
+            self.assertEqual(trailing_dot_resp.status_code, 302)
+            self.app.config["PUBLIC_STORE_SLUG"] = slug
+            trailing_shop_html = self.app.test_client().get("/shop").get_data(as_text=True)
+            self.assertIn('href="https://example.com."', trailing_shop_html)
+            self.assertIn('href="https://cửahàng.vn./zalo"', trailing_shop_html)
 
             # 3. Valid save + HTML XSS escape + audit event recorded without sensitive values.
             save_resp = admin_client.post(

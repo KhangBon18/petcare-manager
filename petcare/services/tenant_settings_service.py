@@ -36,6 +36,7 @@ _HOTLINE_RE = re.compile(r"^[0-9+\-\s().]{6,60}$")
 _ZALO_HANDLE_RE = re.compile(r"^[A-Za-z0-9@+._\-\s]{3,160}$")
 _CTRL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _HOSTNAME_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+_NUMERIC_HOST_LABEL_RE = re.compile(r"^(?:[0-9]+|0[xX][0-9A-Fa-f]+)$")
 
 
 def _clean_text(value: object, label: str, maximum: int) -> str:
@@ -49,24 +50,49 @@ def _clean_text(value: object, label: str, maximum: int) -> str:
     return cleaned
 
 
-def _is_valid_url_hostname(hostname: str) -> bool:
-    if not hostname or len(hostname) > 253:
+def _is_valid_url_hostname(hostname: str, *, bracketed: bool | None = None) -> bool:
+    if not hostname or any(ch in hostname for ch in "%\\[]"):
         return False
+
+    is_ipv6_host = bracketed if bracketed is not None else (":" in hostname)
+    if is_ipv6_host:
+        try:
+            ipaddress.IPv6Address(hostname)
+            return True
+        except ValueError:
+            return False
+
+    if ":" in hostname:
+        return False
+
     try:
-        ipaddress.ip_address(hostname)
+        ipaddress.IPv4Address(hostname)
         return True
     except ValueError:
         pass
-    if hostname.startswith(".") or hostname.endswith(".") or ".." in hostname:
+
+    dns_host = hostname[:-1] if hostname.endswith(".") else hostname
+    if (
+        not dns_host
+        or len(dns_host) > 253
+        or dns_host.startswith(".")
+        or dns_host.endswith(".")
+        or ".." in dns_host
+    ):
         return False
+
     try:
-        ascii_host = hostname.encode("idna").decode("ascii")
+        ascii_host = dns_host.encode("idna").decode("ascii")
     except (UnicodeError, ValueError):
         return False
+
     if not ascii_host or len(ascii_host) > 253:
         return False
+
     labels = ascii_host.split(".")
-    return all(bool(_HOSTNAME_LABEL_RE.fullmatch(part)) for part in labels)
+    if not all(bool(_HOSTNAME_LABEL_RE.fullmatch(part)) for part in labels):
+        return False
+    return not _NUMERIC_HOST_LABEL_RE.fullmatch(labels[-1])
 
 
 def _validated_http_url(raw: str, label: str) -> str:
@@ -80,8 +106,10 @@ def _validated_http_url(raw: str, label: str) -> str:
         raise ValidationError(f"{label} không hợp lệ.") from exc
     if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
         raise ValidationError(f"{label} phải là liên kết bắt đầu bằng http:// hoặc https://.")
-    if parts.username or parts.password:
+    if parts.username is not None or parts.password is not None or "@" in parts.netloc:
         raise ValidationError(f"{label} không được chứa thông tin đăng nhập.")
+    if "\\" in parts.netloc:
+        raise ValidationError(f"{label} không hợp lệ.")
     try:
         port = parts.port
     except ValueError as exc:
@@ -89,7 +117,7 @@ def _validated_http_url(raw: str, label: str) -> str:
     if port is not None and not 1 <= port <= 65535:
         raise ValidationError(f"{label} không hợp lệ.")
     hostname = (parts.hostname or "").strip()
-    if not _is_valid_url_hostname(hostname):
+    if not _is_valid_url_hostname(hostname, bracketed=parts.netloc.startswith("[")):
         raise ValidationError(f"{label} không hợp lệ.")
     return raw
 
