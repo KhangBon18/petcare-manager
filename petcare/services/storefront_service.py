@@ -415,8 +415,16 @@ def place_order(
     if not _UUID_RE.fullmatch(request_key):
         raise ValidationError("Phiên đặt hàng không hợp lệ. Vui lòng tải lại trang thanh toán.")
 
-    customer_name = text_value(form_data.get("customer_name"), "Họ tên người nhận", 160)
-    customer_phone = normalize_phone(form_data.get("customer_phone", ""))
+    try:
+        customer_name = text_value(form_data.get("customer_name"), "Họ tên người nhận", 160)
+    except ValidationError as exc:
+        raise ValidationError(str(exc), field="customer_name") from exc
+
+    try:
+        customer_phone = normalize_phone(form_data.get("customer_phone", ""))
+    except ValidationError as exc:
+        raise ValidationError(str(exc), field="customer_phone") from exc
+
     raw_email = (form_data.get("customer_email") or "").strip()
     customer_email = ""
     if raw_email:
@@ -429,14 +437,21 @@ def place_order(
     if fulfillment_method not in {"pickup", "cod_delivery"}:
         raise ValidationError("Hình thức nhận hàng không hợp lệ.", field="fulfillment_method")
 
-    delivery_address = text_value(
-        form_data.get("delivery_address"),
-        "Địa chỉ giao hàng",
-        255,
-        required=(fulfillment_method == "cod_delivery"),
-    )
+    try:
+        delivery_address = text_value(
+            form_data.get("delivery_address"),
+            "Địa chỉ giao hàng",
+            255,
+            required=(fulfillment_method == "cod_delivery"),
+        )
+    except ValidationError as exc:
+        raise ValidationError(str(exc), field="delivery_address") from exc
+
     payment_method = "cod" if fulfillment_method == "cod_delivery" else "pay_at_store"
-    customer_note = text_value(form_data.get("customer_note"), "Ghi chú", 500, required=False)
+    try:
+        customer_note = text_value(form_data.get("customer_note"), "Ghi chú", 500, required=False)
+    except ValidationError as exc:
+        raise ValidationError(str(exc), field="customer_note") from exc
 
     product_quantities: dict[int, int] = defaultdict(int)
     pet_ids: list[int] = []

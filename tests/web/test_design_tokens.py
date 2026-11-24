@@ -29,6 +29,20 @@ class DesignTokenTests(unittest.TestCase):
         self.assertIn("var(--color-ink-strong)", components)
         self.assertIn("var(--color-focus-ring)", components)
 
+    def test_shared_precision_cloud_tokens_load_across_saas_and_storefront(self):
+        root = Path(__file__).resolve().parents[2]
+        shared = (root / "petcare/static/css/shared_tokens.css").read_text()
+        self.assertIn("--pc-brand: #2563EB;", shared)
+        self.assertIn("--pc-canvas: #F8FAFC;", shared)
+        self.assertIn("--pc-tap-min: 44px;", shared)
+
+        app = create_app({"TESTING": True, "SECRET_KEY": "design-token-tests-only"})
+        login_html = app.test_client().get("/login").get_data(as_text=True)
+        self.assertLess(
+            login_html.index("/static/css/shared_tokens.css"),
+            login_html.index("/static/css/ui.css"),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

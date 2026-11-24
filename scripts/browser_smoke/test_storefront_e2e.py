@@ -249,7 +249,7 @@ class StorefrontBrowserE2ETests(unittest.TestCase):
             page.locator('input[name="fulfillment_method"][value="cod_delivery"]').check()
             self._assert_clean_viewport(page, 1440, "shop-checkout")
             page.screenshot(path=str(self.screenshot_dir / "checkout-1440.png"), full_page=True)
-            page.get_by_role("button", name=re.compile("Xác nhận đặt hàng|Place pending order")).click()
+            page.get_by_role("button", name=re.compile("Xác nhận đặt hàng|Đặt hàng ngay|Place pending order|Place order")).click()
             page.wait_for_load_state("networkidle")
 
             order_code_match = re.search(r"ORD-\d{8}-[A-F0-9]+", page.url)

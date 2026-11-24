@@ -311,6 +311,7 @@ def checkout():
         "customer_note": "",
         "request_key": session.get("checkout_request_key") or str(uuid4()),
     }
+    field_errors: dict[str, str] = {}
     session["checkout_request_key"] = form_data["request_key"]
 
     if request.method == "POST":
@@ -325,6 +326,7 @@ def checkout():
                     store=store,
                     cart=snapshot,
                     form_data=request.form,
+                    field_errors=field_errors,
                 ),
                 429,
                 {"Retry-After": str(retry_after)},
@@ -352,11 +354,12 @@ def checkout():
             return redirect(url_for("storefront.order_detail", order_code=order["order_code"]))
         except (ValidationError, ConflictError) as exc:
             flash(str(exc), "error")
+            field_errors = dict(getattr(exc, "field_errors", {}) or {})
             form_data = dict(request.form)
             snapshot = storefront_service.price_cart_snapshot(store["id"], session.get("storefront_cart"))
 
     return render_template(
-        "storefront/checkout.html", store=store, cart=snapshot, form_data=form_data
+        "storefront/checkout.html", store=store, cart=snapshot, form_data=form_data, field_errors=field_errors
     )
 
 

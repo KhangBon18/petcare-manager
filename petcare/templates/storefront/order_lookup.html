@@ -5,18 +5,25 @@
 <div class="sf-auth-card">
   <h1>{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Track your order' }}</h1>
   <p>{{ 'Nhập mã đơn hàng và số điện thoại đã dùng khi đặt mua để xem chi tiết.' if locale == 'vi' else 'Enter your order code and phone number to inspect order details.' }}</p>
-  <form class="sf-form-stack" method="post" action="{{ url_for('storefront.order_lookup') }}">
+  <form class="sf-form-stack" method="post" action="{{ url_for('storefront.order_lookup') }}" data-sf-submit-lock="{{ 'Đang tìm...' if locale == 'vi' else 'Searching...' }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="sf-field">
-      <label for="lookup-code">{{ 'Mã đơn hàng' if locale == 'vi' else 'Order code' }}</label>
-      <input id="lookup-code" name="order_code" type="text" required placeholder="ORD-20261119-XXXXXX">
+      <label for="lookup-code">{{ 'Mã đơn hàng' if locale == 'vi' else 'Order code' }} *</label>
+      <input id="lookup-code" name="order_code" type="text" required placeholder="ORD-20261120-XXXXXX" aria-describedby="lookup-code-hint">
+      <small class="sf-field-hint" id="lookup-code-hint">{{ 'Ví dụ: ORD-20261120-A1B2C3 (hiển thị ngay sau khi đặt).' if locale == 'vi' else 'Example: ORD-20261120-A1B2C3 shown after placing an order.' }}</small>
     </div>
     <div class="sf-field">
-      <label for="lookup-phone">{{ 'Số điện thoại' if locale == 'vi' else 'Phone number' }}</label>
-      <input id="lookup-phone" name="phone" type="tel" required placeholder="0901234567">
+      <label for="lookup-phone">{{ 'Số điện thoại đặt đơn' if locale == 'vi' else 'Phone number' }} *</label>
+      <input id="lookup-phone" name="phone" type="tel" required autocomplete="tel" placeholder="0901234567">
     </div>
-    <button class="sf-btn sf-btn-primary" type="submit">{{ 'Tra cứu' if locale == 'vi' else 'Find order' }}</button>
+    <button class="sf-btn sf-btn-primary sf-checkout-submit" type="submit">{{ 'Tra cứu đơn hàng' if locale == 'vi' else 'Find order' }}</button>
   </form>
+  <p class="sf-auth-alt">
+    {% if g.customer %}
+      <a href="{{ url_for('storefront.orders') }}">{{ 'Xem toàn bộ lịch sử đơn của tài khoản →' if locale == 'vi' else 'View all orders in your account →' }}</a>
+    {% else %}
+      {{ 'Đã có tài khoản?' if locale == 'vi' else 'Have an account?' }} <a href="{{ url_for('storefront.customer_login') }}">{{ 'Đăng nhập để xem lịch sử đơn' if locale == 'vi' else 'Sign in for order history' }}</a>
+    {% endif %}
+  </p>
 </div>
 {% endblock %}
-

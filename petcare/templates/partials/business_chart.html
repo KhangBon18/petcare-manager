@@ -40,7 +40,13 @@
     </svg>
     <figcaption><span class="chart-legend"><i aria-hidden="true"></i>{{ 'Doanh thu đã thanh toán' if locale == 'vi' else 'Paid revenue' }}</span> · {{ 'Cao nhất' if locale == 'vi' else 'Peak' }}: {{ format_date(report.peak.date) }} · {{ format_money(report.peak.revenue, report.currency_code) }}</figcaption>
   </figure>
+  {% if compact %}
+    {% if report.brief %}
+    <p class="business-summary-note">{{ report.brief|last if report.top_products else report.brief|first }}</p>
+    {% endif %}
+  {% else %}
   <ul class="business-brief">{% for line in report.brief %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
   {% if not compact %}
   <details class="daily-data">
     <summary>{{ 'Xem bảng số liệu từng ngày' if locale == 'vi' else 'View daily data table' }}</summary>

@@ -10,6 +10,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/motion.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/shared_tokens.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/ui.css') }}">
   {% block head %}{% endblock %}
 </head>
@@ -38,10 +39,13 @@
       <details class="mobile-nav-more" data-mobile-menu>
         <summary>{{ icon('menu') }}<span>{{ t('Thêm') }}</span></summary>
         <nav aria-label="{{ t('Điều hướng khác') }}">
-          <a href="{{ url_for('orders.index') }}" {% if request.blueprint == 'orders' %}aria-current="page"{% endif %}>{{ icon('bag') }} {{ 'Đơn online' if locale == 'vi' else 'Online orders' }}</a>
+          <a class="mobile-more-primary" href="{{ url_for('invoices.create') }}" {% if request.endpoint == 'invoices.create' %}aria-current="page"{% endif %}>{{ icon('plus') }} {{ 'Lập hóa đơn (POS)' if locale == 'vi' else 'New sale (POS)' }}</a>
+          <div class="mobile-more-divider" aria-hidden="true"></div>
+          <a href="{{ url_for('pets.index') }}" {% if request.blueprint == 'pets' and request.endpoint != 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('pets') }} {{ t('Thú cưng') }}</a>
           <a href="{{ url_for('customers.index') }}" {% if request.blueprint == 'customers' %}aria-current="page"{% endif %}>{{ icon('customers') }} {{ t('Khách hàng') }}</a>
           <a href="{{ url_for('pets.find_similar') }}" {% if request.endpoint == 'pets.find_similar' %}aria-current="page"{% endif %}>{{ icon('search') }} {{ t('Tìm bằng ảnh') }}</a>
           <a href="{{ url_for('reports.index') }}" {% if request.blueprint == 'reports' %}aria-current="page"{% endif %}>{{ icon('reports') }} {{ t('Báo cáo') }}</a>
+          <a href="{{ url_for('assistant.workspace') }}" {% if request.blueprint == 'assistant' %}aria-current="page"{% endif %}>{{ icon('sparkle') }} {{ t('Trợ lý AI') }}</a>
         </nav>
       </details>
     </nav>
@@ -87,6 +91,7 @@
       {% if g.user.role == 'admin' %}<details class="mobile-admin-link mobile-admin-menu" data-mobile-menu><summary>{{ icon('team') }}<span>{{ 'Quản trị' if locale == 'vi' else 'Admin' }}</span></summary><nav aria-label="{{ 'Quản trị' if locale == 'vi' else 'Administration' }}"><a href="{{ url_for('store.settings') }}">{{ t('Cài đặt cửa hàng') }}</a><a href="{{ url_for('users.index') }}">{{ t('Tài khoản') }}</a><a href="{{ url_for('purchasing.index') }}">{{ t('Nhập hàng') }}</a><a href="{{ url_for('purchasing.suppliers_index') }}">{{ t('Nhà cung cấp') }}</a><a href="{{ url_for('audit.index') }}">{{ t('Nhật ký hoạt động') }}</a></nav></details>{% endif %}
     </header>
     <section class="page-wrap">
+      <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
       {% endwith %}
@@ -123,6 +128,7 @@
 {% else %}
 <main class="auth-shell" id="main-content" tabindex="-1">
   {% with language_picker_id="auth" %}{% include "partials/language_picker.html" %}{% endwith %}
+  <div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}<div class="flash-stack auth-flashes">{% for category, message in messages %}<div class="flash flash-{{ category }}" role="{{ 'alert' if category == 'error' else 'status' }}">{{ t(message) }}</div>{% endfor %}</div>{% endif %}
   {% endwith %}
@@ -135,7 +141,6 @@
 {% endif %}
 <script src="{{ url_for('static', filename='vendor/gsap/gsap.min.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/motion.js') }}" defer></script>
-<div id="toast-region" class="toast-region" aria-live="polite" aria-atomic="false"></div>
 <script src="{{ url_for('static', filename='js/app.js') }}" defer></script>
 {% block scripts %}{% endblock %}
 {% if g.user %}<script src="{{ url_for('static', filename='js/assistant.js') }}" defer></script>{% endif %}

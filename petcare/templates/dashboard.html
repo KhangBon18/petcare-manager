@@ -16,8 +16,8 @@
   </div>
 </div>
 
-<div class="stat-grid">
-  <a class="stat-card" href="{{ url_for('reports.index', period='today') }}"><div class="stat-top"><span>{{ t('Doanh thu hôm nay') }}</span><span class="stat-icon">{{ icon('reports') }}</span></div><strong>{{ format_money(metrics.today) }}</strong><small>{{ t('Đã thanh toán') }}</small></a>
+<div class="stat-grid stat-grid-dashboard">
+  <a class="stat-card stat-card-money" href="{{ url_for('reports.index', period='today') }}"><div class="stat-top"><span>{{ t('Doanh thu hôm nay') }}</span><span class="stat-icon">{{ icon('reports') }}</span></div><strong>{{ format_money(metrics.today) }}</strong><small>{{ t('Đã thanh toán') }}</small></a>
   <a class="stat-card" href="{{ url_for('customers.index') }}"><div class="stat-top"><span>{{ t('Khách hàng') }}</span><span class="stat-icon">{{ icon('customers') }}</span></div><strong>{{ format_number(metrics.customers) }}</strong><small>{{ t('Đang hoạt động') }}</small></a>
   <a class="stat-card{% if metrics.low_stock %} stat-card-alert{% endif %}" href="{{ url_for('products.index') }}"><div class="stat-top"><span>{{ t('Sản phẩm') }}</span><span class="stat-icon">{{ icon('products') }}</span></div><strong>{{ format_number(metrics.products) }}</strong><small>{% if metrics.low_stock == 1 %}{{ t('1 sản phẩm sắp hết hàng') }}{% elif metrics.low_stock %}{{ format_number(metrics.low_stock) }} {{ t('sản phẩm sắp hết hàng') }}{% else %}{{ t('Tồn kho đang ổn') }}{% endif %}</small></a>
   <a class="stat-card" href="{{ url_for('pets.index') }}"><div class="stat-top"><span>{{ t('Thú cưng đang bán') }}</span><span class="stat-icon">{{ icon('pets') }}</span></div><strong>{{ format_number(metrics.pets_available) }}</strong><small>{{ t('Sẵn sàng bán') }}</small></a>
@@ -69,15 +69,6 @@
       {% endif %}
     </section>
     {% if metrics.restock is defined %}{{ restock_panel(metrics.restock, "Ưu tiên bổ sung tồn kho" if locale == 'vi' else "Restock priorities") }}{% endif %}
-    <section class="panel dashboard-list-panel">
-      <div class="panel-heading"><h2>{{ t('Lối tắt') }}</h2></div>
-      <div class="quick-grid">
-        <a class="quick-card quick-card-ai" href="{{ url_for('assistant.workspace') }}"><span class="quick-icon">{{ icon('sparkle') }}</span><span><strong>{{ t('Trợ lý AI') }}</strong><small>{{ t('Hỏi về tồn kho, doanh thu') }}</small></span></a>
-        <a class="quick-card" href="{{ url_for('pets.find_similar') }}"><span class="quick-icon">{{ icon('search') }}</span><span><strong>{{ t('Tìm bằng ảnh') }}</strong><small>{{ t('Nhận diện mèo, chó') }}</small></span></a>
-        <a class="quick-card" href="{{ url_for('reports.index') }}"><span class="quick-icon">{{ icon('reports') }}</span><span><strong>{{ t('Xem báo cáo') }}</strong><small>{{ t('Doanh thu và hàng bán chạy') }}</small></span></a>
-        {% if metrics.last_seven_days is defined %}<a class="quick-card" href="{{ url_for('reports.index', start=metrics.week_start, end=metrics.week_end) }}"><span class="quick-icon">{{ icon('invoice') }}</span><span><strong>{{ format_money(metrics.last_seven_days) }}</strong><small>{{ 'Doanh thu 7 ngày qua' if locale == 'vi' else 'Revenue, last 7 days' }}</small></span></a>{% endif %}
-      </div>
-    </section>
   </div>
 </div>
 {% endblock %}
