@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from urllib.parse import urlsplit
 
@@ -34,6 +35,7 @@ PUBLIC_POLICY_LIMITS = {
 _HOTLINE_RE = re.compile(r"^[0-9+\-\s().]{6,60}$")
 _ZALO_HANDLE_RE = re.compile(r"^[A-Za-z0-9@+._\-\s]{3,160}$")
 _CTRL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_HOSTNAME_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
 def _clean_text(value: object, label: str, maximum: int) -> str:
@@ -47,16 +49,48 @@ def _clean_text(value: object, label: str, maximum: int) -> str:
     return cleaned
 
 
+def _is_valid_url_hostname(hostname: str) -> bool:
+    if not hostname or len(hostname) > 253:
+        return False
+    try:
+        ipaddress.ip_address(hostname)
+        return True
+    except ValueError:
+        pass
+    if hostname.startswith(".") or hostname.endswith(".") or ".." in hostname:
+        return False
+    try:
+        ascii_host = hostname.encode("idna").decode("ascii")
+    except (UnicodeError, ValueError):
+        return False
+    if not ascii_host or len(ascii_host) > 253:
+        return False
+    labels = ascii_host.split(".")
+    return all(bool(_HOSTNAME_LABEL_RE.fullmatch(part)) for part in labels)
+
+
 def _validated_http_url(raw: str, label: str) -> str:
     if not raw:
         return ""
     if any(ch.isspace() for ch in raw):
         raise ValidationError(f"{label} không được chứa khoảng trắng.")
-    parts = urlsplit(raw)
+    try:
+        parts = urlsplit(raw)
+    except ValueError as exc:
+        raise ValidationError(f"{label} không hợp lệ.") from exc
     if parts.scheme.lower() not in {"http", "https"} or not parts.netloc:
         raise ValidationError(f"{label} phải là liên kết bắt đầu bằng http:// hoặc https://.")
     if parts.username or parts.password:
         raise ValidationError(f"{label} không được chứa thông tin đăng nhập.")
+    try:
+        port = parts.port
+    except ValueError as exc:
+        raise ValidationError(f"{label} không hợp lệ.") from exc
+    if port is not None and not 1 <= port <= 65535:
+        raise ValidationError(f"{label} không hợp lệ.")
+    hostname = (parts.hostname or "").strip()
+    if not _is_valid_url_hostname(hostname):
+        raise ValidationError(f"{label} không hợp lệ.")
     return raw
 
 

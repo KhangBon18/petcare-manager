@@ -406,5 +406,3 @@ class StorefrontWebSecurityTests(TestCase):
             self.assertIn("Chưa thanh toán", ord_html)
             self.assertIn("Tiến trình xử lý đơn hàng", ord_html)
 
-
-

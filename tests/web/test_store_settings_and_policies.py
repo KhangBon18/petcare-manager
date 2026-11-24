@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 import re
 import unittest
 from uuid import uuid4
@@ -9,10 +10,103 @@ from petcare.config import Config
 from petcare.database.connection import get_connection
 from petcare.database.create_store import create_store
 from petcare.database.initialize import initialize_database
+from petcare.i18n import translate
 from petcare.repositories.base import execute, fetch_one
+from petcare.services import tenant_settings_service
+from petcare.services.exceptions import ValidationError
 
 
 TEST_DB = os.getenv("PETCARE_TEST_DB_NAME", "")
+REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+class StorePublicPolicyUnitContractTests(unittest.TestCase):
+    def test_url_validator_rejects_malformed_brackets_bad_ports_and_invalid_hostnames(self):
+        invalid_urls = [
+            "https://[broken",
+            "http://[::1",
+            "https://[2001:db8::1/terms",
+            "https://example.test:99999",
+            "https://example.test:0",
+            "https://example.test:65536",
+            "https://example.test:abc",
+            "https://:443/terms",
+            "https://[]:443/terms",
+            "https://bad..example.com/terms",
+            "https://.example.com/terms",
+            "https://example.com./terms",
+            "https://foo[bar]/terms",
+            "https://-bad.example.com/terms",
+        ]
+        for raw in invalid_urls:
+            with self.subTest(url=raw):
+                with self.assertRaises(ValidationError) as ctx:
+                    tenant_settings_service._validated_http_url(raw, "Liên kết điều khoản / bảo mật")
+                self.assertEqual(tenant_settings_service._is_safe_http_href(raw), "")
+                en_msg = translate(str(ctx.exception), "en")
+                self.assertNotEqual(en_msg, str(ctx.exception))
+
+        valid_urls = [
+            "https://example.com/terms",
+            "https://example.com:8443/terms",
+            "http://zalo.me/petcare",
+            "https://[2001:db8::1]/terms",
+            "https://192.0.2.10/privacy",
+        ]
+        for raw in valid_urls:
+            with self.subTest(valid_url=raw):
+                self.assertEqual(tenant_settings_service._validated_http_url(raw, "Liên kết Zalo"), raw)
+                self.assertEqual(tenant_settings_service._is_safe_http_href(raw), raw)
+
+    def test_schema_service_template_and_docs_contract_stay_in_sync(self):
+        sql_text = (REPO_ROOT / "petcare/database/storefront.sql").read_text(encoding="utf-8")
+        table_match = re.search(
+            r"CREATE TABLE IF NOT EXISTS tenant_public_policies\s*\((.*?)\)\s*ENGINE=InnoDB",
+            sql_text,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(table_match)
+        table_body = table_match.group(1)
+
+        sql_lengths = {
+            col: int(length)
+            for col, length in re.findall(r"^\s*([a-z_]+)\s+VARCHAR\((\d+)\)\s+NOT NULL", table_body, re.MULTILINE)
+        }
+        service_lengths = {col: limit for col, (_label, limit) in tenant_settings_service.PUBLIC_POLICY_LIMITS.items()}
+        self.assertEqual(sql_lengths, service_lengths)
+        self.assertEqual(len(sql_lengths), 12)
+
+        self.assertRegex(table_body, r"tenant_id\s+BIGINT UNSIGNED NOT NULL PRIMARY KEY")
+        self.assertRegex(table_body, r"updated_by\s+BIGINT UNSIGNED NULL")
+        self.assertRegex(
+            table_body,
+            r"updated_at\s+DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP",
+        )
+        self.assertRegex(
+            table_body,
+            r"CONSTRAINT\s+fk_tenant_public_policies_tenant\s+FOREIGN KEY\s*\(tenant_id\)\s+REFERENCES tenants\(id\)\s+ON DELETE RESTRICT",
+        )
+        self.assertRegex(
+            table_body,
+            r"CONSTRAINT\s+fk_tenant_public_policies_updater\s+FOREIGN KEY\s*\(tenant_id,\s*updated_by\)\s+REFERENCES tenant_users\(tenant_id,\s*user_id\)\s+ON DELETE RESTRICT",
+        )
+
+        template_html = (REPO_ROOT / "petcare/templates/store/settings.html").read_text(encoding="utf-8")
+        for col, limit in service_lengths.items():
+            pattern = rf'name="{col}"[^>]*maxlength="{limit}"'
+            self.assertRegex(template_html, pattern, f"Template maxlength mismatch for {col}")
+
+        contract_doc = (REPO_ROOT / "docs/STORE_SETTINGS_POLICIES.md").read_text(encoding="utf-8")
+        for col, limit in service_lengths.items():
+            self.assertIn(f"`{col}`", contract_doc)
+            self.assertIn(f"`VARCHAR({limit})`", contract_doc)
+        self.assertIn("tenant_users(tenant_id, user_id)", contract_doc)
+        self.assertIn("`storefront_public_policies_v1`", contract_doc)
+        self.assertIn("`updated_at`", contract_doc)
+
+        migrations_doc = (REPO_ROOT / "docs/DATABASE_MIGRATIONS.md").read_text(encoding="utf-8")
+        self.assertIn("32 Tables", migrations_doc)
+        self.assertIn("storefront_public_policies_v1", migrations_doc)
 
 
 @unittest.skipUnless(
@@ -86,23 +180,31 @@ class StorePublicPolicyTests(unittest.TestCase):
                 403,
             )
 
-            # 2. Validation rejects javascript: URL, invalid email, invalid hotline and preserves input.
-            bad_resp = admin_client.post(
-                "/store/settings/public-policies",
-                data={
-                    "csrf_token": self._csrf(admin_client, "/store/settings"),
-                    "pickup_address": "18 Nguyen Hue <script>alert(1)</script>",
-                    "support_hotline": "abc-invalid",
-                    "support_email": "not-an-email",
-                    "privacy_terms_url": "javascript:alert(1)",
-                },
-            )
-            self.assertEqual(bad_resp.status_code, 200)
-            bad_html = bad_resp.get_data(as_text=True)
-            self.assertIn("aria-invalid=\"true\"", bad_html)
-            self.assertIn("privacy_terms_url-error", bad_html)
-            self.assertIn("support_email-error", bad_html)
-            self.assertIn("support_hotline-error", bad_html)
+            # 2. Validation rejects javascript:, malformed IPv6, out-of-range port, invalid email/hotline with HTTP 200 (never 500).
+            for bad_terms_url, bad_zalo in (
+                ("javascript:alert(1)", "https://zalo.me/ok"),
+                ("https://[broken", "https://example.test:99999/zalo"),
+                ("https://:443/terms", "https://bad..example.com/zalo"),
+            ):
+                bad_resp = admin_client.post(
+                    "/store/settings/public-policies",
+                    data={
+                        "csrf_token": self._csrf(admin_client, "/store/settings"),
+                        "pickup_address": "18 Nguyen Hue <script>alert(1)</script>",
+                        "support_hotline": "abc-invalid",
+                        "support_email": "not-an-email",
+                        "support_zalo": bad_zalo,
+                        "privacy_terms_url": bad_terms_url,
+                    },
+                )
+                self.assertEqual(bad_resp.status_code, 200)
+                bad_html = bad_resp.get_data(as_text=True)
+                self.assertIn('aria-invalid="true"', bad_html)
+                self.assertIn("privacy_terms_url-error", bad_html)
+                if bad_zalo != "https://zalo.me/ok":
+                    self.assertIn("support_zalo-error", bad_html)
+                self.assertIn("support_email-error", bad_html)
+                self.assertIn("support_hotline-error", bad_html)
 
             # 3. Valid save + HTML XSS escape + audit event recorded without sensitive values.
             save_resp = admin_client.post(
@@ -141,12 +243,49 @@ class StorePublicPolicyTests(unittest.TestCase):
             details = json.loads(event["details"]) if isinstance(event["details"], str) else event["details"]
             self.assertIn("pickup_address", details["changed_fields"])
 
-            # 4. Public storefront for this store renders escaped values; main store remains isolated!
+            # 4. Public storefront for this store renders escaped values; checkout compacts policy details & dedups footer!
             self.app.config["PUBLIC_STORE_SLUG"] = slug
-            shop_html = self.app.test_client().get("/shop").get_data(as_text=True)
+            shop_client = self.app.test_client()
+            shop_html = shop_client.get("/shop").get_data(as_text=True)
             self.assertIn("18 Nguyễn Huệ &lt;b&gt;Quận 1&lt;/b&gt;", shop_html)
             self.assertIn("https://example.com/terms", shop_html)
             self.assertIn("0909 111 222", shop_html)
+
+            with get_connection() as connection:
+                prod_id = execute(
+                    connection,
+                    "INSERT INTO products (tenant_id, code, name, category, unit_price, unit_price_vnd, stock_qty, reorder_level, active) "
+                    "VALUES (%s, 'RC-CHK-01', 'Sản phẩm kiểm thử Checkout', 'Thức ăn', 120000, 120000, 5, 1, 1)",
+                    (tenant_id,),
+                )[0]
+                connection.commit()
+
+            add_csrf = re.search(
+                r'name="csrf_token" value="([^"]+)"',
+                shop_client.get(f"/shop/products/{prod_id}").get_data(as_text=True),
+            ).group(1)
+            add_resp = shop_client.post(
+                "/shop/cart/add",
+                data={"csrf_token": add_csrf, "item_type": "product", "item_id": str(prod_id), "quantity": "1"},
+                follow_redirects=False,
+            )
+            self.assertEqual(add_resp.status_code, 302)
+
+            checkout_html = shop_client.get("/shop/checkout").get_data(as_text=True)
+            main_part, footer_part = checkout_html.split('<footer class="sf-footer">', 1)
+            self.assertIn("sf-policy-summary", main_part)
+            self.assertIn("sf-policy-details", main_part)
+            self.assertIn("sf-policy-toggle", main_part)
+            self.assertIn("Nội thành TP.HCM · báo phí thực tế trước khi xuất đơn", main_part)
+            self.assertIn("Liên hệ trong 30 phút giờ mở cửa", main_part)
+            self.assertIn("Đổi trả trong 3 ngày với bao bì còn nguyên tem", main_part)
+            # Checkout footer suppresses repetitive pickup address, hours, and privacy summary
+            self.assertNotIn("18 Nguyễn Huệ", footer_part)
+            self.assertNotIn("08:30 – 20:30", footer_part)
+            self.assertNotIn("Chính sách bảo mật thử nghiệm đã duyệt", footer_part)
+            # Footer retains direct support contacts and Terms link
+            self.assertIn("0909 111 222", footer_part)
+            self.assertIn("https://example.com/terms", footer_part)
 
             # Tenant isolation: main store does NOT get s2pol policies.
             self.app.config["PUBLIC_STORE_SLUG"] = "main"
@@ -164,10 +303,13 @@ class StorePublicPolicyTests(unittest.TestCase):
             self.assertEqual(clear_resp.status_code, 302)
             cleared_shop_html = self.app.test_client().get("/shop").get_data(as_text=True)
             self.assertIn("đang chờ chủ cửa hàng xác nhận", cleared_shop_html)
+            cleared_checkout_html = shop_client.get("/shop/checkout").get_data(as_text=True)
+            self.assertIn("CHỜ CHỦ SHOP XÁC NHẬN", cleared_checkout_html)
         finally:
             self.app.config["PUBLIC_STORE_SLUG"] = "main"
             with get_connection() as connection:
                 with connection.cursor() as cur:
+                    cur.execute("DELETE FROM products WHERE tenant_id = %s", (tenant_id,))
                     cur.execute("DELETE FROM tenant_public_policies WHERE tenant_id = %s", (tenant_id,))
                     cur.execute("DELETE FROM audit_events WHERE tenant_id = %s", (tenant_id,))
                     cur.execute("DELETE FROM tenant_users WHERE tenant_id = %s", (tenant_id,))
