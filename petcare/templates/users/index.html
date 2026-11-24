@@ -20,7 +20,7 @@
     <button class="button button-primary">{{ t('Gửi lời mời') }} <span>→</span></button>
   </form>
   {% if invitations %}
-  <div class="table-scroll"><table class="user-table"><thead><tr><th>{{ t('EMAIL') }}</th><th>{{ t('VAI TRÒ') }}</th><th>{{ t('GỬI EMAIL') }}</th><th>{{ t('HẾT HẠN') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
+  <div class="table-scroll ops-desktop-table"><table class="user-table"><thead><tr><th>{{ t('EMAIL') }}</th><th>{{ t('VAI TRÒ') }}</th><th>{{ t('GỬI EMAIL') }}</th><th>{{ t('HẾT HẠN') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th></th></tr></thead><tbody>
   {% for invite in invitations %}<tr>
     <td>{{ invite.email or t('Lời mời cũ') }}</td>
     <td>{{ t('Quản trị viên') if invite.role == 'admin' else t('Nhân viên') }}</td>
@@ -30,10 +30,32 @@
     <td>{% if invite.status == 'pending' %}<form method="post" action="{{ url_for('users.revoke_invitation', invitation_id=invite.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-light button-small">{{ t('Thu hồi') }}</button></form>{% endif %}</td>
   </tr>{% endfor %}
   </tbody></table></div>
+  <ul class="ops-mobile-list" aria-label="{{ t('Mời thành viên') }}">
+  {% for invite in invitations %}
+    <li class="ops-mobile-card">
+      <div class="ops-mobile-card-head">
+        <div class="ops-mobile-title">
+          <strong>{{ invite.email or t('Lời mời cũ') }}</strong>
+          <small>{{ t('Quản trị viên') if invite.role == 'admin' else t('Nhân viên') }}</small>
+        </div>
+        <span class="status-pill {{ 'status-active' if invite.status == 'pending' else 'status-muted' }}">{{ t({'pending':'Đang chờ','accepted':'Đã sử dụng','revoked':'Đã thu hồi','expired':'Đã hết hạn'}[invite.status]) }}</span>
+      </div>
+      <dl class="ops-mobile-meta">
+        <div><dt>{{ t('GỬI EMAIL') }}</dt><dd>{% if invite.email_status == 'sent' %}{{ t('Đã gửi') }}{% elif invite.email_status in ['pending', 'processing'] %}{{ t('Đang gửi') }}{% elif invite.email_status == 'failed' %}{{ t('Gửi thất bại') }}{% elif invite.email %}{{ t('Thủ công') }}{% else %}—{% endif %}</dd></div>
+        <div><dt>{{ t('HẾT HẠN') }}</dt><dd>{{ format_datetime(invite.expires_at) }}</dd></div>
+      </dl>
+      {% if invite.status == 'pending' %}
+      <div class="ops-mobile-card-foot">
+        <form method="post" action="{{ url_for('users.revoke_invitation', invitation_id=invite.id) }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button class="button button-light button-small">{{ t('Thu hồi') }}</button></form>
+      </div>
+      {% endif %}
+    </li>
+  {% endfor %}
+  </ul>
   {% endif %}
 </section>
 
-<section class="panel" aria-label="{{ t('Thành viên cửa hàng') }}"><div class="table-scroll"><table class="user-table"><thead><tr><th>{{ t('NHÂN VIÊN') }}</th><th>{{ t('TÊN ĐĂNG NHẬP') }}</th><th>{{ t('VAI TRÒ') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th>{{ t('CẬP NHẬT') }}</th></tr></thead><tbody>
+<section class="panel" aria-label="{{ t('Thành viên cửa hàng') }}"><div class="table-scroll ops-desktop-table"><table class="user-table"><thead><tr><th>{{ t('NHÂN VIÊN') }}</th><th>{{ t('TÊN ĐĂNG NHẬP') }}</th><th>{{ t('VAI TRÒ') }}</th><th>{{ t('TRẠNG THÁI') }}</th><th>{{ t('CẬP NHẬT') }}</th></tr></thead><tbody>
 {% for user in users %}<tr>
   <td><div class="person-cell"><span class="avatar avatar-soft">{{ user.full_name[:1]|upper }}</span><strong>{{ user.full_name }}</strong></div></td>
   <td>{{ user.username }}</td>
@@ -47,5 +69,30 @@
       <input type="password" name="password" minlength="8" maxlength="1024" placeholder="{{ t('Mật khẩu mới (nếu đổi)') }}" aria-label="{{ t('Mật khẩu mới') }}"><button class="button button-light button-small">{{ t('Lưu') }}</button>
     </form>{% endif %}</td>
 </tr>{% endfor %}
-</tbody></table></div></section>
+</tbody></table></div>
+<ul class="ops-mobile-list" aria-label="{{ t('Thành viên cửa hàng') }}">
+{% for user in users %}
+  <li class="ops-mobile-card">
+    <div class="ops-mobile-card-head">
+      <div class="person-cell"><span class="avatar avatar-soft" aria-hidden="true">{{ user.full_name[:1]|upper }}</span><div class="ops-mobile-title"><strong>{{ user.full_name }}</strong><small>{{ user.username }} · {% if user.membership_role == 'owner' %}{{ t('Chủ cửa hàng') }}{% else %}{{ t('Quản trị viên') if user.role == 'admin' else t('Nhân viên') }}{% endif %}</small></div></div>
+      <span class="status-pill {{ 'status-active' if user.active else 'status-muted' }}">{{ t('Đang hoạt động') if user.active else t('Đã khóa') }}</span>
+    </div>
+    {% if user.membership_role == 'owner' %}
+      <small class="muted">{{ t('Tên và email được quản lý trong Cài đặt tài khoản; mật khẩu dùng luồng Quên mật khẩu. Không thể đổi vai trò hoặc khóa tại đây.') }}</small>
+    {% else %}
+      <form method="post" action="{{ url_for('users.update', user_id=user.id) }}" class="ops-user-mobile-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>{{ t('Họ tên') }}<input name="full_name" value="{{ user.full_name }}" maxlength="160" required></label>
+        <div class="ops-user-mobile-fields">
+          <label>{{ t('Vai trò') }}<select name="role"><option value="staff" {{ 'selected' if user.role == 'staff' }}>{{ t('Nhân viên') }}</option><option value="admin" {{ 'selected' if user.role == 'admin' }}>{{ t('Quản trị viên') }}</option></select></label>
+          <label>{{ t('Trạng thái') }}<select name="active"><option value="1" {{ 'selected' if user.active }}>{{ t('Hoạt động') }}</option><option value="0" {{ 'selected' if not user.active }}>{{ t('Đã khóa') }}</option></select></label>
+        </div>
+        <label>{{ t('Mật khẩu mới') }}<input type="password" name="password" minlength="8" maxlength="1024" placeholder="{{ t('Mật khẩu mới (nếu đổi)') }}"></label>
+        <button class="button button-light button-small button-wide" type="submit">{{ t('Lưu') }}</button>
+      </form>
+    {% endif %}
+  </li>
+{% endfor %}
+</ul>
+</section>
 {% endblock %}

@@ -92,10 +92,54 @@
       {{ 'Thanh toán trực tiếp tại quầy khi đến nhận hàng.' if locale == 'vi' else 'Pay in person at the store when picking up your order.' }}
     </div>
 
+    {% set policies = g.public_policies|default({}) %}
+    {% if policies.get('has_checkout_policy') %}
+    {% set has_primary_terms = policies.get('cod_service_area_fees') or policies.get('order_confirmation_sla') or policies.get('pickup_address') %}
+    {% set has_secondary_terms = policies.get('return_refund_policy') or policies.get('cancellation_instructions') or policies.get('opening_hours') or policies.get('support_hotline') or policies.get('privacy_terms_summary') or policies.get('privacy_terms_href') %}
+    <div class="sf-policy-box" role="note" aria-label="{{ 'Thông tin giao nhận và chính sách cửa hàng' if locale == 'vi' else 'Verified store terms and contact info' }}">
+      <div class="sf-policy-box-head">
+        <strong>{{ 'Thông tin áp dụng tại ' ~ store.name if locale == 'vi' else 'Store policy at ' ~ store.name }}</strong>
+        {% if policies.get('has_missing_checkout_essentials') %}
+        <span class="sf-policy-badge">{{ 'MỘT SỐ MỤC CHƯA CẤU HÌNH' if locale == 'vi' else 'PARTIAL DETAILS' }}</span>
+        {% endif %}
+      </div>
+      {% if has_primary_terms %}
+      <dl class="sf-specs sf-policy-specs sf-policy-summary">
+        {% if policies.get('cod_service_area_fees') %}<div><dt>{{ 'Khu vực & phí COD' if locale == 'vi' else 'COD terms & fees' }}</dt><dd>{{ policies['cod_service_area_fees'] }}</dd></div>{% endif %}
+        {% if policies.get('order_confirmation_sla') %}<div><dt>{{ 'Thời gian xác nhận' if locale == 'vi' else 'Confirmation SLA' }}</dt><dd>{{ policies['order_confirmation_sla'] }}</dd></div>{% endif %}
+        {% if policies.get('pickup_address') %}<div><dt>{{ 'Nhận tại quầy' if locale == 'vi' else 'Pickup address' }}</dt><dd>{{ policies['pickup_address'] }}</dd></div>{% endif %}
+      </dl>
+      {% endif %}
+      {% if has_secondary_terms %}
+      <details class="sf-policy-details" {% if not has_primary_terms %}open{% endif %}>
+        <summary class="sf-policy-toggle">
+          <span>{{ 'Xem điều khoản đổi trả, hủy đơn & liên hệ' if locale == 'vi' else 'View returns, cancellation & support details' }}</span>
+          <span class="sf-policy-toggle-chevron" aria-hidden="true">▾</span>
+        </summary>
+        <div class="sf-policy-details-body">
+          <dl class="sf-specs sf-policy-specs">
+            {% if policies.get('opening_hours') %}<div><dt>{{ 'Giờ mở cửa' if locale == 'vi' else 'Opening hours' }}</dt><dd>{{ policies['opening_hours'] }}</dd></div>{% endif %}
+            {% if policies.get('return_refund_policy') %}<div><dt>{{ 'Đổi trả & hoàn tiền' if locale == 'vi' else 'Returns & refunds' }}</dt><dd>{{ policies['return_refund_policy'] }}</dd></div>{% endif %}
+            {% if policies.get('cancellation_instructions') %}<div><dt>{{ 'Hủy / chỉnh đơn' if locale == 'vi' else 'Cancellation' }}</dt><dd>{{ policies['cancellation_instructions'] }}</dd></div>{% endif %}
+            {% if policies.get('support_hotline') %}<div><dt>{{ 'Hotline' }}</dt><dd>{{ policies['support_hotline'] }}</dd></div>{% endif %}
+            {% if policies.get('privacy_terms_summary') %}<div><dt>{{ 'Quyền riêng tư' if locale == 'vi' else 'Privacy notice' }}</dt><dd>{{ policies['privacy_terms_summary'] }}</dd></div>{% endif %}
+          </dl>
+          {% if policies.get('privacy_terms_href') %}
+          <p class="sf-policy-footnote sf-policy-terms-link"><a href="{{ policies['privacy_terms_href'] }}" target="_blank" rel="noopener noreferrer">{{ 'Đọc toàn văn Điều khoản & Bảo mật' if locale == 'vi' else 'Read full Terms & Privacy' }} →</a></p>
+          {% endif %}
+        </div>
+      </details>
+      {% endif %}
+      {% if policies.get('has_missing_checkout_essentials') %}
+      <p class="sf-policy-footnote">{{ 'Các điều khoản còn trống sẽ được nhân viên xác nhận trực tiếp khi gọi điện; phí giao COD (nếu phát sinh) không tự mặc định miễn phí.' if locale == 'vi' else 'Any unconfirmed delivery fee or term is verified directly by store staff before dispatch; online total excludes unconfigured shipping fees.' }}</p>
+      {% endif %}
+    </div>
+    {% else %}
     <div class="sf-policy-placeholder" role="note">
       <span class="sf-policy-badge">{{ 'CHỜ CHỦ SHOP XÁC NHẬN · BẢN XEM THỬ' if locale == 'vi' else 'OWNER SIGN-OFF REQUIRED · PREVIEW' }}</span>
       <p>{{ 'Khu vực này sẽ hiển thị địa chỉ quầy nhận hàng, giờ mở cửa, khu vực giao COD và quy định đổi trả chính thức sau khi chủ cửa hàng cung cấp thông tin.' if locale == 'vi' else 'Verified store pickup address, opening hours, COD delivery zones, and return policy will appear here once confirmed by the store owner.' }}</p>
     </div>
+    {% endif %}
 
     <button class="sf-btn sf-btn-primary sf-checkout-submit" type="submit" {% if cart.has_unavailable %}disabled{% endif %}>{{ 'Đặt hàng ngay' if locale == 'vi' else 'Place order' }}</button>
   </form>

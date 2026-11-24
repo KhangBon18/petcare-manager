@@ -28,6 +28,7 @@ from petcare.services import (
     storefront_auth_service,
     storefront_service,
     storefront_vision_service,
+    tenant_settings_service,
 )
 from petcare.services.exceptions import (
     ConflictError,
@@ -84,6 +85,7 @@ def bind_storefront_context():
         else storefront_service.ORDER_STATUS_LABELS_VI
     )
     g.public_store = store
+    g.public_policies = tenant_settings_service.get_public_store_policies_safe(store["id"])
 
 
 def _safe_shop_next(target: str | None, fallback_endpoint: str = "storefront.home") -> str:

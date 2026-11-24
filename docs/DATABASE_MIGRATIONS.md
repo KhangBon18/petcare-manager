@@ -4,14 +4,14 @@ PetCare Manager runs exclusively on **MySQL 8.0.16+** (`InnoDB`, `utf8mb4_unicod
 
 ---
 
-## 1. Schema Structure (31 Tables across 4 SQL Modules)
+## 1. Schema Structure (32 Tables across 4 SQL Modules)
 
 | SQL Module | Tables Created | Purpose |
 |---|---|---|
 | [`petcare/database/schema.sql`](../petcare/database/schema.sql) (21) | `tenants`, `schema_migrations`, `users`, `account_tokens`, `email_outbox`, `tenant_users`, `tenant_invitations`, `tenant_owner_transfers`, `tenant_export_jobs`, `login_throttle`, `request_throttle`, `worker_heartbeats`, `audit_events`, `customers`, `products`, `pets`, `pet_photo_lsh`, `pet_reference_photos`, `invoices`, `invoice_items`, `stock_movements` | Core multi-tenant identity, auth/session versioning, encrypted workers, throttling, audit, retail catalog, LSH vision descriptors, and POS billing/stock ledger |
 | [`petcare/database/purchasing.sql`](../petcare/database/purchasing.sql) (4) | `suppliers`, `purchase_orders`, `purchase_order_items`, `purchase_order_receipt_requests` | Suppliers, snapshotted purchase orders, partial receipts & receipt idempotency keys |
 | [`petcare/database/refunds.sql`](../petcare/database/refunds.sql) (2) | `invoice_refunds`, `invoice_refund_items` | Separate immutable-invoice refund ledger & restock disposition |
-| [`petcare/database/storefront.sql`](../petcare/database/storefront.sql) (4) | `customer_accounts`, `customer_orders`, `customer_order_items`, `customer_order_pet_locks` | Customer portal auth, pickup/COD orders, item snapshots, and exclusive pet reservation locks |
+| [`petcare/database/storefront.sql`](../petcare/database/storefront.sql) (5) | `customer_accounts`, `customer_orders`, `customer_order_items`, `customer_order_pet_locks`, `tenant_public_policies` | Customer portal auth, pickup/COD orders, item snapshots, exclusive pet reservation locks, and Admin-configured public store policies/contacts ([contract](STORE_SETTINGS_POLICIES.md)) |
 
 ---
 
@@ -25,6 +25,7 @@ PetCare Manager runs exclusively on **MySQL 8.0.16+** (`InnoDB`, `utf8mb4_unicod
 5. `pet_reference_photos_v1` — Adds multi-photo reference gallery (`<= 5`/pet) & backfills existing primary pet photos.
 6. `storefront_orders_v1` — Applies `storefront.sql`.
 7. `storefront_orders_v1_1` — Adds `fulfilled` status and `fulfilled_at` column cleanly for upgrades from Storefront MVP 1.0.
+8. `storefront_public_policies_v1` — Ensures `tenant_public_policies` exists (`storefront.sql`) for Admin-editable public Storefront policies & contacts.
 
 ---
 

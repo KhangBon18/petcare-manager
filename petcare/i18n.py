@@ -451,6 +451,25 @@ _ENGLISH = {
     # Account and administration feedback
     "Cài đặt cửa hàng chưa thay đổi.": "Store settings were not changed.",
     "Cài đặt cửa hàng đã được cập nhật.": "Store settings updated.",
+    "Thông tin công khai Storefront chưa có thay đổi.": "Public Storefront settings were not changed.",
+    "Đã lưu thông tin & chính sách công khai cho Storefront.": "Saved public Storefront info and policies.",
+    "Vui lòng kiểm tra lại thông tin chính sách công khai.": "Please review the public policy fields.",
+    "Hotline hỗ trợ chỉ dùng chữ số, khoảng trắng, +, -, ( ) và dài từ 6–20 chữ số.": "Support hotline can only contain digits, spaces, +, -, ( ) and 6–20 digits.",
+    "Kênh Zalo cần là số điện thoại/ID hợp lệ hoặc URL bắt đầu bằng https://.": "Support Zalo must be a valid phone/ID or an https:// URL.",
+    "Email CSKH công khai không đúng định dạng.": "Public support email format is invalid.",
+    "Địa chỉ nhận hàng tại quầy": "Store pickup address",
+    "Giờ mở cửa": "Opening hours",
+    "Khu vực & phí giao COD": "COD service area and fees",
+    "Thời gian xác nhận & giao dự kiến": "Order confirmation and delivery SLA",
+    "Chính sách đổi trả & hoàn tiền": "Return and refund policy",
+    "Hướng dẫn hủy / liên hệ chỉnh đơn": "Cancellation instructions",
+    "Chính sách bàn giao & sức khỏe thú cưng": "Pet handover and health policy",
+    "Hotline hỗ trợ": "Support hotline",
+    "Kênh Zalo hỗ trợ": "Support Zalo",
+    "Email CSKH công khai": "Public support email",
+    "Liên kết điều khoản / bảo mật": "Privacy and terms URL",
+    "Tóm tắt quyền riêng tư & điều khoản": "Privacy and terms summary",
+    "Liên kết Zalo": "Zalo URL",
     "Địa chỉ email hiện tại đã được xác minh.": "The current email address is already verified.",
     "Đã gỡ email. Tài khoản sẽ không thể khôi phục mật khẩu bằng email.": "Email removed. You can no longer recover this account by email.",
     "Đã ghi nhận yêu cầu. Liên kết xác minh sẽ được gửi qua email sau ít phút.": "Request received. The verification link will be emailed shortly.",
@@ -1330,6 +1349,7 @@ def translate(message, locale=None):
             "Xác minh email tài khoản": "Verified account email",
             "Đặt lại mật khẩu qua email": "Reset password by email",
             "Cập nhật cài đặt cửa hàng": "Updated store settings",
+            "Cập nhật thông tin & chính sách công khai Storefront": "Updated public Storefront policies",
             "Tạo bản xuất dữ liệu mã hóa cho cửa hàng": "Created an encrypted store data export",
         }
         if text in audit_summaries:
@@ -1382,10 +1402,22 @@ def translate(message, locale=None):
         match = re.fullmatch(r"(.+?) không được để trống\.", text)
         if match:
             return f"{_ENGLISH.get(match.group(1), match.group(1))} is required."
-        match = re.fullmatch(r"(.+?) không được dài quá (\d+) ký tự\.", text)
+        match = re.fullmatch(r"(.+?) không được (?:dài|vượt) quá (\d+) ký tự\.", text)
         if match:
             label = _ENGLISH.get(match.group(1), match.group(1))
             return f"{label} must be {match.group(2)} characters or fewer."
+        match = re.fullmatch(r"(.+?) không được chứa khoảng trắng\.", text)
+        if match:
+            label = _ENGLISH.get(match.group(1), match.group(1))
+            return f"{label} cannot contain spaces."
+        match = re.fullmatch(r"(.+?) phải là liên kết bắt đầu bằng http:// hoặc https://\.", text)
+        if match:
+            label = _ENGLISH.get(match.group(1), match.group(1))
+            return f"{label} must be a link starting with http:// or https://."
+        match = re.fullmatch(r"(.+?) không được chứa thông tin đăng nhập\.", text)
+        if match:
+            label = _ENGLISH.get(match.group(1), match.group(1))
+            return f"{label} cannot include embedded credentials."
         match = re.fullmatch(r"(.+?) phải là số nguyên\.", text)
         if match:
             return f"{_ENGLISH.get(match.group(1), match.group(1))} must be a whole number."
@@ -1425,6 +1457,7 @@ def translate_audit_summary(message, locale=None):
             "Xác minh email tài khoản": "Verified account email",
             "Đặt lại mật khẩu qua email": "Reset password by email",
             "Cập nhật cài đặt cửa hàng": "Updated store settings",
+            "Cập nhật thông tin & chính sách công khai Storefront": "Updated public Storefront policies",
             "Tạo bản xuất dữ liệu mã hóa cho cửa hàng": "Created an encrypted store data export",
         }.get(text)
         if summary is not None:

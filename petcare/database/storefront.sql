@@ -120,3 +120,26 @@ CREATE TABLE IF NOT EXISTS customer_order_pet_locks (
         FOREIGN KEY (tenant_id, order_id) REFERENCES customer_orders(tenant_id, id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Additive Sprint 2 store public policy & contact configuration (owner-editable via /store/settings).
+CREATE TABLE IF NOT EXISTS tenant_public_policies (
+    tenant_id BIGINT UNSIGNED NOT NULL PRIMARY KEY,
+    pickup_address VARCHAR(300) NOT NULL DEFAULT '',
+    opening_hours VARCHAR(200) NOT NULL DEFAULT '',
+    cod_service_area_fees VARCHAR(400) NOT NULL DEFAULT '',
+    order_confirmation_sla VARCHAR(200) NOT NULL DEFAULT '',
+    return_refund_policy VARCHAR(600) NOT NULL DEFAULT '',
+    cancellation_instructions VARCHAR(400) NOT NULL DEFAULT '',
+    pet_handover_policy VARCHAR(600) NOT NULL DEFAULT '',
+    support_hotline VARCHAR(60) NOT NULL DEFAULT '',
+    support_zalo VARCHAR(160) NOT NULL DEFAULT '',
+    support_email VARCHAR(254) NOT NULL DEFAULT '',
+    privacy_terms_url VARCHAR(300) NOT NULL DEFAULT '',
+    privacy_terms_summary VARCHAR(400) NOT NULL DEFAULT '',
+    updated_by BIGINT UNSIGNED NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_tenant_public_policies_tenant
+        FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_tenant_public_policies_updater
+        FOREIGN KEY (tenant_id, updated_by) REFERENCES tenant_users(tenant_id, user_id) ON DELETE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
